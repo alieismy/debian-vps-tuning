@@ -1,0 +1,295 @@
+# Debian VPS Tuning
+
+面向 Debian 12/13 小型云 VPS 的保守型主机网络调优脚本。项目以原生 systemd 部署的 **3X-UI v3.4.2、Xray-core v26.6.27、VLESS + REALITY + TCP** 为主要验收场景，同时保留对 S-UI、sing-box 和独立 Xray 服务的只读识别能力。
+
+脚本使用 BBR + fq、受控 TCP 缓冲、常规队列参数、应急 swap 和 journald 空间限制，目标是形成可预检、可验证、可重复执行、可回滚的配置。它不承诺在所有线路上提高吞吐或降低延迟。
+
+> 当前版本：`v0.1.0-rc.1`。已完成本地静态检查后才可作为预发布版本；正式 `v0.1.0` 还需要完成 [目标 VPS 运行验收](docs/validation.md)。
+
+## 适用场景
+
+- VPS 厂商预装的 Debian 12 或 Debian 13 最小化系统；
+- `x86_64/amd64`，1 vCPU；
+- 约 1 GiB 或 2 GiB RAM；
+- 10 GB、15 GB 或更大 SSD，且有足够剩余空间；
+- IPv4 或 IPv4 + IPv6 双栈的常规默认路由；
+- 服务商端口上限 100–1000 Mbps，默认按 200 Mbps 设计；
+- 少于 10 名用户、以 TCP 为主的小型代理服务器；
+- 内核实际提供 BBR 和 fq。
+
+主要验证基线：
+
+| 系统 | 内核基线 | 资源脚本 |
+|---|---|---|
+| Debian 12 (bookworm) | `6.1.0-51-cloud-amd64` / `6.1.177-1` | 1C1G、1C2G |
+| Debian 13 (trixie) | `6.12.100+deb13-cloud-amd64` / `6.12.100-1` | 1C1G、1C2G |
+
+这些是已知验证基线，不是 patch level 白名单。脚本严格检查 Debian 主版本和 amd64 架构，但内核小版本变化后仍以实际 BBR/fq 能力为准。
+
+## 为什么同时支持 Debian 12 和 Debian 13
+
+Debian 12 适合已经部署、依赖既定兼容性或希望维持现有环境的 VPS。Debian 13 适合已经验证代理软件兼容性的新部署，并提供更新的系统组件和 6.12 系列内核。项目不宣称 Debian 12 天然比 Debian 13 更快或更安全，也不建议仅为了网络调优跨大版本升级。
+
+四份脚本分开校验操作系统和内存档位，避免把 Debian 12 的内核假设直接复制到 Debian 13。选择系统时应优先考虑 VPS 厂商镜像质量、应用兼容性、现有备份和个人运维能力。
+
+## 脚本选择
+
+| 文件 | 操作系统 | 内存档位 | swap 默认值/上限 |
+|---|---|---:|---:|
+| `debian12-1c1g-vps-tuning.sh` | Debian 12 | 768–1536 MiB | 1024/2048 MiB |
+| `debian12-1c2g-vps-tuning.sh` | Debian 12 | 1536–3072 MiB | 1024/4096 MiB |
+| `debian13-1c1g-vps-tuning.sh` | Debian 13 | 768–1536 MiB | 1024/2048 MiB |
+| `debian13-1c2g-vps-tuning.sh` | Debian 13 | 1536–3072 MiB | 1024/4096 MiB |
+
+脚本以 200 Mbps 为默认端口上限，也允许明确设置 100–1000 Mbps。这里应填写 VPS 套餐或服务商给出的上限，不要把虚拟网卡显示的链路速率当成套餐限速。
+
+## 脚本会修改什么
+
+- `/etc/sysctl.d/90-proxy-vps.conf`；
+- `/etc/systemd/journald.conf.d/90-proxy-vps.conf`；
+- `/usr/local/sbin/proxy-vps-fq`；
+- `/etc/systemd/system/proxy-vps-fq.service`；
+- `/var/lib/proxy-vps-tuning/state.json` 和 qdisc 原始状态；
+- 在系统没有活动 swap 时，按需创建固定路径 `/swapfile-proxy`；
+- 仅为脚本实际创建的 swap 添加一行 `/etc/fstab`。
+
+主要 sysctl 包括：
+
+- `net.core.default_qdisc=fq`；
+- `net.ipv4.tcp_congestion_control=bbr`；
+- 按带宽和目标 RTT 计算的 TCP socket 缓冲上限；
+- `somaxconn`、`tcp_max_syn_backlog` 和 `netdev_max_backlog`；
+- TCP Fast Open 内核开关、MTU probing 和 keepalive；
+- `vm.swappiness=20`。
+
+完整边界见 [设计范围](docs/design-scope.md)。
+
+## 脚本不会修改什么
+
+- 不安装、升级或降级 3X-UI、S-UI、sing-box、Xray；
+- 不读取或修改 3X-UI 数据库、Xray JSON、UUID、REALITY 私钥、证书私钥或面板凭据；
+- 不增加、删除或重排 UFW 规则；
+- 不开放 SSH、面板、订阅或代理端口；
+- 不重启 `x-ui.service`、`xray.service`、`s-ui.service` 或 `sing-box.service`；
+- 不写代理服务的 `LimitNOFILE` drop-in；
+- 不修改 DNS、路由、策略路由、MTU、IPv6 启停策略；
+- 不开启 IP forwarding、NAT 或 TProxy；
+- 不修改 `ip_local_port_range`、`tcp_mem`、`fs.file-max` 或 conntrack 上限；
+- 不接管 Docker 与 UFW 的数据包处理关系。
+
+## VPS 初始化
+
+建议先更新系统并查看升级计划：
+
+```bash
+sudo -i
+apt update
+apt -s full-upgrade
+apt full-upgrade -y
+```
+
+安装基础工具和脚本依赖：
+
+```bash
+apt install -y \
+  curl wget ca-certificates gnupg lsb-release unzip \
+  vim nano htop ufw jq \
+  iproute2 procps kmod util-linux
+```
+
+如需清理自动安装且不再需要的软件包，先模拟并检查列表：
+
+```bash
+apt-get -s autoremove --purge
+```
+
+确认无误后再执行：
+
+```bash
+apt autoremove --purge -y
+```
+
+更新内核后应重启，再运行调优脚本：
+
+```bash
+reboot
+```
+
+## UFW 注意事项
+
+在远程 VPS 上启用 UFW 前，必须先放行真实 SSH 端口。例如 SSH 使用 22/TCP：
+
+```bash
+ufw default deny incoming
+ufw default allow outgoing
+ufw default deny routed
+ufw allow 22/tcp comment 'SSH management'
+ufw enable
+ufw status numbered
+```
+
+如果 SSH 不是 22，请替换为真实端口。双栈 VPS 应确认 `/etc/default/ufw` 中为 `IPV6=yes`。
+
+VLESS + REALITY 入站只开放实际使用的 TCP 端口。面板端口最好限制到可信管理 IP，或通过 SSH 本地转发访问。调优脚本只读取 UFW 状态和监听端口，不会替你修改规则。
+
+## 下载与校验
+
+从 GitHub Release 下载所需脚本和 `SHA256SUMS`，然后检查：
+
+```bash
+sha256sum -c SHA256SUMS
+less ./debian13-1c1g-vps-tuning.sh
+chmod +x ./debian13-1c1g-vps-tuning.sh
+```
+
+这是 root 级系统脚本，不建议跳过检查直接使用 `curl | bash`。
+
+## 使用方法
+
+以下以 Debian 13、1C1G、200 Mbps 为例。替换为与你的系统和内存匹配的脚本。
+
+### 1. 只读预检
+
+```bash
+sudo env PORT_SPEED_MBPS=200 \
+  bash ./debian13-1c1g-vps-tuning.sh preflight
+```
+
+`preflight` 不写配置、不加载模块、不创建 swap、不停止服务。遇到以下情况会阻断：
+
+- 操作系统、架构或内存档位不匹配；
+- 缺少必要命令；
+- BBR/fq 不可用；
+- 没有常规默认路由；
+- 同名管理文件的所有权不明；
+- `/etc/sysctl.conf` 或 `/etc/sysctl.d` 存在重复键；
+- qdisc 拓扑复杂到无法可靠恢复；
+- 固定 swap 路径已被其他文件占用；
+- 磁盘空间不足。
+
+### 2. 应用
+
+```bash
+sudo env PORT_SPEED_MBPS=200 \
+  bash ./debian13-1c1g-vps-tuning.sh apply
+```
+
+应用成功后重启：
+
+```bash
+sudo reboot
+```
+
+### 3. 重启后验证
+
+```bash
+sudo bash ./debian13-1c1g-vps-tuning.sh verify
+sudo bash ./debian13-1c1g-vps-tuning.sh status
+```
+
+### 4. 安装 3X-UI 后验证
+
+固定使用 3X-UI v3.4.2 时，应从官方 `v3.4.2` tag/release 获取安装脚本或资产，不要使用指向 `master` 的安装入口来期待固定版本。
+
+安装并配置 3X-UI 后：
+
+```bash
+sudo env REQUIRE_PROXY_SERVICE=1 \
+  PROXY_SERVICE_UNITS='x-ui.service' \
+  bash ./debian13-1c1g-vps-tuning.sh verify
+```
+
+脚本会检查 `x-ui.service`、主进程及其子进程的运行状态和 `/proc/<PID>/limits`，但不会修改或重启服务。
+
+## 100、200 和 1000 Mbps
+
+100 Mbps：
+
+```bash
+sudo env PORT_SPEED_MBPS=100 \
+  bash ./debian12-1c1g-vps-tuning.sh apply
+```
+
+200 Mbps：
+
+```bash
+sudo env PORT_SPEED_MBPS=200 \
+  bash ./debian12-1c2g-vps-tuning.sh apply
+```
+
+1000 Mbps：
+
+```bash
+sudo env PORT_SPEED_MBPS=1000 \
+  bash ./debian13-1c2g-vps-tuning.sh apply
+```
+
+默认目标 RTT 为 200 ms。自动缓冲档位为 16、32 或 64 MiB。没有持续监控和高 BDP 证据时，不建议手工指定 `BUF_MAX`。
+
+## 参数
+
+| 变量 | 默认值 | 范围/说明 |
+|---|---:|---|
+| `PORT_SPEED_MBPS` | `200` | `100–1000` |
+| `BUFFER_TARGET_RTT_MS` | `200` | `20–500` |
+| `BUF_MAX` | `auto` | `262144–67108864` 字节 |
+| `ENABLE_SWAP` | `1` | `0` 或 `1` |
+| `SWAP_MB` | `1024` | 1G 脚本最高 2048，2G 脚本最高 4096 |
+| `PURGE_CREATED_SWAP` | `0` | 回滚时是否清理脚本创建的 swap |
+| `PROXY_SERVICE_UNITS` | 自动识别 | 空格分隔的 systemd service |
+| `REQUIRE_PROXY_SERVICE` | `0` | 为 `1` 时没有目标代理服务即验证失败 |
+
+不支持自定义 swap 文件路径；脚本只可能创建 `/swapfile-proxy`。
+
+## 状态与重复执行
+
+状态保存在 root-only JSON 中：
+
+```text
+/var/lib/proxy-vps-tuning/state.json
+```
+
+同一参数下重复执行 `apply` 时，脚本先验证当前配置；验证通过后不重复写入。使用不同资源脚本或改变带宽/缓冲参数前，应先回滚现有配置。
+
+## 回滚
+
+默认回滚系统配置，但保留脚本创建的应急 swap：
+
+```bash
+sudo bash ./debian13-1c1g-vps-tuning.sh rollback
+```
+
+如果确认内存充足，并希望同时删除脚本创建的 swap：
+
+```bash
+sudo env PURGE_CREATED_SWAP=1 \
+  bash ./debian13-1c1g-vps-tuning.sh rollback
+```
+
+如果普通回滚保留了 swap，重新应用前必须先用上面的显式 purge 完成状态清理。`swapoff` 失败时脚本不会删除 swap、fstab 项或所有权状态。
+
+## qdisc 边界
+
+脚本支持普通根 `fq`、`fq_codel`、`noqueue`，以及根 `mq` 且叶子为 `fq`/`fq_codel` 的常规云网卡。复杂的 HTB、TBF、CAKE 或自定义层次会在预检阶段阻断。这样可以避免用简单的 `tc qdisc replace ... root fq` 破坏现有多队列或流量整形结构。
+
+## Docker 边界
+
+首个版本主要验证原生 systemd 部署。Docker 可能通过自己的 netfilter 规则改变 UFW 的过滤路径；使用 `network_mode: host` 还会暴露容器内所有监听端口。Docker 场景需要独立检查，不属于本脚本的防火墙承诺。
+
+## 验证与已知限制
+
+- 本地 `bash -n`、ShellCheck、生成一致性、禁用键和编码检查不等于目标 VPS 运行成功；
+- BBR、fq、swap、重启持久性、UFW、3X-UI 和实际客户端连通性必须在 VPS 上验证；
+- 当前预发布范围只支持 amd64；
+- 策略路由、TProxy、网关、Docker 防火墙和复杂 qdisc 不在范围内；
+- 性能结果受 CPU、虚拟化超售、线路、跨境路由、客户端和加密开销影响。
+
+详见 [运行验收说明](docs/validation.md)。
+
+## 安全问题
+
+不要在公开 Issue 中提交密码、UUID、REALITY 私钥、SSH 私钥、API Token、证书私钥或未脱敏的完整代理配置。参见 [SECURITY.md](SECURITY.md)。
+
+## 许可证
+
+[MIT License](LICENSE)

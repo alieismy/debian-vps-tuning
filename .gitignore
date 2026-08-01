@@ -1,0 +1,4 @@
+*.tmp
+*.bak
+.tmp/
+SHA256SUMS.local

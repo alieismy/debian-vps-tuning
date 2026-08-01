@@ -1,0 +1,35 @@
+name: shell-static-checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check generated profiles and shell structure
+        run: bash tests/static-check.sh
+
+      - name: ShellCheck 0.11.0
+        run: |
+          mkdir -p .tmp/ci-helpers
+          for script in debian*-vps-tuning.sh; do
+            helper=".tmp/ci-helpers/${script}.helper"
+            awk "/^  write_managed_file .*FQ_HELPER.*<<'EOF_HELPER'/ {inside=1; next} /^EOF_HELPER$/ {inside=0} inside" \
+              "$script" >"$helper"
+            test -s "$helper"
+          done
+          docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.11.0 \
+            -x \
+            debian12-1c1g-vps-tuning.sh \
+            debian12-1c2g-vps-tuning.sh \
+            debian13-1c1g-vps-tuning.sh \
+            debian13-1c2g-vps-tuning.sh \
+            tests/static-check.sh \
+            .tmp/ci-helpers/*.helper
