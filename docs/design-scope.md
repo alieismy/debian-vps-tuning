@@ -29,10 +29,14 @@
 正常路径：
 
 ```text
-UNMANAGED → PREPARED → APPLIED → VERIFIED
+UNMANAGED → PREPARED → APPLYING → APPLIED → VERIFIED
 ```
 
-失败路径保留 `DEGRADED` 状态。回滚失败时不得删除诊断状态或所有权证据。普通回滚保留脚本创建的 swap；显式 purge 才能在 `swapoff` 成功后删除。
+`PREPARED` 只表示原始状态已提交；在首个系统写入前必须进入 `APPLYING`。失败路径保留 `DEGRADED` 状态。回滚失败时不得删除诊断状态或所有权证据；只有项目文件不存在、swap 未被脚本接管、qdisc 与快照语义一致且原始 sysctl 已恢复时，才能把残留事务判定为已经恢复并清理状态。普通回滚保留脚本创建的 swap；显式 purge 才能在 `swapoff` 成功后删除。
+
+状态持久化不依赖 `set -e` 或 jq 1.6 对空输入的退出码。每次创建或转换先写同目录临时文件；只有生产命令成功、文件非空、输入恰好为一个 JSON 对象且完整 schema 校验通过，才以原子 rename 替换目标。`state_set_phase`、managed file 哈希和 swap 所有权不得自行实现另一套写入路径。
+
+早期 rc.2 空状态不包含原始 sysctl，因此不能按普通 rollback 推断或重建。显式 `recover` 只允许在用户确认该状态产生于首次系统写入前，且项目文件、脚本 swap、fstab、fq helper 均不存在、当前 qdisc 与快照一致时，将整个状态目录改名隔离；不自动删除证据，也不处理一般损坏状态。
 
 ## qdisc 边界
 
@@ -44,6 +48,14 @@ UNMANAGED → PREPARED → APPLIED → VERIFIED
 - 根 `mq` 且叶子为 `fq`/`fq_codel`。
 
 其他拓扑在第一次系统写入前阻断。IPv4 和 IPv6 默认路由网卡分别发现并去重；策略路由表不属于该发现范围。
+
+已有根 `fq` 和 `mq` 下已有 `fq` 叶子视为不需要修改，应用和回滚均保留其现有参数。只有已保存完整可恢复参数的 `fq_codel` 根或叶子会被切换并在回滚时重建。
+
+qdisc 状态以 `tc -j` 数值为准，但恢复命令按 `tc` 输入语法生成：`limit` 使用纯数据包数量，`memory_limit` 使用原始字节数，不复用文本显示后缀。语义比较忽略运行时 `refcnt` 和 JSON 字段顺序；`target`、`interval`、`ce_threshold` 仅允许 ±1 微秒量化差异。原快照 `handle 0:` 代表未指定，允许内核为受支持的 classless qdisc 自动分配 handle；显式非零 handle、kind、parent、root 及其他 options 仍严格比较。rollback 恢复命令完成后必须再次读取并比较实际 qdisc，只有通过后置验证才允许删除状态和快照。
+
+## swap 文件系统边界
+
+自动 swap 文件只允许在 `ext2`、`ext3`、`ext4` 和 `xfs` 根文件系统上创建。Btrfs、ZFS、overlay、NFS、FUSE 以及未验证类型会跳过自动创建，不影响 sysctl、qdisc 和 journald 的应用。XFS 仍需由目标 VPS 验证 `fallocate → swapon` 路径；失败时脚本使用 `dd` 重试并纳入事务回滚。
 
 ## 3X-UI 边界
 

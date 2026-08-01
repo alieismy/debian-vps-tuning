@@ -7,7 +7,7 @@ IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 
-SCRIPT_VERSION='0.1.0-rc.1'
+SCRIPT_VERSION='0.1.0-rc.8'
 STATE_SCHEMA_VERSION=3
 NAMESPACE='proxy-vps'
 MANAGED_MARKER='# Managed by debian-vps-tuning; namespace=proxy-vps'
@@ -35,6 +35,7 @@ BUF_MAX_INPUT="${BUF_MAX:-auto}"
 ENABLE_SWAP="${ENABLE_SWAP:-1}"
 SWAP_MB_INPUT="${SWAP_MB:-$DEFAULT_SWAP_MB}"
 PURGE_CREATED_SWAP="${PURGE_CREATED_SWAP:-0}"
+ALLOW_EMPTY_STATE_RECOVERY="${ALLOW_EMPTY_STATE_RECOVERY:-0}"
 PROXY_SERVICE_UNITS_INPUT="${PROXY_SERVICE_UNITS:-}"
 REQUIRE_PROXY_SERVICE="${REQUIRE_PROXY_SERVICE:-0}"
 
@@ -44,6 +45,11 @@ BUF_MAX=''
 BUF_MAX_MODE=''
 BUFFER_BDP_BYTES=''
 BUFFER_COVERAGE_MS=''
+ROOT_FS_TYPE=''
+SWAP_CREATE_ALLOWED='1'
+SWAP_SKIP_REASON=''
+STATE_DIR_CREATED=0
+QDISC_MATCH_REASON=''
 
 SYSCTL_FILE="/etc/sysctl.d/90-${NAMESPACE}.conf"
 JOURNAL_FILE="/etc/systemd/journald.conf.d/90-${NAMESPACE}.conf"
@@ -214,36 +220,57 @@ check_resource_profile() {
 
 state_exists() { [ -f "$STATE_FILE" ]; }
 
+state_file_is_valid() {
+  local result
+  [ -f "$STATE_FILE" ] && [ ! -L "$STATE_FILE" ] || return 1
+  [ "$(stat -c '%u' "$STATE_FILE" 2>/dev/null || true)" = '0' ] || return 1
+  [ -s "$STATE_FILE" ] || return 1
+  result="$(jq -c -e -s --argjson schema "$STATE_SCHEMA_VERSION" --arg profile "$PROFILE_ID" '
+    length == 1 and
+    (.[0] |
+      type == "object" and
+      .schema_version == $schema and
+      .profile.id == $profile and
+      (.state | type == "string") and
+      (.network | type == "object") and
+      (.original_sysctls | type == "object") and
+      (.qdisc.file | type == "string") and
+      (.qdisc.sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
+      (.swap | type == "object") and
+      (.managed_files | type == "array") and
+      (.timestamps | type == "object"))
+  ' "$STATE_FILE" 2>/dev/null)" || return 1
+  [ "$result" = 'true' ]
+}
+
 validate_state_file() {
   state_exists || return 0
-  [ ! -L "$STATE_FILE" ] && [ "$(stat -c '%u' "$STATE_FILE")" = '0' ] ||
-    die "$EXIT_CONFLICT" "状态文件所有权异常：${STATE_FILE}"
-  jq -e --argjson schema "$STATE_SCHEMA_VERSION" --arg profile "$PROFILE_ID" '
-    .schema_version == $schema and .profile.id == $profile and
-    (.state | type == "string") and (.managed_files | type == "array")
-  ' "$STATE_FILE" >/dev/null || die "$EXIT_CONFLICT" '状态文件 schema 或 profile 不匹配。'
+  state_file_is_valid || die "$EXIT_CONFLICT" "状态文件为空、损坏、包含多份 JSON 或 schema/profile 不匹配：${STATE_FILE}。不要继续 apply；只有确认它来自 rc.2 首次系统写入前的失败，才可使用 ALLOW_EMPTY_STATE_RECOVERY=1 执行 recover。"
 }
 
 state_get() { jq -er "$1" "$STATE_FILE"; }
 
-atomic_json_write() {
-  local target="$1" tmp
-  tmp="$(mktemp "${target}.tmp.XXXXXX")"
-  cat >"$tmp"
-  chmod 0600 "$tmp"
-  chown root:root "$tmp"
-  jq -e . "$tmp" >/dev/null
-  mv -f -- "$tmp" "$target"
+atomic_json_commit() {
+  local target="$1" tmp="$2"
+  if [ ! -f "$tmp" ] || [ -L "$tmp" ] || [ ! -s "$tmp" ] ||
+    ! jq -e -s 'length == 1 and (.[0] | type == "object")' "$tmp" >/dev/null ||
+    ! chmod 0600 "$tmp" || ! chown root:root "$tmp" || ! mv -f -- "$tmp" "$target"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
 }
 
 state_set_phase() {
   local phase="$1" tmp
-  tmp="$(mktemp "${STATE_FILE}.tmp.XXXXXX")"
-  jq --arg phase "$phase" --arg now "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
-    '.state=$phase | .timestamps.last_update=$now' "$STATE_FILE" >"$tmp"
-  chmod 0600 "$tmp"
-  chown root:root "$tmp"
-  mv -f -- "$tmp" "$STATE_FILE"
+  tmp="$(mktemp "${STATE_FILE}.tmp.XXXXXX")" || return 1
+  if ! jq --arg phase "$phase" --arg now "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+    '.state=$phase | .timestamps.last_update=$now' "$STATE_FILE" >"$tmp" ||
+    ! atomic_json_commit "$STATE_FILE" "$tmp"; then
+    rm -f -- "$tmp"
+    error "无法原子更新事务状态为 ${phase}；原状态文件保持不变。"
+    return 1
+  fi
+  state_file_is_valid || { error "事务状态 ${phase} 写入后校验失败。"; return 1; }
 }
 
 state_managed_hash() {
@@ -293,6 +320,23 @@ check_managed_paths() {
   if [ -e "$SWAP_FILE" ] && ! state_exists; then
     die "$EXIT_CONFLICT" "${SWAP_FILE} 已存在；脚本不会接管或覆盖。"
   fi
+}
+
+check_preflight_state() {
+  state_exists || return 0
+  local phase
+  phase="$(state_get '.state')"
+  case "$phase" in
+    VERIFIED | APPLIED)
+      die "$EXIT_CONFLICT" "检测到现有管理状态 ${phase}；已安装配置请执行 verify，需要更改参数时请先 rollback。"
+      ;;
+    SWAP_RETAINED)
+      die "$EXIT_CONFLICT" '检测到 SWAP_RETAINED；重新应用前请用 PURGE_CREATED_SWAP=1 执行 rollback。'
+      ;;
+    *)
+      die "$EXIT_CONFLICT" "检测到未完成的事务状态 ${phase}；请先执行 rollback，不要直接 apply。"
+      ;;
+  esac
 }
 
 scan_sysctl_conflicts() {
@@ -380,6 +424,27 @@ check_swap_preconditions() {
     info '系统已有活动 swap，不会创建新的 swap。'
     return 0
   fi
+
+  ROOT_FS_TYPE="$(findmnt -n -o FSTYPE / 2>/dev/null || true)"
+  [ -n "$ROOT_FS_TYPE" ] || ROOT_FS_TYPE='unknown'
+  case "$ROOT_FS_TYPE" in
+    ext2 | ext3 | ext4 | xfs)
+      info "根文件系统为 ${ROOT_FS_TYPE}，允许创建普通 swap 文件。"
+      ;;
+    btrfs | zfs | overlay | overlayfs | nfs | nfs4 | fuse | fuse.*)
+      SWAP_CREATE_ALLOWED='0'
+      SWAP_SKIP_REASON="根文件系统 ${ROOT_FS_TYPE} 需要专用或不适合通用 swap-file 流程"
+      warn "${SWAP_SKIP_REASON}；将跳过自动创建 swap。"
+      return 0
+      ;;
+    *)
+      SWAP_CREATE_ALLOWED='0'
+      SWAP_SKIP_REASON="根文件系统 ${ROOT_FS_TYPE} 未经本项目验证"
+      warn "${SWAP_SKIP_REASON}；将跳过自动创建 swap。"
+      return 0
+      ;;
+  esac
+
   [ ! -e "$SWAP_FILE" ] || state_exists || die "$EXIT_CONFLICT" "${SWAP_FILE} 已存在且所有权未知。"
   local available_kib required_kib
   available_kib="$(df -Pk / | awk 'NR==2 {print $4}')"
@@ -408,11 +473,13 @@ show_environment() {
 }
 
 run_preflight() {
+  local context="${1:-standalone}"
   ensure_required_tools
   check_supported_os
   validate_inputs
   check_resource_profile
   check_managed_paths
+  [ "$context" = 'apply' ] || check_preflight_state
   scan_sysctl_conflicts
   check_bbr_fq_capability
   validate_qdisc_topology
@@ -424,10 +491,19 @@ run_preflight() {
 write_qdisc_snapshot() {
   local snapshot_iface tmp
   tmp="$(mktemp)"
-  for snapshot_iface in "${IFACES[@]}"; do
-    qdisc_snapshot_for_iface "$snapshot_iface"
-  done | jq -s . >"$tmp"
-  install -o root -g root -m 0600 "$tmp" "$QDISC_STATE_FILE"
+  if ! {
+    for snapshot_iface in "${IFACES[@]}"; do
+      qdisc_snapshot_for_iface "$snapshot_iface"
+    done | jq -s . >"$tmp"
+  } || [ ! -s "$tmp" ] ||
+    ! jq -e 'type == "array" and length > 0 and all(.[];
+      (.interface | type == "string") and (.interface | length > 0) and
+      (.qdiscs | type == "array") and (.qdiscs | length > 0) and
+      ([.qdiscs[] | select(.root == true)] | length == 1))' "$tmp" >/dev/null ||
+    ! install -o root -g root -m 0600 "$tmp" "$QDISC_STATE_FILE"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
   rm -f -- "$tmp"
 }
 
@@ -440,16 +516,21 @@ original_sysctls_json() {
 }
 
 write_initial_state() {
-  local original qhash now
-  mkdir -p "$STATE_DIR"
-  chmod 0700 "$STATE_DIR"
-  write_qdisc_snapshot
-  original="$(original_sysctls_json)"
+  local original qhash now tmp
+  mkdir -- "$STATE_DIR" || return 1
+  STATE_DIR_CREATED=1
+  chmod 0700 "$STATE_DIR" || return 1
+  write_qdisc_snapshot || return 1
+  if ! original="$(original_sysctls_json)"; then
+    error '无法采集原始 sysctl 状态。'
+    return 1
+  fi
   qhash="$(sha256sum "$QDISC_STATE_FILE" | awk '{print $1}')"
   now="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-  jq -n \
+  tmp="$(mktemp "${STATE_FILE}.tmp.XXXXXX")" || return 1
+  if ! jq -n \
     --argjson schema "$STATE_SCHEMA_VERSION" --arg version "$SCRIPT_VERSION" \
-    --arg profile "$PROFILE_ID" --arg label "$PROFILE_LABEL" \
+    --arg profile "$PROFILE_ID" --arg profile_label "$PROFILE_LABEL" \
     --arg debian "$TARGET_DEBIAN_VERSION" --arg arch "$(uname -m)" \
     --arg kernel "$(uname -r)" --argjson mem "$(memory_mib)" \
     --argjson port "$PORT_SPEED_MBPS" --argjson rtt "$BUFFER_TARGET_RTT_MS" \
@@ -457,39 +538,61 @@ write_initial_state() {
     --arg qfile "$QDISC_STATE_FILE" --arg qhash "$qhash" --arg now "$now" \
     --argjson original "$original" \
     '{schema_version:$schema,script_version:$version,state:"PREPARED",
-      profile:{id:$profile,label:$label,debian_version:$debian,architecture:$arch,kernel_release:$kernel,memory_mib:$mem},
+      profile:{id:$profile,label:$profile_label,debian_version:$debian,architecture:$arch,kernel_release:$kernel,memory_mib:$mem},
       network:{port_speed_mbps:$port,target_rtt_ms:$rtt,buffer_max_bytes:$buf,buffer_mode:$mode},
       original_sysctls:$original,qdisc:{file:$qfile,sha256:$qhash},
       swap:{created_by_script:false,path:"/swapfile-proxy",size_mib:0,device:0,inode:0,active:false},
-      managed_files:[],timestamps:{prepared:$now,last_update:$now}}' | atomic_json_write "$STATE_FILE"
+      managed_files:[],timestamps:{prepared:$now,last_update:$now}}' >"$tmp" ||
+    ! atomic_json_commit "$STATE_FILE" "$tmp"; then
+    rm -f -- "$tmp"
+    error '无法创建有效的初始事务状态；未提交空状态文件。'
+    return 1
+  fi
+  state_file_is_valid || { error '初始事务状态写入后校验失败。'; return 1; }
+}
+
+cleanup_uncommitted_state() {
+  [ "$STATE_DIR_CREATED" -eq 1 ] || return 1
+  [ ! -e "$STATE_FILE" ] && [ ! -L "$STATE_FILE" ] || return 1
+  rm -f -- "$QDISC_STATE_FILE" "${STATE_FILE}.tmp."*
+  rmdir -- "$STATE_DIR"
 }
 
 write_managed_file() {
   local path="$1" mode="$2" dir
   dir="$(dirname "$path")"
-  mkdir -p "$dir"
+  mkdir -p "$dir" || return 1
   local tmp
   tmp="$(mktemp "${path}.tmp.XXXXXX")"
-  cat >"$tmp"
-  chmod "$mode" "$tmp"
-  chown root:root "$tmp"
-  mv -f -- "$tmp" "$path"
+  if ! cat >"$tmp" || ! chmod "$mode" "$tmp" || ! chown root:root "$tmp" ||
+    ! mv -f -- "$tmp" "$path"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
 }
 
 refresh_managed_files() {
-  local path tmp json='[]' hash
+  local path json='[]' hash tmp
   for path in "$SYSCTL_FILE" "$JOURNAL_FILE" "$FQ_HELPER" "$FQ_SERVICE"; do
     [ -f "$path" ] || continue
     hash="$(sha256sum "$path" | awk '{print $1}')"
-    json="$(jq -c --arg path "$path" --arg hash "$hash" '. + [{path:$path,sha256:$hash}]' <<<"$json")"
+    if ! json="$(jq -c --arg path "$path" --arg hash "$hash" '. + [{path:$path,sha256:$hash}]' <<<"$json")"; then
+      error '无法构造 managed_files 状态。'
+      return 1
+    fi
   done
-  tmp="$(mktemp "${STATE_FILE}.tmp.XXXXXX")"
-  jq --argjson files "$json" '.managed_files=$files' "$STATE_FILE" >"$tmp"
-  chmod 0600 "$tmp"; chown root:root "$tmp"; mv -f -- "$tmp" "$STATE_FILE"
+  tmp="$(mktemp "${STATE_FILE}.tmp.XXXXXX")" || return 1
+  if ! jq --argjson files "$json" '.managed_files=$files' "$STATE_FILE" >"$tmp" ||
+    ! atomic_json_commit "$STATE_FILE" "$tmp"; then
+    rm -f -- "$tmp"
+    error '无法原子更新 managed_files；原状态文件保持不变。'
+    return 1
+  fi
+  state_file_is_valid || { error 'managed_files 更新后状态校验失败。'; return 1; }
 }
 
 write_sysctl_profile() {
-  write_managed_file "$SYSCTL_FILE" 0644 <<EOF_SYSCTL
+  write_managed_file "$SYSCTL_FILE" 0644 <<EOF_SYSCTL || return 1
 ${MANAGED_MARKER}
 # ${PROFILE_LABEL}; provider cap ${PORT_SPEED_MBPS} Mbps; target RTT ${BUFFER_TARGET_RTT_MS} ms.
 net.core.default_qdisc = fq
@@ -513,7 +616,7 @@ EOF_SYSCTL
 }
 
 write_journal_profile() {
-  write_managed_file "$JOURNAL_FILE" 0644 <<EOF_JOURNAL
+  write_managed_file "$JOURNAL_FILE" 0644 <<EOF_JOURNAL || return 1
 ${MANAGED_MARKER}
 [Journal]
 SystemMaxUse=128M
@@ -523,7 +626,7 @@ EOF_JOURNAL
 }
 
 write_fq_helper() {
-  write_managed_file "$FQ_HELPER" 0755 <<'EOF_HELPER'
+  write_managed_file "$FQ_HELPER" 0755 <<'EOF_HELPER' || return 1
 #!/usr/bin/env bash
 # Managed by debian-vps-tuning; namespace=proxy-vps
 set -Eeuo pipefail
@@ -538,7 +641,12 @@ while IFS= read -r iface; do
     fq) ;;
     noqueue) ;;
     mq)
-      tc -j qdisc show dev "$iface" | jq -r '.[] | select(has("parent")) | .parent' |
+      unsupported="$(tc -j qdisc show dev "$iface" | jq -r '.[] | select(has("parent")) | select(.kind != "fq" and .kind != "fq_codel") | .kind' | sort -u)"
+      if [ -n "$unsupported" ]; then
+        printf '[proxy-vps-fq] unsupported mq leaf qdisc on %s: %s\n' "$iface" "$unsupported" >&2
+        exit 1
+      fi
+      tc -j qdisc show dev "$iface" | jq -r '.[] | select(has("parent") and .kind == "fq_codel") | .parent' |
         while IFS= read -r parent; do
           [ -n "$parent" ] && tc qdisc replace dev "$iface" parent "$parent" fq
         done
@@ -548,9 +656,9 @@ while IFS= read -r iface; do
   esac
 done <<<"$ifaces"
 EOF_HELPER
-  refresh_managed_files
+  refresh_managed_files || return 1
 
-  write_managed_file "$FQ_SERVICE" 0644 <<EOF_SERVICE
+  write_managed_file "$FQ_SERVICE" 0644 <<EOF_SERVICE || return 1
 ${MANAGED_MARKER}
 [Unit]
 Description=Apply fq to conventional default-route interfaces
@@ -565,28 +673,42 @@ RemainAfterExit=yes
 [Install]
 WantedBy=multi-user.target
 EOF_SERVICE
-  refresh_managed_files
+  refresh_managed_files || return 1
 }
 
 apply_kernel_settings() {
   modprobe tcp_bbr >/dev/null 2>&1 || true
   modprobe sch_fq >/dev/null 2>&1 || true
-  sysctl -p "$SYSCTL_FILE" >/dev/null
-  systemctl daemon-reload
-  systemctl enable --now "$FQ_SERVICE_NAME" >/dev/null
+  if ! sysctl -p "$SYSCTL_FILE" >/dev/null; then
+    error "无法应用 ${SYSCTL_FILE}。"
+    return 1
+  fi
+  if ! systemctl daemon-reload; then
+    error 'systemctl daemon-reload 失败。'
+    return 1
+  fi
+  if ! systemctl enable --now "$FQ_SERVICE_NAME" >/dev/null; then
+    error "无法启用或运行 ${FQ_SERVICE_NAME}。"
+    return 1
+  fi
   if ! systemctl try-restart systemd-journald.service >/dev/null 2>&1; then
     warn 'systemd-journald 未能立即重启；配置将在服务下次启动时生效。'
   fi
 }
 
 state_set_swap_created() {
-  local tmp device inode
+  local device inode tmp
   device="$(stat -c '%d' "$SWAP_FILE")"
   inode="$(stat -c '%i' "$SWAP_FILE")"
-  tmp="$(mktemp "${STATE_FILE}.tmp.XXXXXX")"
-  jq --argjson size "$SWAP_MB" --argjson device "$device" --argjson inode "$inode" \
-    '.swap.created_by_script=true | .swap.size_mib=$size | .swap.device=$device | .swap.inode=$inode | .swap.active=true' "$STATE_FILE" >"$tmp"
-  chmod 0600 "$tmp"; chown root:root "$tmp"; mv -f -- "$tmp" "$STATE_FILE"
+  tmp="$(mktemp "${STATE_FILE}.tmp.XXXXXX")" || return 1
+  if ! jq --argjson size "$SWAP_MB" --argjson device "$device" --argjson inode "$inode" \
+    '.swap.created_by_script=true | .swap.size_mib=$size | .swap.device=$device | .swap.inode=$inode | .swap.active=true' "$STATE_FILE" >"$tmp" ||
+    ! atomic_json_commit "$STATE_FILE" "$tmp"; then
+    rm -f -- "$tmp"
+    error '无法原子记录 swap 所有权；原状态文件保持不变。'
+    return 1
+  fi
+  state_file_is_valid || { error 'swap 所有权更新后状态校验失败。'; return 1; }
 }
 
 ensure_fstab_swap_line() {
@@ -597,6 +719,10 @@ ensure_fstab_swap_line() {
 
 create_swap_if_needed() {
   [ "$ENABLE_SWAP" = '1' ] || return 0
+  if [ "$SWAP_CREATE_ALLOWED" != '1' ]; then
+    info "跳过自动创建 swap：${SWAP_SKIP_REASON:-根文件系统不在支持范围内}。"
+    return 0
+  fi
   if swapon --show=NAME --noheadings 2>/dev/null | grep -q '[^[:space:]]'; then return 0; fi
   [ ! -e "$SWAP_FILE" ] || die "$EXIT_CONFLICT" "${SWAP_FILE} 已存在，拒绝覆盖。"
   info "创建 ${SWAP_MB} MiB 应急 swap：${SWAP_FILE}"
@@ -646,6 +772,11 @@ profile_service_units() {
   fi
 }
 
+read_nofile_limits() {
+  local limits_file="$1"
+  awk '$1 == "Max" && $2 == "open" && $3 == "files" {printf "%s\t%s\n", $4, $5; exit}' "$limits_file"
+}
+
 verify_proxy_services() {
   local unit loaded=0 active_count=0 active main_pid child soft hard strict=0 failures=0
   [ -z "$PROXY_SERVICE_UNITS_INPUT" ] || strict=1
@@ -662,12 +793,14 @@ verify_proxy_services() {
     fi
     active_count=$((active_count + 1))
     if [[ "$main_pid" =~ ^[1-9][0-9]*$ ]] && [ -r "/proc/${main_pid}/limits" ]; then
-      read -r soft hard < <(awk '/^Max open files/ {print $(NF-2), $(NF-1); exit}' "/proc/${main_pid}/limits")
+      soft=''; hard=''
+      IFS=$'\t' read -r soft hard < <(read_nofile_limits "/proc/${main_pid}/limits")
       printf '[service] %s MainPID NOFILE soft=%s hard=%s\n' "$unit" "$soft" "$hard"
       if [[ "$soft" =~ ^[0-9]+$ ]] && [ "$soft" -lt 65536 ]; then warn "${unit} 的运行时 NOFILE soft limit 低于 65536。"; fi
       while IFS= read -r child; do
         [ -r "/proc/${child}/limits" ] || continue
-        read -r soft hard < <(awk '/^Max open files/ {print $(NF-2), $(NF-1); exit}' "/proc/${child}/limits")
+        soft=''; hard=''
+        IFS=$'\t' read -r soft hard < <(read_nofile_limits "/proc/${child}/limits")
         printf '[service] %s child=%s NOFILE soft=%s hard=%s\n' "$unit" "$child" "$soft" "$hard"
       done < <(pgrep -P "$main_pid" 2>/dev/null || true)
     fi
@@ -678,6 +811,10 @@ verify_proxy_services() {
   fi
   if [ "$REQUIRE_PROXY_SERVICE" = '1' ] && [ "$active_count" -eq 0 ]; then error '没有发现活动的目标代理服务。'; failures=$((failures + 1)); fi
   [ "$failures" -eq 0 ]
+}
+
+normalize_sysctl_value() {
+  awk '{$1=$1; print}' <<<"$1"
 }
 
 verify_current_qdiscs() {
@@ -700,12 +837,15 @@ verify_current_qdiscs() {
 
 verify_settings() {
   local failures=0 key expected actual qhash unit_path
+  state_exists || { error '当前主机尚未安装本项目配置；请先执行 preflight，确认通过后再执行 apply。'; return 1; }
   validate_state_file || return 1
   [ "$(state_get '.state')" = 'APPLIED' ] || [ "$(state_get '.state')" = 'VERIFIED' ] || {
     error "当前状态不允许 verify：$(state_get '.state')"; return 1; }
   for key in "${PROFILE_SYSCTL_KEYS[@]}"; do
     expected="$(awk -F= -v k="$key" '{name=$1; gsub(/^[[:space:]]+|[[:space:]]+$/, "", name); if(name==k){v=$2; gsub(/^[[:space:]]+|[[:space:]]+$/, "", v); print v; exit}}' "$SYSCTL_FILE")"
     actual="$(sysctl -n "$key" 2>/dev/null || true)"
+    expected="$(normalize_sysctl_value "$expected")"
+    actual="$(normalize_sysctl_value "$actual")"
     [ "$actual" = "$expected" ] || { error "${key}: expected '${expected}', got '${actual}'"; failures=$((failures + 1)); }
   done
   qhash="$(sha256sum "$QDISC_STATE_FILE" | awk '{print $1}')"
@@ -730,24 +870,37 @@ restore_fq_codel() {
   local iface="$1" scope="$2" parent="$3" json="$4" value
   local cmd=(tc qdisc replace dev "$iface")
   if [ "$scope" = 'root' ]; then cmd+=(root); else cmd+=(parent "$parent"); fi
+  value="$(jq -r '.handle // empty' <<<"$json")"
+  if [ -n "$value" ] && [ "$value" != '0:' ]; then cmd+=(handle "$value"); fi
   cmd+=(fq_codel)
-  value="$(jq -r '.options.limit // empty' <<<"$json")"; if [ -n "$value" ]; then [[ "$value" =~ ^[0-9]+$ ]] && value="${value}p"; cmd+=(limit "$value"); fi
+  value="$(jq -r '.options.limit // empty' <<<"$json")"; [ -z "$value" ] || cmd+=(limit "$value")
   value="$(jq -r '.options.flows // empty' <<<"$json")"; [ -z "$value" ] || cmd+=(flows "$value")
   value="$(jq -r '.options.quantum // empty' <<<"$json")"; [ -z "$value" ] || cmd+=(quantum "$value")
   value="$(jq -r '.options.target // empty' <<<"$json")"; if [ -n "$value" ]; then [[ "$value" =~ ^[0-9]+$ ]] && value="${value}us"; cmd+=(target "$value"); fi
   value="$(jq -r '.options.interval // empty' <<<"$json")"; if [ -n "$value" ]; then [[ "$value" =~ ^[0-9]+$ ]] && value="${value}us"; cmd+=(interval "$value"); fi
-  value="$(jq -r '.options.memory_limit // empty' <<<"$json")"; if [ -n "$value" ]; then [[ "$value" =~ ^[0-9]+$ ]] && value="${value}b"; cmd+=(memory_limit "$value"); fi
+  value="$(jq -r '.options.memory_limit // empty' <<<"$json")"; [ -z "$value" ] || cmd+=(memory_limit "$value")
   value="$(jq -r '.options.drop_batch // empty' <<<"$json")"; [ -z "$value" ] || cmd+=(drop_batch "$value")
   value="$(jq -r '.options.ce_threshold // empty' <<<"$json")"; if [ -n "$value" ]; then [[ "$value" =~ ^[0-9]+$ ]] && value="${value}us"; cmd+=(ce_threshold "$value"); fi
   if jq -e '.options | has("ecn")' <<<"$json" >/dev/null 2>&1; then
     if jq -e '.options.ecn == true' <<<"$json" >/dev/null 2>&1; then cmd+=(ecn); else cmd+=(noecn); fi
   fi
-  "${cmd[@]}"
+  if ! "${cmd[@]}"; then
+    printf '[x] fq_codel 恢复命令失败：' >&2
+    printf '%q ' "${cmd[@]}" >&2
+    printf '\n' >&2
+    return 1
+  fi
 }
 
 restore_qdiscs() {
-  [ -f "$QDISC_STATE_FILE" ] || return 1
-  [ "$(sha256sum "$QDISC_STATE_FILE" | awk '{print $1}')" = "$(state_get '.qdisc.sha256')" ] || return 1
+  [ -f "$QDISC_STATE_FILE" ] || { error "qdisc 原始快照不存在：${QDISC_STATE_FILE}"; return 1; }
+  local expected_hash actual_hash
+  expected_hash="$(state_get '.qdisc.sha256')"
+  actual_hash="$(sha256sum "$QDISC_STATE_FILE" | awk '{print $1}')"
+  [ "$actual_hash" = "$expected_hash" ] || {
+    error "qdisc 原始快照哈希不匹配：expected=${expected_hash} actual=${actual_hash}"
+    return 1
+  }
   local count i iface root_json root_kind leaf_count j leaf_json parent kind
   count="$(jq 'length' "$QDISC_STATE_FILE")"
   for ((i=0; i<count; i++)); do
@@ -755,8 +908,8 @@ restore_qdiscs() {
     root_json="$(jq -c ".[$i].qdiscs[] | select(.root == true)" "$QDISC_STATE_FILE" | head -n1)"
     root_kind="$(jq -r '.kind' <<<"$root_json")"
     case "$root_kind" in
-      fq) tc qdisc replace dev "$iface" root fq ;;
-      fq_codel) restore_fq_codel "$iface" root '' "$root_json" ;;
+      fq) : ;;
+      fq_codel) restore_fq_codel "$iface" root '' "$root_json" || return 1 ;;
       noqueue) ;;
       mq)
         [ "$(tc -j qdisc show dev "$iface" | jq -r '.[] | select(.root == true) | .kind' | head -n1)" = 'mq' ] || return 1
@@ -764,7 +917,7 @@ restore_qdiscs() {
         for ((j=0; j<leaf_count; j++)); do
           leaf_json="$(jq -c ".[$i].qdiscs | map(select(has(\"parent\"))) | .[$j]" "$QDISC_STATE_FILE")"
           parent="$(jq -r '.parent' <<<"$leaf_json")"; kind="$(jq -r '.kind' <<<"$leaf_json")"
-          case "$kind" in fq) tc qdisc replace dev "$iface" parent "$parent" fq ;; fq_codel) restore_fq_codel "$iface" leaf "$parent" "$leaf_json" ;; *) return 1 ;; esac
+          case "$kind" in fq) : ;; fq_codel) restore_fq_codel "$iface" leaf "$parent" "$leaf_json" || return 1 ;; *) return 1 ;; esac
         done
         ;;
       *) return 1 ;;
@@ -816,9 +969,131 @@ restore_original_sysctls() {
     sysctl_defined_elsewhere "$key" && continue
     value="$(jq -r --arg key "$key" '.original_sysctls[$key] // empty' "$STATE_FILE")"
     [ -n "$value" ] || continue
-    sysctl -q -w "${key}=${value}" || failures=$((failures + 1))
+    if ! sysctl -q -w "${key}=${value}"; then
+      error "回滚步骤失败：无法恢复 sysctl ${key}。"
+      failures=$((failures + 1))
+    fi
   done
   [ "$failures" -eq 0 ]
+}
+
+project_managed_files_exist() {
+  local path
+  for path in "$SYSCTL_FILE" "$JOURNAL_FILE" "$FQ_HELPER" "$FQ_SERVICE"; do
+    if [ -e "$path" ] || [ -L "$path" ]; then return 0; fi
+  done
+  return 1
+}
+
+qdisc_snapshot_file_is_valid() {
+  [ -f "$QDISC_STATE_FILE" ] && [ ! -L "$QDISC_STATE_FILE" ] || return 1
+  [ "$(stat -c '%u' "$QDISC_STATE_FILE" 2>/dev/null || true)" = '0' ] || return 1
+  [ -s "$QDISC_STATE_FILE" ] || return 1
+  jq -e -s '
+    length == 1 and
+    (.[0] | type == "array" and length > 0) and
+    all(.[0][];
+      (.interface | type == "string") and (.interface | length > 0) and
+      (.qdiscs | type == "array") and (.qdiscs | length > 0) and
+      ([.qdiscs[] | select(.root == true)] | length == 1))
+  ' "$QDISC_STATE_FILE" >/dev/null 2>&1
+}
+
+qdisc_snapshot_semantically_matches_current() {
+  QDISC_MATCH_REASON=''
+  qdisc_snapshot_file_is_valid || { QDISC_MATCH_REASON="快照缺失、为空、所有权异常或结构无效：${QDISC_STATE_FILE}"; return 1; }
+  local count i iface saved current filter
+  filter='map({base:{kind,parent:(.parent // ""),root:(.root // false),options:((.options // {}) | del(.target,.interval,.ce_threshold))},handle:(.handle // ""),times:{target:(.options.target // null),interval:(.options.interval // null),ce_threshold:(.options.ce_threshold // null)}}) | sort_by([.base.root,.base.parent,.base.kind])'
+  count="$(jq 'length' "$QDISC_STATE_FILE")"
+  for ((i=0; i<count; i++)); do
+    iface="$(jq -r ".[$i].interface" "$QDISC_STATE_FILE")"
+    saved="$(jq -cS ".[$i].qdiscs | ${filter}" "$QDISC_STATE_FILE")" || {
+      QDISC_MATCH_REASON="无法解析 ${iface} 的原始快照"; return 1;
+    }
+    current="$(tc -j qdisc show dev "$iface" | jq -cS "$filter")" || {
+      QDISC_MATCH_REASON="无法读取 ${iface} 的当前 qdisc"; return 1;
+    }
+    if ! jq -en --argjson saved "$saved" --argjson current "$current" '
+      def close_time($a; $b):
+        ($a == $b) or
+        (($a | type) == "number" and ($b | type) == "number" and
+         (($a - $b) >= -1 and ($a - $b) <= 1));
+      def handle_matches($saved_handle; $current_handle):
+        ($saved_handle == "" or $saved_handle == "0:" or
+         $saved_handle == $current_handle);
+      ($saved | length) == ($current | length) and
+      all(range(0; $saved | length);
+        $saved[.].base == $current[.].base and
+        handle_matches($saved[.].handle; $current[.].handle) and
+        close_time($saved[.].times.target; $current[.].times.target) and
+        close_time($saved[.].times.interval; $current[.].times.interval) and
+        close_time($saved[.].times.ce_threshold; $current[.].times.ce_threshold))
+    ' >/dev/null; then
+      QDISC_MATCH_REASON="${iface} 语义不一致：saved=${saved} current=${current}"
+      return 1
+    fi
+  done
+}
+
+qdisc_snapshot_matches_current() {
+  QDISC_MATCH_REASON=''
+  local expected_hash actual_hash
+  expected_hash="$(state_get '.qdisc.sha256')" || { QDISC_MATCH_REASON='状态中缺少 qdisc.sha256'; return 1; }
+  actual_hash="$(sha256sum "$QDISC_STATE_FILE" 2>/dev/null | awk '{print $1}')"
+  [ -n "$expected_hash" ] && [ "$actual_hash" = "$expected_hash" ] || {
+    QDISC_MATCH_REASON="快照哈希不匹配：expected=${expected_hash:-missing} actual=${actual_hash:-missing}"
+    return 1
+  }
+  qdisc_snapshot_semantically_matches_current
+}
+
+original_sysctls_match_current() {
+  local key expected actual
+  for key in "${PROFILE_SYSCTL_KEYS[@]}"; do
+    sysctl_defined_elsewhere "$key" && continue
+    expected="$(jq -r --arg key "$key" '.original_sysctls[$key] // empty' "$STATE_FILE")"
+    [ -n "$expected" ] || continue
+    actual="$(sysctl -n "$key" 2>/dev/null || true)"
+    [ "$(normalize_sysctl_value "$actual")" = "$(normalize_sysctl_value "$expected")" ] || return 1
+  done
+}
+
+rollback_already_restored() {
+  project_managed_files_exist && return 1
+  state_get '.swap.created_by_script' | grep -qx false || return 1
+  qdisc_snapshot_matches_current || return 1
+  original_sysctls_match_current
+}
+
+recover_empty_legacy_state() {
+  [ "$ALLOW_EMPTY_STATE_RECOVERY" = '1' ] ||
+    die "$EXIT_CONFLICT" 'recover 只用于已确认的 rc.2 首次系统写入前空状态；确认历史证据后设置 ALLOW_EMPTY_STATE_RECOVERY=1。'
+  state_exists || die "$EXIT_CONFLICT" '没有需要恢复的 state.json。'
+  state_file_is_valid && die "$EXIT_CONFLICT" 'state.json 有效；请使用 rollback，不得使用 recover。'
+  [ -d "$STATE_DIR" ] && [ ! -L "$STATE_DIR" ] &&
+    [ "$(stat -c '%u' "$STATE_DIR" 2>/dev/null || true)" = '0' ] ||
+    die "$EXIT_CONFLICT" "状态目录所有权或类型异常：${STATE_DIR}"
+  if ! jq -e -s 'length == 0' "$STATE_FILE" >/dev/null 2>&1; then
+    die "$EXIT_CONFLICT" 'state.json 不是空 JSON 流；拒绝把一般损坏状态当作 rc.2 遗留状态恢复。'
+  fi
+  project_managed_files_exist &&
+    die "$EXIT_CONFLICT" '仍存在项目管理文件；无法证明 rc.2 在首次系统写入前失败。'
+  [ ! -e "$SWAP_FILE" ] && [ ! -L "$SWAP_FILE" ] ||
+    die "$EXIT_CONFLICT" "检测到 ${SWAP_FILE}；空状态无法证明 swap 所有权，拒绝恢复。"
+  grep -Fqx "${SWAP_FILE} none swap sw 0 0" /etc/fstab 2>/dev/null &&
+    die "$EXIT_CONFLICT" "检测到 ${SWAP_FILE} 的 fstab 行；拒绝恢复。"
+  if systemctl is-active --quiet "$FQ_SERVICE_NAME" 2>/dev/null; then
+    die "$EXIT_CONFLICT" "${FQ_SERVICE_NAME} 仍在运行；拒绝恢复。"
+  fi
+  if ! qdisc_snapshot_semantically_matches_current; then
+    die "$EXIT_CONFLICT" "当前 qdisc 与 rc.2 快照不一致；拒绝恢复：${QDISC_MATCH_REASON}"
+  fi
+  local quarantine
+  quarantine="${STATE_DIR}.recovered-$(date -u +'%Y%m%dT%H%M%SZ')"
+  [ ! -e "$quarantine" ] || die "$EXIT_CONFLICT" "恢复证据目录已存在：${quarantine}"
+  mv -- "$STATE_DIR" "$quarantine" || die "$EXIT_CONFLICT" '无法隔离空状态目录。'
+  info "已隔离 rc.2 空状态；没有删除证据：${quarantine}"
+  info 'State: UNMANAGED。现在可重新执行 preflight。'
 }
 
 rollback_internal() {
@@ -827,7 +1102,7 @@ rollback_internal() {
   phase="$(state_get '.state')"
   if [ "$phase" = 'SWAP_RETAINED' ]; then
     if [ "$force_purge" = '1' ] || [ "$PURGE_CREATED_SWAP" = '1' ]; then
-      purge_owned_swap || { state_set_phase 'DEGRADED'; return 1; }
+      purge_owned_swap || { state_set_phase 'DEGRADED' || true; return 1; }
       rm -rf -- "$STATE_DIR"
       info '保留的应急 swap 已清理，管理状态已删除。'
     else
@@ -835,26 +1110,66 @@ rollback_internal() {
     fi
     return 0
   fi
+  case "$phase" in
+    PREPARED | ROLLBACK_PENDING | DEGRADED)
+      if rollback_already_restored; then
+        rm -rf -- "$STATE_DIR"
+        info "状态 ${phase} 未检测到仍生效的项目配置；已清理残留事务状态。"
+        return 0
+      fi
+      ;;
+  esac
   for path in "$SYSCTL_FILE" "$JOURNAL_FILE" "$FQ_HELPER" "$FQ_SERVICE"; do
     [ -e "$path" ] || continue
     assert_owned_file "$path"
   done
-  state_set_phase 'ROLLBACK_PENDING'
+  state_set_phase 'ROLLBACK_PENDING' || return 1
   if [ -e "$FQ_SERVICE" ]; then
-    systemctl disable --now "$FQ_SERVICE_NAME" >/dev/null 2>&1 || failures=$((failures + 1))
+    if ! systemctl disable --now "$FQ_SERVICE_NAME" >/dev/null 2>&1; then
+      error "回滚步骤失败：无法停止或禁用 ${FQ_SERVICE_NAME}。"
+      failures=$((failures + 1))
+    fi
   fi
-  restore_qdiscs || failures=$((failures + 1))
-  rm -f -- "$SYSCTL_FILE" "$JOURNAL_FILE" "$FQ_HELPER" "$FQ_SERVICE"
-  systemctl daemon-reload || failures=$((failures + 1))
-  sysctl --system >/dev/null || failures=$((failures + 1))
+  if qdisc_snapshot_matches_current; then
+    info '当前 qdisc 已与原始快照一致，无需重建。'
+  else
+    warn "当前 qdisc 与原始快照未判定为一致：${QDISC_MATCH_REASON}"
+    if ! restore_qdiscs; then
+      error '回滚步骤失败：无法恢复原始 qdisc。'
+      failures=$((failures + 1))
+    elif ! qdisc_snapshot_semantically_matches_current; then
+      error "回滚步骤失败：qdisc 恢复后与原始快照不一致：${QDISC_MATCH_REASON}"
+      failures=$((failures + 1))
+    else
+      info 'qdisc 已恢复并通过原始快照语义验证。'
+    fi
+  fi
+  if ! rm -f -- "$SYSCTL_FILE" "$JOURNAL_FILE" "$FQ_HELPER" "$FQ_SERVICE"; then
+    error '回滚步骤失败：无法删除一个或多个项目管理文件。'
+    failures=$((failures + 1))
+  fi
+  if ! systemctl daemon-reload; then
+    error '回滚步骤失败：systemctl daemon-reload。'
+    failures=$((failures + 1))
+  fi
+  if ! sysctl --system >/dev/null; then
+    error '回滚步骤失败：sysctl --system；请检查上方内核参数错误。'
+    failures=$((failures + 1))
+  fi
   restore_original_sysctls || failures=$((failures + 1))
   systemctl try-restart systemd-journald.service >/dev/null 2>&1 || true
   if [ "$force_purge" = '1' ] || [ "$PURGE_CREATED_SWAP" = '1' ]; then
-    purge_owned_swap || failures=$((failures + 1))
+    if ! purge_owned_swap; then
+      error '回滚步骤失败：无法安全清理脚本创建的 swap。'
+      failures=$((failures + 1))
+    fi
   fi
-  if [ "$failures" -ne 0 ]; then state_set_phase 'DEGRADED'; return 1; fi
+  if [ "$failures" -ne 0 ]; then
+    state_set_phase 'DEGRADED' || error '同时无法记录 DEGRADED；原状态文件已保留。'
+    return 1
+  fi
   if state_get '.swap.created_by_script' | grep -qx true && [ -e "$SWAP_FILE" ]; then
-    state_set_phase 'SWAP_RETAINED'
+    state_set_phase 'SWAP_RETAINED' || return 1
     rm -f -- "$QDISC_STATE_FILE"
     info "系统配置已回滚；应急 swap 保留：${SWAP_FILE}"
   else
@@ -867,9 +1182,11 @@ apply_failure_handler() {
   local rc="$1"
   trap - EXIT ERR INT TERM
   [ "$APPLY_ACTIVE" -eq 1 ] || exit "$rc"
-  error "应用中断或失败（exit=${rc}），开始事务回滚。"
+  error "应用中断或失败（exit=${rc}）。"
   if state_exists && rollback_internal 1; then
     error '自动回滚完成。'
+  elif ! state_exists && cleanup_uncommitted_state; then
+    error '事务状态尚未提交，未写入系统配置；不完整状态已清理。'
   else
     error "自动回滚不完整；请保留 ${STATE_DIR} 并执行 status。"
   fi
@@ -877,13 +1194,13 @@ apply_failure_handler() {
 }
 
 apply_settings() {
-  run_preflight
+  run_preflight apply
   if state_exists; then
     local state saved_port saved_rtt saved_buf
     state="$(state_get '.state')"
     saved_port="$(state_get '.network.port_speed_mbps')"; saved_rtt="$(state_get '.network.target_rtt_ms')"; saved_buf="$(state_get '.network.buffer_max_bytes')"
     [ "$saved_port" = "$PORT_SPEED_MBPS" ] && [ "$saved_rtt" = "$BUFFER_TARGET_RTT_MS" ] && [ "$saved_buf" = "$BUF_MAX" ] ||
-      die "$EXIT_CONFLICT" '已安装档位与当前参数不同；请先 rollback。'
+      die "$EXIT_CONFLICT" "已安装参数与当前参数不同：saved(port=${saved_port},rtt=${saved_rtt},buf=${saved_buf}) current(port=${PORT_SPEED_MBPS},rtt=${BUFFER_TARGET_RTT_MS},buf=${BUF_MAX})；请先 rollback。"
     if [ "$state" = 'VERIFIED' ]; then verify_settings || die "$EXIT_VERIFY" '已安装配置验证失败。'; info '配置已存在且验证通过，无需重复写入。'; return 0; fi
     die "$EXIT_CONFLICT" "存在状态 ${state}；重新应用前请先完成 rollback，保留 swap 时需显式 purge 后再 apply。"
   fi
@@ -891,20 +1208,21 @@ apply_settings() {
   trap 'rc=$?; [ "$rc" -eq 0 ] || apply_failure_handler "$rc"' EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
-  write_initial_state
-  write_sysctl_profile
-  refresh_managed_files
-  write_journal_profile
-  refresh_managed_files
-  write_fq_helper
-  apply_kernel_settings
-  state_set_phase 'APPLIED'
-  create_swap_if_needed
-  refresh_managed_files
+  write_initial_state || die "$EXIT_CONFLICT" '无法建立初始事务状态。'
+  state_set_phase 'APPLYING' || die "$EXIT_CONFLICT" '无法记录 APPLYING。'
+  write_sysctl_profile || die "$EXIT_CONFLICT" '无法写入 sysctl 配置。'
+  refresh_managed_files || die "$EXIT_CONFLICT" '无法记录 sysctl 文件所有权。'
+  write_journal_profile || die "$EXIT_CONFLICT" '无法写入 journald 配置。'
+  refresh_managed_files || die "$EXIT_CONFLICT" '无法记录 journald 文件所有权。'
+  write_fq_helper || die "$EXIT_CONFLICT" '无法写入或记录 fq helper。'
+  apply_kernel_settings || die "$EXIT_CONFLICT" '无法应用内核或 systemd 配置。'
+  create_swap_if_needed || die "$EXIT_CONFLICT" 'swap 处理失败。'
+  state_set_phase 'APPLIED' || die "$EXIT_CONFLICT" '无法记录 APPLIED。'
+  refresh_managed_files || die "$EXIT_CONFLICT" '无法刷新管理文件所有权。'
   if ! verify_settings; then
     die "$EXIT_VERIFY" '应用后验证失败。'
   fi
-  state_set_phase 'VERIFIED'
+  state_set_phase 'VERIFIED' || die "$EXIT_CONFLICT" '无法记录 VERIFIED。'
   APPLY_ACTIVE=0
   trap - EXIT ERR INT TERM
   info '应用完成。建议重启后再次执行 verify。'
@@ -926,7 +1244,7 @@ show_status() {
 
 usage() {
   cat <<EOF_USAGE
-Usage: $0 {preflight|apply|verify|status|rollback}
+Usage: $0 {preflight|apply|verify|status|rollback|recover}
 
 Environment:
   PORT_SPEED_MBPS=100..1000       default 200
@@ -935,6 +1253,7 @@ Environment:
   ENABLE_SWAP=0|1                 default 1
   SWAP_MB=512..${SWAP_MAX_MIB}             default 1024
   PURGE_CREATED_SWAP=0|1          default 0
+  ALLOW_EMPTY_STATE_RECOVERY=0|1  default 0; only for confirmed rc.2 pre-write empty state
   PROXY_SERVICE_UNITS='x-ui.service ...'
   REQUIRE_PROXY_SERVICE=0|1       default 0
 EOF_USAGE
@@ -950,7 +1269,10 @@ main() {
       need_root; acquire_lock; apply_settings
       ;;
     verify)
-      need_root; acquire_lock; ensure_required_tools; check_supported_os; validate_inputs; validate_state_file
+      need_root; acquire_lock
+      state_exists || die "$EXIT_VERIFY" '当前主机尚未安装本项目配置；请先执行 preflight，确认通过后再执行 apply。'
+      ensure_required_tools; check_supported_os; validate_inputs
+      validate_state_file
       verify_settings || die "$EXIT_VERIFY" '验证失败。'
       ;;
     status)
@@ -960,6 +1282,10 @@ main() {
       need_root; acquire_lock; ensure_required_tools; check_supported_os
       state_exists || { info '没有可回滚的管理状态。'; exit 0; }
       rollback_internal 0 || die "$EXIT_ROLLBACK" '回滚不完整；状态已保留。'
+      ;;
+    recover)
+      need_root; acquire_lock; ensure_required_tools; check_supported_os
+      recover_empty_legacy_state
       ;;
     -h | --help | help) usage ;;
     *) usage >&2; exit "$EXIT_USAGE" ;;

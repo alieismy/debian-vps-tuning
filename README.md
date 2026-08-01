@@ -4,7 +4,7 @@
 
 脚本使用 BBR + fq、受控 TCP 缓冲、常规队列参数、应急 swap 和 journald 空间限制，目标是形成可预检、可验证、可重复执行、可回滚的配置。它不承诺在所有线路上提高吞吐或降低延迟。
 
-> 当前版本：`v0.1.0-rc.1`。已完成本地静态检查后才可作为预发布版本；正式 `v0.1.0` 还需要完成 [目标 VPS 运行验收](docs/validation.md)。
+> 当前版本：`v0.1.0-rc.8`。已完成本地静态检查并取得部分 Debian 12 目标机证据，可作为预发布版本；正式 `v0.1.0` 还需要完成 [目标 VPS 运行验收](docs/validation.md)。
 
 ## 适用场景
 
@@ -79,10 +79,11 @@ Debian 12 适合已经部署、依赖既定兼容性或希望维持现有环境�
 
 ## VPS 初始化
 
+以下命令均假定已经进入 root shell（提示符通常为 `#`，`id -u` 输出 `0`），因此示例不使用 `sudo`。厂商最小化镜像通常可以直接以 root 登录，也可能没有安装 `sudo`。
+
 建议先更新系统并查看升级计划：
 
 ```bash
-sudo -i
 apt update
 apt -s full-upgrade
 apt full-upgrade -y
@@ -151,7 +152,7 @@ chmod +x ./debian13-1c1g-vps-tuning.sh
 ### 1. 只读预检
 
 ```bash
-sudo env PORT_SPEED_MBPS=200 \
+env PORT_SPEED_MBPS=200 \
   bash ./debian13-1c1g-vps-tuning.sh preflight
 ```
 
@@ -167,24 +168,26 @@ sudo env PORT_SPEED_MBPS=200 \
 - 固定 swap 路径已被其他文件占用；
 - 磁盘空间不足。
 
+自动 swap 文件只在 `ext2`、`ext3`、`ext4` 和 `xfs` 根文件系统上启用。你的 XFS SSD 属于允许范围。Btrfs、ZFS、overlay、NFS、FUSE 以及未验证的其他文件系统会给出警告并跳过自动创建 swap，不影响其他网络配置继续应用。
+
 ### 2. 应用
 
 ```bash
-sudo env PORT_SPEED_MBPS=200 \
+env PORT_SPEED_MBPS=200 \
   bash ./debian13-1c1g-vps-tuning.sh apply
 ```
 
 应用成功后重启：
 
 ```bash
-sudo reboot
+reboot
 ```
 
 ### 3. 重启后验证
 
 ```bash
-sudo bash ./debian13-1c1g-vps-tuning.sh verify
-sudo bash ./debian13-1c1g-vps-tuning.sh status
+bash ./debian13-1c1g-vps-tuning.sh verify
+bash ./debian13-1c1g-vps-tuning.sh status
 ```
 
 ### 4. 安装 3X-UI 后验证
@@ -194,7 +197,7 @@ sudo bash ./debian13-1c1g-vps-tuning.sh status
 安装并配置 3X-UI 后：
 
 ```bash
-sudo env REQUIRE_PROXY_SERVICE=1 \
+env REQUIRE_PROXY_SERVICE=1 \
   PROXY_SERVICE_UNITS='x-ui.service' \
   bash ./debian13-1c1g-vps-tuning.sh verify
 ```
@@ -206,21 +209,21 @@ sudo env REQUIRE_PROXY_SERVICE=1 \
 100 Mbps：
 
 ```bash
-sudo env PORT_SPEED_MBPS=100 \
+env PORT_SPEED_MBPS=100 \
   bash ./debian12-1c1g-vps-tuning.sh apply
 ```
 
 200 Mbps：
 
 ```bash
-sudo env PORT_SPEED_MBPS=200 \
+env PORT_SPEED_MBPS=200 \
   bash ./debian12-1c2g-vps-tuning.sh apply
 ```
 
 1000 Mbps：
 
 ```bash
-sudo env PORT_SPEED_MBPS=1000 \
+env PORT_SPEED_MBPS=1000 \
   bash ./debian13-1c2g-vps-tuning.sh apply
 ```
 
@@ -251,18 +254,31 @@ sudo env PORT_SPEED_MBPS=1000 \
 
 同一参数下重复执行 `apply` 时，脚本先验证当前配置；验证通过后不重复写入。使用不同资源脚本或改变带宽/缓冲参数前，应先回滚现有配置。
 
+状态更新先由 `jq` 写入同目录临时文件，随后检查命令退出码、非空、仅含一个 JSON 对象及完整 schema，全部通过后才原子替换 `state.json`。空文件、空白文件、多个 JSON 文档或更新失败均不得覆盖上一个有效状态。
+
+### rc.2 空状态恢复
+
+早期 rc.2 曾在初始 JSON 构造失败时留下空 `state.json`，但 qdisc 快照仍然存在。`recover` 只处理这一已知的“首次系统写入前”遗留场景，并要求显式确认：
+
+```bash
+env ALLOW_EMPTY_STATE_RECOVERY=1 \
+  bash ./debian12-1c1g-vps-tuning.sh recover
+```
+
+该操作只有在以下条件全部成立时才会隔离状态目录：`state.json` 是空 JSON 流、没有项目管理文件、没有 `/swapfile-proxy` 或对应 fstab 行、fq helper 未运行，并且当前 qdisc 与保存快照语义一致。原状态目录会改名保留证据，不会被删除。一般 JSON 损坏、有效状态或无法证明发生在首次系统写入前的场景不得使用 `recover`。
+
 ## 回滚
 
 默认回滚系统配置，但保留脚本创建的应急 swap：
 
 ```bash
-sudo bash ./debian13-1c1g-vps-tuning.sh rollback
+bash ./debian13-1c1g-vps-tuning.sh rollback
 ```
 
 如果确认内存充足，并希望同时删除脚本创建的 swap：
 
 ```bash
-sudo env PURGE_CREATED_SWAP=1 \
+env PURGE_CREATED_SWAP=1 \
   bash ./debian13-1c1g-vps-tuning.sh rollback
 ```
 
@@ -271,6 +287,12 @@ sudo env PURGE_CREATED_SWAP=1 \
 ## qdisc 边界
 
 脚本支持普通根 `fq`、`fq_codel`、`noqueue`，以及根 `mq` 且叶子为 `fq`/`fq_codel` 的常规云网卡。复杂的 HTB、TBF、CAKE 或自定义层次会在预检阶段阻断。这样可以避免用简单的 `tc qdisc replace ... root fq` 破坏现有多队列或流量整形结构。
+
+已有根 `fq` 和 `mq` 下已有的 `fq` 叶子不会被重复替换，回滚时也不会用默认 fq 重置其自定义参数。脚本只把确认支持恢复的 `fq_codel` 根或叶子切换为 fq，并在回滚时按预先保存的参数恢复。
+
+`tc` 的显示格式与命令输入格式并不完全相同，例如状态输出可显示 `limit 10240p`，恢复命令仍使用 `limit 10240`。脚本按 `tc -j` 保存数值并按命令输入语法重建；比较 `target`、`interval` 和 `ce_threshold` 时只容忍内核/工具回显产生的 ±1 微秒量化差异，其他受支持参数仍要求一致。
+
+rollback 在执行 qdisc 恢复命令后会重新读取实际状态；只有恢复结果与原始快照语义一致，才允许删除状态和快照。原快照中的 `handle 0:` 表示未指定，允许内核为 classless qdisc 自动分配运行时 handle；显式非零 handle 则会尝试恢复并严格比较。后置验证失败时状态保留为 `DEGRADED`，不得报告完整回滚。
 
 ## Docker 边界
 
