@@ -31,8 +31,15 @@
 | C12 | 菜单 `apply` | 再次确认；N/Enter 不 apply | 目标 VPS 待测 |
 | C13 | 无 TTY 且无 action | 返回 usage，不等待输入 | 目标 Linux 待测 |
 | C14 | 状态档位与检测档位不一致 | 阻断，不自动换 profile | fixture 通过；目标 VPS 待测 |
-| C15 | 固定 rc.9 Release assets | 下载清单和唯一 profile，SHA-256 通过 | fixture 和 Debian 13 1C1G/1000 Mbps 目标机通过；八个公开资产重新下载校验通过 |
+| C15 | 固定 rc.10 Release assets | 下载清单和唯一 profile，SHA-256 通过 | 本地 fixture 通过；发布后须从公开地址重下载并复核八个资产 |
 | C16 | 已安装状态下无 `--port`/环境变量地重复 `apply` | 复用状态中的端口带宽；显式参数仍优先；无效状态值阻断 | fixture 通过；目标 VPS 待测 |
+| C17 | `diagnose` | 默认 5 秒前后采样；TCP/softnet 为十进制增量；读取 qdisc、队列、RPS/XPS/IRQ、ethtool 和 Xray sockopt；无系统配置写入、无主动流量 | 静态检查通过；目标 VPS 待测 |
+| C18 | `benchmark` 未提供 host、无 iperf3、无效范围 | 明确拒绝；不安装软件、不改防火墙、不选择公共服务器 | 静态检查通过；目标 VPS 待测 |
+| C19 | 用户授权的 `benchmark` | 仅向指定 iperf3 服务端执行 upload/download/both；并行 1–4；输出 JSON 与计数增量；保留 iperf3 退出码语义 | 目标 VPS 待测 |
+| C20 | `update` 自动发现/`--target` | 同一 `major.minor` 内，rc 通道可选更高 rc 或稳定版，稳定通道排除 prerelease；显式目标允许跨线或 prerelease；拒绝降级和重复升级 | 版本优先级、稳定/rc 通道、非法版本 fixture 通过；GitHub API 真实查询待测 |
+| C21 | `update` 只读升级检查 | 校验当前/目标资产，当前 verify、目标 `UPDATE_PREFLIGHT=1 preflight` 通过后输出固定 URL、哈希、端口和人工迁移顺序；不得调用 rollback/purge/apply/reboot | 调用顺序 fixture 与真实 `check_preflight_state` 状态矩阵通过；目标 VPS 只读 update 待测 |
+| C22 | 外部 sysctl 文件以相同值重复定义受管 key | `preflight`/`apply` 阻断；已安装状态的独立 `verify` 返回非零；`diagnose` 只读报告；项目自身文件及其符号链接不误报 | 同值冲突、受管文件别名和外部别名去重 fixture 通过；目标 VPS 负向注入不在生产机执行 |
+| C23 | 旧总控与新版本 `SHA256SUMS`/profile 同目录 | 返回完整性错误，提示可能混用不同 Release 并要求独立目录；不得联网回退或修改系统 | 混合版本目录 fixture 通过；Debian 13 rc.9→rc.10 实测安全拒绝并通过隔离目录恢复 |
 
 本地检查入口：
 
@@ -59,18 +66,33 @@ shellcheck -x \
 
 | ID | 系统 | 资源 | 磁盘/根文件系统 | 端口 | 内核基线 | 定位 | 状态 |
 |---|---|---|---:|---:|---|---|---|
-| T1 | Debian 12 | 1C1G | 10 GB / XFS | 200 Mbps | `6.1.0-51-cloud-amd64` | 主力/首要门槛 | 待执行 |
-| T2 | Debian 12 | 1C2G | 15 GB / XFS | 200 Mbps | `6.1.0-51-cloud-amd64` | 主力/首要门槛 | rc.7 部分通过；rc.8 rollback 待复测 |
+| T1 | Debian 12 | 1C1G | 10 GB / XFS | 200 Mbps | `6.1.0-51-cloud-amd64` | 主力/首要门槛 | rc.8 退出、rc.10 apply、重启严格 verify、重复 apply 通过；最终修复哈希待目标机复核 |
+| T2 | Debian 12 | 1C2G | 15 GB / XFS | 200 Mbps | `6.1.0-51-cloud-amd64` | 主力/首要门槛 | 旧状态经 rc.8 profile 退出、rc.10 apply、重启严格 verify、重复 apply 通过；最终修复哈希待目标机复核 |
 | T3 | Debian 13 | 1C1G | 以实机为准 | 200 Mbps | `6.12.100+deb13-cloud-amd64` | 系统兼容 | 待执行 |
 | T4 | Debian 13 | 1C2G | 以实机为准 | 200 Mbps | `6.12.100+deb13-cloud-amd64` | 系统兼容 | 待执行 |
-| T5 | 与脚本匹配的 Debian 版本 | 1C1G | 10 GB | 100 Mbps | 以实机为准 | 低带宽边界 | 待执行 |
-| T6 | Debian 13 | 1C1G | 容量未采集 / ext4 | 1000 Mbps | `6.12.100+deb13-amd64` | 高带宽边界 | rc.9 主路径通过；重复 apply、rollback、业务性能待执行 |
+| T5 | 与脚本匹配的 Debian 版本 | 1C1G | 10 GB | 100 Mbps | 以实机为准 | 低带宽边界 | Debian 12 v5→rc.10、重启严格 verify、重复 apply 通过；最终修复哈希待目标机复核 |
+| T6 | Debian 13 | 1C1G | 容量未采集 / ext4 | 1000 Mbps | `6.12.100+deb13-amd64` | 高带宽边界 | rc.9 完整退出和 swap 所有权迁移、rc.10 apply、重启严格 verify、BBR/fq/swap、重复 apply 通过；最终修复哈希待目标机复核 |
 | T7 | Debian 12 | 2C2G | 以实机为准 | 200 Mbps | `6.1.x`，以实机为准 | 2C2G 资源契约 | 待执行 |
 | T8 | Debian 13 | 2C2G | 以实机为准 | 200 Mbps | `6.12.x`，以实机为准 | 2C2G 系统兼容 | 待执行 |
 | T9 | Debian 12 | 1C512MB | 以实机为准 | 200 Mbps | `6.1.x`，以实机为准 | 最小内存边界 | 待执行 |
 | T10 | Debian 13 | 1C512MB | 以实机为准 | 200 Mbps | `6.12.x`，以实机为准 | 最小内存系统兼容 | 待执行 |
 
 T1、T2 必须通过才能发布首个稳定版；T3、T4 是 Debian 13 稳定版门槛；T5、T6 用于确认 100–1000 Mbps 输入边界，不能用 200 Mbps 的结果代替。T7、T8 用于证明同一 `1c2g` 兼容 profile 在 2 vCPU 下的完整生命周期；T9、T10 用于证明 512 MiB 的缓冲截断、journald、swap 和 3X-UI 生命周期。本地 fixture 不能替代目标机证据。
+
+上述 rc.10 目标机结果绑定测试时日志中的具体 SHA-256。发布前最后两项 Major 仅改变冲突检测、错误说明、文档和测试，不改变写入的 sysctl/qdisc/swap/NOFILE 参数；重新生成后的最终哈希仍须执行本地定向回归。由于当前环境没有这些 VPS 的 SSH 凭据，最终哈希的目标机复核不能由本地 fixture 冒充，作为 Pre-release 的后续确认项保留。
+
+## rc.10 自动缓冲矩阵
+
+该矩阵验证的是输入算法和资源上限，不是吞吐结论。目标 RTT 为 200 ms；512M/1G/2G 的自动目标分别为 1×/1.25×/1.5×BDP，再向上取 16/32/64 MiB 档。
+
+| 资源档 | 100 Mbps | 200 Mbps | 500 Mbps | 1000 Mbps | fixture |
+|---|---:|---:|---:|---:|---|
+| 1C512MB | 16 MiB | 16 MiB | 16 MiB | 16 MiB + 截断警告 | 1000 Mbps 通过；其余待补 |
+| 1C1GB | 16 MiB | 16 MiB | 16 MiB | 32 MiB | 500/1000 Mbps 通过；100/200 待补 |
+| 1C2GB/2C2GB | 16 MiB | 16 MiB | 32 MiB | 64 MiB | 200/500/1000 Mbps 通过；100 待补 |
+| 2C2GB | 16 MiB | 16 MiB | 32 MiB | 64 MiB | 与 1C2GB 共用算法；控制器 CPU fixture 通过，目标机待测 |
+
+对 500/1000 Mbps 的 2G 档，rc.10 与 rc.9 的配置可能不同，必须先通过只读 update 检查，再人工执行 rollback → reboot → preflight → apply → reboot → verify 建立新状态，不得把 rc.9 的 verify 结果记作 rc.10。200 Mbps 主力档的数值虽不变，rc.10 的诊断、TFO 可见性、benchmark 和 update 仍需独立运行验证。
 
 ## 每台目标机的生命周期矩阵
 
@@ -90,6 +112,8 @@ T1、T2 必须通过才能发布首个稳定版；T3、T4 是 Debian 13 稳定�
 | M9 | 普通 `rollback` | 恢复 qdisc/sysctl，删除 drop-in；脚本 swap 默认保留；状态可追溯 | 待执行 | rc.7 实际恢复通过；rc.8 后置验证待复测 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
 | M10 | 回滚后重启 | `status` 正确；无残留 unit/sysctl/journald/drop-in | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
 | M11 | 显式 purge | `swapoff` 成功才删除 swap/fstab 行；失败时保留证据 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M12 | 业务负载期间 `diagnose` | 采样窗口内记录 TCP/softnet 增量、qdisc 前后计数、队列/IRQ 与 Xray sockopt；无配置写入 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M13 | 授权 iperf3 benchmark | 单流优先；保存服务端位置、方向、吞吐、重传、CPU/softnet/qdisc 增量；确认不当作代理业务结果 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
 
 状态初始化还必须覆盖 jq 构造器失败路径：状态 JSON 未成功提交时，不得创建 sysctl、journald、helper、unit 或 x-ui drop-in；脚本应删除本次进程创建的 qdisc 快照、JSON 临时文件和空状态目录，并明确报告“未写入系统配置”。
 

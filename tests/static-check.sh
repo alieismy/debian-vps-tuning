@@ -59,9 +59,13 @@ if grep -nE "^[[:space:]]*(${forbidden})[[:space:]]*=" "${scripts[@]}"; then
   exit 1
 fi
 
-forbidden_features='rps_cpus|rps_flow_cnt|xps_cpus|rps_sock_flow_entries|smp_affinity|GOMAXPROCS|zram|irqbalance'
+forbidden_features='rps_sock_flow_entries|smp_affinity|GOMAXPROCS|zram|irqbalance'
 if grep -nE "${forbidden_features}" "${scripts[@]}" "$controller" tools/profile-template.sh.in; then
   printf 'out-of-scope CPU steering or compressed-swap feature detected\n' >&2
+  exit 1
+fi
+if grep -nE '(echo|printf|tee).*(rps_cpus|rps_flow_cnt|xps_cpus|xps_rxqs)' "${scripts[@]}" tools/profile-template.sh.in; then
+  printf 'CPU steering queue write detected\n' >&2
   exit 1
 fi
 
@@ -69,7 +73,7 @@ expected_keys=17
 for script in "${scripts[@]}"; do
   actual="$(awk '/^PROFILE_SYSCTL_KEYS=\(/,/^\)/ {if ($1 ~ /^(net\.|vm\.)/) count++} END {print count+0}' "$script")"
   [ "$actual" -eq "$expected_keys" ] || { printf 'unexpected managed-key count: %s (%s)\n' "$script" "$actual" >&2; exit 1; }
-  grep -Fq "SCRIPT_VERSION='0.1.0-rc.9'" "$script"
+  grep -Fq "SCRIPT_VERSION='0.1.0-rc.10'" "$script"
   grep -Fq "STATE_SCHEMA_VERSION=3" "$script"
   grep -Fq 'PROFILE_CPU_MIN=' "$script"
   grep -Fq 'PROFILE_CPU_MAX=' "$script"
@@ -84,6 +88,8 @@ for script in "${scripts[@]}"; do
       grep -Fq "JOURNAL_SYSTEM_MAX_USE='64M'" "$script"
       grep -Fq "JOURNAL_RUNTIME_MAX_USE='16M'" "$script"
       grep -Fq '/ 1 vCPU / 512 MiB' "$script"
+      grep -Fq 'BUFFER_TARGET_NUMERATOR=1' "$script"
+      grep -Fq 'BUFFER_TARGET_DENOMINATOR=1' "$script"
       ;;
     *-1c1g-*)
       grep -Fq "PROFILE_CPU_MIN=1" "$script"
@@ -91,6 +97,8 @@ for script in "${scripts[@]}"; do
       grep -Fq "MAX_BUF_MAX=33554432" "$script"
       grep -Fq "JOURNAL_RUNTIME_MAX_USE='32M'" "$script"
       grep -Fq '/ 1 vCPU / 1 GiB' "$script"
+      grep -Fq 'BUFFER_TARGET_NUMERATOR=5' "$script"
+      grep -Fq 'BUFFER_TARGET_DENOMINATOR=4' "$script"
       ;;
     *-1c2g-*)
       grep -Fq "PROFILE_CPU_MIN=1" "$script"
@@ -98,6 +106,8 @@ for script in "${scripts[@]}"; do
       grep -Fq "MAX_BUF_MAX=67108864" "$script"
       grep -Fq "JOURNAL_RUNTIME_MAX_USE='64M'" "$script"
       grep -Fq '/ 1–2 vCPU / 2 GiB' "$script"
+      grep -Fq 'BUFFER_TARGET_NUMERATOR=3' "$script"
+      grep -Fq 'BUFFER_TARGET_DENOMINATOR=2' "$script"
       ;;
   esac
   grep -Fq "SWAP_FILE='/swapfile-proxy'" "$script"
@@ -109,6 +119,16 @@ for script in "${scripts[@]}"; do
   grep -Fq '尚未安装代理服务；x-ui.service 的 LimitNOFILE drop-in 已预置' "$script"
   grep -Fq 'show_diagnostics' "$script"
   grep -Fq '只读诊断：不会修改 sysctl、qdisc、systemd、swap 或代理服务' "$script"
+  grep -Fq 'run_network_benchmark' "$script"
+  grep -Fq 'tcpFastOpen=not-explicit' "$script"
+  grep -Fq 'report_sysctl_conflicts' "$script"
+  grep -Fq '即使值相同也属于重复配置归属' "$script"
+  grep -Fq 'verify 拒绝通过' "$script"
+  grep -Fq '只读诊断发现重复 sysctl 配置归属' "$script"
+  # shellcheck disable=SC2016  # Intentionally match literal jq variables.
+  grep -Fq 'buffer_target_numerator:$target_numerator' "$script"
+  # shellcheck disable=SC2016  # Intentionally match literal jq variables.
+  grep -Fq 'buffer_target_denominator:$target_denominator' "$script"
   grep -Fq "ext2 | ext3 | ext4 | xfs)" "$script"
   grep -Fq "ROOT_FS_TYPE='unknown'" "$script"
   grep -Fq "SWAP_CREATE_ALLOWED='0'" "$script"
@@ -117,6 +137,9 @@ for script in "${scripts[@]}"; do
   grep -Fq '检测到未完成的事务状态 ${phase}；请先执行 rollback，不要直接 apply。' "$script"
   # shellcheck disable=SC2016  # Intentionally match literal shell source.
   grep -Fq '检测到现有管理状态 ${phase}；已安装配置请执行 verify' "$script"
+  # shellcheck disable=SC2016  # Intentionally match literal shell source.
+  grep -Fq 'UPDATE_PREFLIGHT="${UPDATE_PREFLIGHT:-0}"' "$script"
+  grep -Fq '进入只读 update-preflight，不执行任何系统写入' "$script"
   grep -Fq 'run_preflight apply' "$script"
   # shellcheck disable=SC2016  # Intentionally match literal shell source.
   grep -Fq '[ "$context" = '\''apply'\'' ] || check_preflight_state' "$script"
@@ -136,6 +159,7 @@ for script in "${scripts[@]}"; do
   grep -Fq '事务状态尚未提交，未写入系统配置；不完整状态已清理。' "$script"
   grep -Fq "state_set_phase 'APPLYING'" "$script"
   grep -Fq "saved(port=\${saved_port},rtt=\${saved_rtt},buf=\${saved_buf})" "$script"
+  grep -Fq '升级配置必须先 rollback' "$script"
   [ "$(grep -Fc 'remove_fstab_swap_line || return 1' "$script")" -eq 2 ] || {
     printf 'fstab removal failure is not propagated by both swap purge paths: %s\n' "$script" >&2
     exit 1
@@ -175,20 +199,33 @@ for script in "${scripts[@]}"; do
     printf 'verify state guard must run before dependency checks: %s\n' "$script" >&2
     exit 1
   fi
+  managed_paths_line="$(awk '/^run_preflight\(\)/,/^}/ {if (/^  check_managed_paths$/) {print NR; exit}}' "$script")"
+  update_state_line="$(awk '/^run_preflight\(\)/,/^}/ {if (/check_preflight_state$/) {print NR; exit}}' "$script")"
+  if [ -z "$managed_paths_line" ] || [ -z "$update_state_line" ] || [ "$managed_paths_line" -ge "$update_state_line" ]; then
+    printf 'managed ownership checks must precede the update-preflight state gate: %s\n' "$script" >&2
+    exit 1
+  fi
   [ "$(grep -Fc 'fq) : ;;' "$script")" -eq 2 ] || {
     printf 'existing fq qdisc is not preserved during rollback: %s\n' "$script" >&2
     exit 1
   }
 done
 
-grep -Fq "CONTROLLER_VERSION='0.1.0-rc.9'" "$controller"
-grep -Fq "RELEASE_TAG='v0.1.0-rc.9'" "$controller"
+grep -Fq "CONTROLLER_VERSION='0.1.0-rc.10'" "$controller"
+grep -Fq "RELEASE_TAG='v0.1.0-rc.10'" "$controller"
 grep -Fq "DEFAULT_PORT_SPEED_MBPS=200" "$controller"
 grep -Fq 'verify_profile_contract' "$controller"
 grep -Fq 'debian12-1c512m-vps-tuning.sh' "$controller"
 grep -Fq 'debian13-1c512m-vps-tuning.sh' "$controller"
 grep -Fq "resource_class='2C2GB'" "$controller"
-grep -Fq 'diagnose（只读诊断）' "$controller"
+grep -Fq 'diagnose（5 秒只读增量诊断）' "$controller"
+grep -Fq 'benchmark（需 BENCHMARK_HOST，会产生测试流量）' "$controller"
+grep -Fq 'update（只读检查并生成升级计划）' "$controller"
+grep -Fq 'env UPDATE_PREFLIGHT=1 PORT_SPEED_MBPS=' "$controller"
+grep -Fq '系统配置未修改' "$controller"
+grep -Fq 'select_highest_release_tag' "$controller"
+grep -Fq '可能混用了不同 Release 的资产' "$controller"
+grep -Fq '请为每个版本使用独立临时目录' "$controller"
 # shellcheck disable=SC2016  # Intentionally match literal shell source.
 grep -Fq '[ "$RELEASE_TAG" = "v${CONTROLLER_VERSION}" ]' "$controller"
 grep -Fq -- "--proto '=https' --proto-redir '=https'" "$controller"
@@ -237,6 +274,8 @@ buffer_profile_test="$tmp_dir/buffer-profile-test.sh"
 EXIT_USAGE=2
 DEFAULT_PORT_SPEED_MBPS=200
 DEFAULT_BUFFER_TARGET_RTT_MS=200
+BUFFER_TARGET_NUMERATOR=1
+BUFFER_TARGET_DENOMINATOR=1
 DEFAULT_SWAP_MB=1024
 MIN_BUF_MAX=262144
 SWAP_MAX_MIB=2048
@@ -244,6 +283,7 @@ PROFILE_LABEL='fixture'
 ENABLE_SWAP=1
 PURGE_CREATED_SWAP=0
 REQUIRE_PROXY_SERVICE=0
+UPDATE_PREFLIGHT=0
 SWAP_MB_INPUT=1024
 warn() { WARNED=1; }
 die() { exit "$1"; }
@@ -263,21 +303,64 @@ PORT_SPEED_MBPS_INPUT=1000
 BUFFER_TARGET_RTT_MS_INPUT=200
 BUF_MAX_INPUT=auto
 MAX_BUF_MAX=33554432
+BUFFER_TARGET_NUMERATOR=5
+BUFFER_TARGET_DENOMINATOR=4
 WARNED=0
 validate_inputs
 [ "$BUF_MAX" -eq 33554432 ] && [ "$BUF_MAX_MODE" = auto ] && [ "$WARNED" -eq 0 ] || {
-  printf '1 GiB auto buffer did not select 32 MiB\n' >&2
+  printf '1 GiB 1000 Mbps auto buffer did not select 32 MiB without a warning\n' >&2
   exit 1
 }
 
 PORT_SPEED_MBPS_INPUT=1000
-BUFFER_TARGET_RTT_MS_INPUT=500
+BUFFER_TARGET_RTT_MS_INPUT=200
 BUF_MAX_INPUT=auto
 MAX_BUF_MAX=67108864
+BUFFER_TARGET_NUMERATOR=3
+BUFFER_TARGET_DENOMINATOR=2
 WARNED=0
 validate_inputs
-[ "$BUF_MAX" -eq 67108864 ] && [ "$BUF_MAX_MODE" = auto ] || {
+[ "$BUF_MAX" -eq 67108864 ] && [ "$BUF_MAX_MODE" = auto ] && [ "$WARNED" -eq 0 ] || {
   printf '2 GiB auto buffer did not select 64 MiB\n' >&2
+  exit 1
+}
+
+PORT_SPEED_MBPS_INPUT=500
+BUFFER_TARGET_RTT_MS_INPUT=200
+BUF_MAX_INPUT=auto
+MAX_BUF_MAX=67108864
+BUFFER_TARGET_NUMERATOR=3
+BUFFER_TARGET_DENOMINATOR=2
+WARNED=0
+validate_inputs
+[ "$BUF_MAX" -eq 33554432 ] && [ "$BUF_MAX_MODE" = auto ] && [ "$WARNED" -eq 0 ] || {
+  printf '2 GiB 500 Mbps auto buffer did not select 32 MiB\n' >&2
+  exit 1
+}
+
+PORT_SPEED_MBPS_INPUT=500
+BUFFER_TARGET_RTT_MS_INPUT=200
+BUF_MAX_INPUT=auto
+MAX_BUF_MAX=33554432
+BUFFER_TARGET_NUMERATOR=5
+BUFFER_TARGET_DENOMINATOR=4
+WARNED=0
+validate_inputs
+[ "$BUF_MAX" -eq 16777216 ] && [ "$BUF_MAX_MODE" = auto ] && [ "$WARNED" -eq 0 ] || {
+  printf '1 GiB 500 Mbps auto buffer did not select 16 MiB\n' >&2
+  exit 1
+}
+
+PORT_SPEED_MBPS_INPUT=200
+BUFFER_TARGET_RTT_MS_INPUT=200
+BUF_MAX_INPUT=auto
+MAX_BUF_MAX=67108864
+BUFFER_TARGET_NUMERATOR=3
+BUFFER_TARGET_DENOMINATOR=2
+WARNED=0
+validate_inputs
+[ "$BUF_MAX" -eq 16777216 ] && [ "$BUF_MAX_MODE" = auto ] && [ "$WARNED" -eq 0 ] || {
+  printf '2 GiB 200 Mbps auto buffer did not select 16 MiB\n' >&2
   exit 1
 }
 
@@ -288,6 +371,198 @@ fi
 EOF_BUFFER_PROFILE_TEST
 } >"$buffer_profile_test"
 bash "$buffer_profile_test"
+
+diagnostic_delta_test="$tmp_dir/diagnostic-delta-test.sh"
+{
+  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  awk '/^softnet_snapshot\(\)/,/^}/' "${scripts[0]}"
+  awk '/^tcp_counter_snapshot\(\)/,/^}/' "${scripts[0]}"
+  awk '/^show_counter_delta\(\)/,/^}/' "${scripts[0]}"
+  awk '/^show_softnet_delta\(\)/,/^}/' "${scripts[0]}"
+  cat <<'EOF_DIAGNOSTIC_DELTA_TEST'
+test_root="$(mktemp -d)"
+trap 'rm -rf -- "$test_root"' EXIT
+printf '00000064 00000002 00000003 00000000\n' >"$test_root/softnet.raw"
+cat >"$test_root/snmp.raw" <<'EOF_SNMP'
+Ip: InDiscards OutDiscards
+Ip: 7 8
+Tcp: RetransSegs
+Tcp: 9
+EOF_SNMP
+cat >"$test_root/netstat.raw" <<'EOF_NETSTAT'
+TcpExt: ListenDrops TCPTimeouts TCPFastOpenPassive
+TcpExt: 10 11 12
+EOF_NETSTAT
+softnet_snapshot "$test_root/softnet.raw" >"$test_root/softnet.snapshot"
+tcp_counter_snapshot "$test_root/snmp.raw" "$test_root/netstat.raw" >"$test_root/tcp.snapshot"
+grep -Fqx $'0\t100\t2\t3' "$test_root/softnet.snapshot"
+grep -Fqx $'IpInDiscards\t7' "$test_root/tcp.snapshot"
+grep -Fqx $'TcpRetransSegs\t9' "$test_root/tcp.snapshot"
+grep -Fqx $'TcpExtListenDrops\t10' "$test_root/tcp.snapshot"
+grep -Fqx $'TcpExtTCPTimeouts\t11' "$test_root/tcp.snapshot"
+grep -Fqx $'TcpExtTCPFastOpenPassive\t12' "$test_root/tcp.snapshot"
+printf 'TcpRetransSegs\t10\nTcpExtTCPTimeouts\t4\n' >"$test_root/tcp.before"
+printf 'TcpRetransSegs\t13\nTcpExtTCPTimeouts\t4\n' >"$test_root/tcp.after"
+printf '0\t100\t2\t3\n1\t200\t4\t5\n' >"$test_root/softnet.before"
+printf '0\t150\t3\t5\n1\t260\t4\t8\n' >"$test_root/softnet.after"
+show_counter_delta "$test_root/tcp.before" "$test_root/tcp.after" tcp-delta >"$test_root/tcp.out"
+show_softnet_delta "$test_root/softnet.before" "$test_root/softnet.after" >"$test_root/softnet.out"
+grep -Fqx '[tcp-delta] TcpRetransSegs=3' "$test_root/tcp.out"
+grep -Fqx '[tcp-delta] TcpExtTCPTimeouts=0' "$test_root/tcp.out"
+grep -Fqx '[softnet-delta] cpu=0 processed=50 dropped=1 time_squeeze=2' "$test_root/softnet.out"
+grep -Fqx '[softnet-delta] cpu=1 processed=60 dropped=0 time_squeeze=3' "$test_root/softnet.out"
+EOF_DIAGNOSTIC_DELTA_TEST
+} >"$diagnostic_delta_test"
+bash "$diagnostic_delta_test"
+
+benchmark_guard_test="$tmp_dir/benchmark-guard-test.sh"
+{
+  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  awk '/^run_network_benchmark\(\)/,/^}/' "${scripts[0]}"
+  cat <<'EOF_BENCHMARK_GUARD_TEST'
+EXIT_USAGE=2
+EXIT_UNSUPPORTED=3
+EXIT_VERIFY=5
+ensure_required_tools() { :; }
+check_supported_os() { :; }
+iperf3() { :; }
+die() { exit "$1"; }
+
+set +e
+( unset BENCHMARK_HOST; run_network_benchmark ) >/dev/null 2>&1
+rc=$?
+set -e
+[ "$rc" -eq "$EXIT_USAGE" ] || { printf 'benchmark accepted an empty host\n' >&2; exit 1; }
+
+set +e
+( BENCHMARK_HOST=example.com BENCHMARK_PARALLEL=5 run_network_benchmark ) >/dev/null 2>&1
+rc=$?
+set -e
+[ "$rc" -eq "$EXIT_USAGE" ] || { printf 'benchmark accepted parallel=5\n' >&2; exit 1; }
+EOF_BENCHMARK_GUARD_TEST
+} >"$benchmark_guard_test"
+bash "$benchmark_guard_test"
+
+cross_version_apply_test="$tmp_dir/cross-version-apply-test.sh"
+{
+  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  awk '/^apply_settings\(\)/,/^}/' "${scripts[0]}"
+  cat <<'EOF_CROSS_VERSION_APPLY_TEST'
+EXIT_CONFLICT=4
+SCRIPT_VERSION='0.1.0-rc.10'
+PORT_SPEED_MBPS=200
+BUFFER_TARGET_RTT_MS=200
+BUF_MAX=16777216
+run_preflight() { :; }
+state_exists() { return 0; }
+state_get() {
+  case "$1" in
+    .state) printf 'VERIFIED\n' ;;
+    .script_version) printf '0.1.0-rc.9\n' ;;
+    *) printf '0\n' ;;
+  esac
+}
+die() { local code="$1"; shift; printf '%s\n' "$*" >&2; exit "$code"; }
+
+set +e
+output="$(apply_settings 2>&1)"
+rc=$?
+set -e
+[ "$rc" -eq "$EXIT_CONFLICT" ] || { printf 'cross-version apply was accepted\n' >&2; exit 1; }
+grep -Fq '升级配置必须先 rollback' <<<"$output"
+EOF_CROSS_VERSION_APPLY_TEST
+} >"$cross_version_apply_test"
+bash "$cross_version_apply_test"
+
+sysctl_conflict_test="$tmp_dir/sysctl-conflict-test.sh"
+{
+  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  awk '/^report_sysctl_conflicts\(\)/,/^}/' "${scripts[0]}"
+  awk '/^verify_settings\(\)/,/^}/' "${scripts[0]}"
+  cat <<'EOF_SYSCTL_CONFLICT_TEST'
+test_root="$(mktemp -d)"
+trap 'rm -rf -- "$test_root"' EXIT
+SYSCTL_SCAN_ROOT="$test_root/etc"
+mkdir -p "$SYSCTL_SCAN_ROOT/sysctl.d"
+SYSCTL_FILE="$SYSCTL_SCAN_ROOT/sysctl.d/90-proxy-vps.conf"
+JOURNAL_FILE="$test_root/journal.conf"
+FQ_HELPER="$test_root/proxy-vps-fq"
+FQ_SERVICE="$test_root/proxy-vps-fq.service"
+FQ_SERVICE_NAME='proxy-vps-fq.service'
+XUI_DROPIN="$test_root/x-ui.conf"
+QDISC_STATE_FILE="$test_root/qdisc.json"
+WARNINGS=0
+PROFILE_SYSCTL_KEYS=(net.core.default_qdisc net.ipv4.tcp_congestion_control)
+printf '%s\n' \
+  'net.core.default_qdisc = fq' \
+  'net.ipv4.tcp_congestion_control = bbr' >"$SYSCTL_FILE"
+for file in "$JOURNAL_FILE" "$FQ_HELPER" "$FQ_SERVICE" "$XUI_DROPIN" "$QDISC_STATE_FILE"; do
+  : >"$file"
+done
+managed_alias="$SYSCTL_SCAN_ROOT/sysctl.d/99-managed-alias.conf"
+ln -s "$SYSCTL_FILE" "$managed_alias"
+if [ ! -L "$managed_alias" ]; then
+  # MSYS may materialize `ln -s` as a regular copy.  Do not let that
+  # Windows-only behavior masquerade as a Linux symlink fixture.
+  rm -f "$managed_alias"
+fi
+
+state_exists() { return 0; }
+validate_state_file() { return 0; }
+state_get() {
+  case "$1" in
+    .state) printf 'VERIFIED\n' ;;
+    .qdisc.sha256) printf 'qhash\n' ;;
+    .swap.created_by_script) printf 'false\n' ;;
+    *) printf '0\n' ;;
+  esac
+}
+normalize_sysctl_value() { printf '%s\n' "$1"; }
+sysctl() {
+  case "$2" in
+    net.core.default_qdisc) printf 'fq\n' ;;
+    net.ipv4.tcp_congestion_control) printf 'bbr\n' ;;
+  esac
+}
+sha256sum() { printf 'qhash  %s\n' "$1"; }
+assert_owned_file() { :; }
+systemctl() { printf '%s\n' "$FQ_SERVICE"; }
+verify_current_qdiscs() { return 0; }
+verify_proxy_services() { return 0; }
+show_xray_socket_options() { :; }
+error() { printf '[x] %s\n' "$*" >&2; }
+info() { :; }
+
+# The managed file and an alias to it are both excluded from conflict checks.
+verify_settings >/dev/null 2>"$test_root/managed-only.err" || {
+  cat "$test_root/managed-only.err" >&2
+  printf 'verify rejected its own managed sysctl file or alias\n' >&2
+  exit 1
+}
+
+# An external file with the same values is still a duplicate owner and must fail verify.
+external="$SYSCTL_SCAN_ROOT/sysctl.d/99-bbr-x-ui.conf"
+printf '%s\n' \
+  'net.core.default_qdisc = fq' \
+  'net.ipv4.tcp_congestion_control = bbr' >"$external"
+external_alias="$SYSCTL_SCAN_ROOT/sysctl.d/99-bbr-x-ui-alias.conf"
+ln -s "$external" "$external_alias"
+if [ ! -L "$external_alias" ]; then
+  rm -f "$external_alias"
+fi
+if verify_settings >/dev/null 2>"$test_root/conflict.err"; then
+  printf 'verify accepted an external same-value sysctl owner\n' >&2
+  exit 1
+fi
+grep -Fq '即使值相同也属于重复配置归属' "$test_root/conflict.err"
+grep -Fq 'verify 拒绝通过' "$test_root/conflict.err"
+[ "$(grep -Fc 'net.core.default_qdisc 已在' "$test_root/conflict.err")" -eq 1 ] || {
+  printf 'canonical sysctl alias was reported more than once\n' >&2
+  exit 1
+}
+EOF_SYSCTL_CONFLICT_TEST
+} >"$sysctl_conflict_test"
+bash "$sysctl_conflict_test"
 
 if command -v jq >/dev/null 2>&1; then
   for script in "${scripts[@]}"; do
@@ -314,10 +589,11 @@ PY
       --arg debian '12' --arg arch 'x86_64' --arg kernel 'test-kernel' \
       --argjson mem 960 --argjson port 1000 --argjson rtt 200 \
       --argjson buf 33554432 --arg mode 'auto' \
+      --argjson target_numerator 5 --argjson target_denominator 4 \
       --arg qfile '/tmp/qdisc.json' --arg qhash 'test-hash' \
       --arg now '2026-08-01T00:00:00Z' --argjson original '{}' \
       "$(<"$state_filter_file")" >"$state_json_file"
-    jq -e '.profile.label == "Test Profile" and .network.port_speed_mbps == 1000' \
+    jq -e '.profile.label == "Test Profile" and .network.port_speed_mbps == 1000 and .network.buffer_target_numerator == 5 and .network.buffer_target_denominator == 4' \
       "$state_json_file" >/dev/null
   done
 else
@@ -636,8 +912,10 @@ preflight_state_test="$tmp_dir/preflight-state-test.sh"
 EXIT_CONFLICT=4
 STATE_PRESENT=0
 PHASE=''
+UPDATE_PREFLIGHT=0
 state_exists() { [ "$STATE_PRESENT" -eq 1 ]; }
 state_get() { printf '%s\n' "$PHASE"; }
+info() { :; }
 die() { exit "$1"; }
 check_preflight_state
 STATE_PRESENT=1
@@ -648,6 +926,23 @@ for PHASE in VERIFIED APPLIED SWAP_RETAINED DEGRADED ROLLBACK_PENDING; do
   set -e
   [ "$rc" -eq "$EXIT_CONFLICT" ] || {
     printf 'preflight accepted existing state %s (exit=%s)\n' "$PHASE" "$rc" >&2
+    exit 1
+  }
+done
+UPDATE_PREFLIGHT=1
+for PHASE in VERIFIED APPLIED; do
+  check_preflight_state >/dev/null 2>&1 || {
+    printf 'update-preflight rejected valid installed state %s\n' "$PHASE" >&2
+    exit 1
+  }
+done
+for PHASE in SWAP_RETAINED DEGRADED ROLLBACK_PENDING; do
+  set +e
+  (check_preflight_state >/dev/null 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq "$EXIT_CONFLICT" ] || {
+    printf 'update-preflight accepted unsafe state %s (exit=%s)\n' "$PHASE" "$rc" >&2
     exit 1
   }
 done

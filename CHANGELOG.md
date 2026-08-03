@@ -2,6 +2,38 @@
 
 本项目采用 [Semantic Versioning](https://semver.org/)。
 
+## [0.1.0-rc.10] - 2026-08-04
+
+### Added
+
+- `diagnose` 改为默认 5 秒增量采样，增加 TCP 重传/超时/监听溢出/TFO、每 CPU softnet、`tc -s -d`、网卡错误、队列 RPS/XPS mask 和接口 IRQ 证据；
+- 增加只读报告 3X-UI 生成配置中 `tcpFastOpen`、`tcpKeepAliveIdle`、`tcpKeepAliveInterval` 是否显式存在，不读取或输出其他代理配置；
+- 新增显式 `benchmark` action：只在用户提供 `BENCHMARK_HOST` 且已安装 iperf3 时执行 upload/download/both，并输出 JSON 与内核计数增量；
+- README 增加 rc.8/rc.9、旧 v5/v6 升级边界，TFO/keepalive 的内核与应用层区别，以及 update、诊断和 benchmark 用法。
+
+### Changed
+
+- 自动 socket 缓冲按 512M/1G/2G 分别采用 1×/1.25×/1.5×BDP，再向上选择 16/32/64 MiB，并继续受 16/32/64 MiB 资源上限保护；
+- 默认 200 ms 下，512M、1G、2G 在 100/200/500/1000 Mbps 分别为 16/16/16/16（1000 Mbps 警告）、16/16/16/32、16/16/32/64 MiB；
+- 状态 `network` 增加 `buffer_target_numerator`/`buffer_target_denominator`，schema 保持 3，以保留 rc.8/rc.9 回滚兼容性；
+- 总控新增只读 `update`，支持同一 `major.minor` 发布线的稳定/rc 通道和显式 `--target`，校验当前/目标资产，执行当前 verify 与目标 update-preflight，并输出人工迁移材料；不自动 rollback/purge/apply/reboot；
+- 总控和六份 profile 版本同步为 `0.1.0-rc.10`，固定 Release tag 改为 `v0.1.0-rc.10`。
+- 重复 `apply` 只对同一脚本版本和同一网络参数保持无写入幂等；旧状态仍允许 `verify`，但升级 apply 明确要求先 rollback。
+- `verify` 也会检查外部 sysctl 文件对受管 key 的重复归属，同值重复定义不再漏报；`diagnose` 只读展示冲突，符号链接按规范路径去重。
+- 本地总控、清单和 profile 混用不同 Release 时，完整性错误会提示版本碰撞和独立目录做法；升级文档固定使用版本隔离的临时目录。
+
+### Safety
+
+- 继续不自动启用 RPS/RFS/XPS、IRQ/CPU affinity、busy polling、ECN 或额外高风险 sysctl；新增队列信息仅只读采集；
+- benchmark 不自动安装软件、修改 UFW、开放服务端口、选择公共测试点或测试代理业务链路，并把并行数限制为 1–4；
+- `tcpFastOpen` 未显式出现只报告为未显式配置，不把 `net.ipv4.tcp_fastopen=3` 误报为 Xray listener 已启用 TFO，也不直接编辑 3X-UI 生成 JSON。
+- 完整性校验失败不会自动回退联网下载；不同版本资产混放仍安全拒绝执行。
+
+### Validation
+
+- 六份 profile 已由同一模板重新生成；`bash -n`、控制器 fixture、分档 BDP 资源矩阵、版本选择、跨版本 apply 拒绝、诊断增量、benchmark 参数、状态构造与既有事务/qdisc 故障注入通过；
+- ShellCheck v0.11.0 已覆盖总控、六份 profile 和测试脚本；rc.10 Release 尚未发布，公开资产重下载、CI 和真实 VPS 生命周期/性能矩阵待执行；rc.9 的 Debian 13 1C1G/1000 Mbps 证据仅作为历史基线，不上推为 rc.10 通过。
+
 ## [0.1.0-rc.9] - 2026-08-03
 
 ### Added

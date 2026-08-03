@@ -107,6 +107,54 @@ for invalid_port in 99 1001 20000 abc 20.0 ''; do
   fi
 done
 
+release_is_newer v0.1.0-rc.10 0.1.0-rc.9 || fail 'rc.10 was not newer than rc.9'
+release_is_newer v0.1.0 0.1.0-rc.999999999 || fail 'stable release was not newer than prerelease'
+release_is_newer v0.2.0-rc.1 0.1.9 || fail 'minor release comparison failed'
+if release_is_newer v0.1.0-rc.9 0.1.0-rc.10; then
+  fail 'downgrade tag was considered newer'
+fi
+if parse_release_version latest >/dev/null 2>&1; then
+  fail 'non-semver release tag was accepted'
+fi
+for invalid_release in v00.1.0 v0.01.0 v0.1.00 v0.1.0-rc.01 v1000000000.1.0; do
+  if parse_release_version "$invalid_release" >/dev/null 2>&1; then
+    fail "invalid release tag was accepted: ${invalid_release}"
+  fi
+done
+
+release_fixture="$test_root/releases.json"
+cat >"$release_fixture" <<'EOF_RELEASES'
+[
+  {"tag_name":"v0.1.0-rc.9","draft":false},
+  {"tag_name":"v0.1.0-rc.11","draft":false},
+  {"tag_name":"v0.1.0-rc.10","draft":false},
+  {"tag_name":"v9.9.9","draft":true},
+  {"tag_name":"v1.0.0","draft":false},
+  {"tag_name":"v0.2.0","draft":false},
+  {"tag_name":"nightly","draft":false}
+]
+EOF_RELEASES
+# The Windows Git Bash test environment does not provide jq. This fixture
+# isolates semantic version selection; JSON validation is exercised on VPS.
+jq() {
+  printf '%s\n' v0.1.0-rc.9 v0.1.0-rc.11 v0.1.0-rc.10 v0.2.0 v1.0.0 nightly
+}
+[ "$(select_highest_release_tag "$release_fixture" 0.1.0-rc.10)" = 'v0.1.0-rc.11' ] ||
+  fail 'rc channel did not select its highest prerelease'
+unset -f jq
+jq() {
+  printf '%s\n' v0.1.0-rc.11 v0.1.0 v0.2.0
+}
+[ "$(select_highest_release_tag "$release_fixture" 0.1.0-rc.10)" = 'v0.1.0' ] ||
+  fail 'rc channel did not prefer the same-line stable release'
+unset -f jq
+jq() {
+  printf '%s\n' v0.1.1-rc.1 v0.1.0 v0.2.0
+}
+[ "$(select_highest_release_tag "$release_fixture" 0.1.0)" = 'v0.1.0' ] ||
+  fail 'stable channel accepted a prerelease candidate'
+unset -f jq
+
 ACTION=preflight
 CLI_PORT_SPEED_MBPS=''
 PORT_SPEED_MBPS_SELECTED=''
@@ -152,6 +200,20 @@ if [ "$ACTION" != guided ] || [ "$ACTION_FROM_MENU" -ne 1 ]; then
   fail 'default menu action is not guided'
 fi
 
+ACTION=''
+ACTION_FROM_MENU=0
+choose_action_interactively <<<'8' >/dev/null
+if [ "$ACTION" != update ] || [ "$ACTION_FROM_MENU" -ne 1 ]; then
+  fail 'menu option 8 did not select update'
+fi
+
+ACTION=''
+CLI_UPDATE_TAG=''
+parse_arguments update --target v0.1.0-rc.11
+if [ "$ACTION" != update ] || [ "$CLI_UPDATE_TAG" != v0.1.0-rc.11 ]; then
+  fail 'update --target parsing failed'
+fi
+
 PORT_SPEED_MBPS_SELECTED=''
 choose_port_interactively <<<'' >/dev/null
 [ "$PORT_SPEED_MBPS_SELECTED" -eq 200 ] || fail 'default interactive port is not 200 Mbps'
@@ -193,6 +255,8 @@ run_profile verify
 [ "$(<"$capture")" = 'unset|verify' ] || fail 'verify dispatch unexpectedly injected a port'
 run_profile diagnose
 [ "$(<"$capture")" = 'unset|diagnose' ] || fail 'diagnose dispatch unexpectedly injected a port'
+run_profile benchmark
+[ "$(<"$capture")" = 'unset|benchmark' ] || fail 'benchmark dispatch unexpectedly injected a port'
 
 RUNNER_EXIT=37
 export RUNNER_EXIT
@@ -213,6 +277,38 @@ resolve_profile_script
 [ "$PROFILE_SOURCE" = local ] || fail 'complete repository did not use local profile mode'
 [ "$PROFILE_PATH" = "$repo_root/$PROFILE_FILE" ] || fail 'local profile path is incorrect'
 [ -n "$PROFILE_SHA256" ] || fail 'local profile SHA-256 was not recorded'
+
+mixed_dir="$test_root/mixed-release-assets"
+mkdir "$mixed_dir"
+cp "$repo_root/debian-vps-tuning.sh" "$mixed_dir/debian-vps-tuning-rc9.sh"
+cp "$repo_root/$PROFILE_FILE" "$mixed_dir/$PROFILE_FILE"
+mixed_profile_hash="$(sha256sum "$mixed_dir/$PROFILE_FILE" | awk '{print $1}')"
+printf '%064d  %s\n%s  %s\n' \
+  0 debian-vps-tuning.sh "$mixed_profile_hash" "$PROFILE_FILE" \
+  >"$mixed_dir/SHA256SUMS"
+# Re-source from the mixed directory so controller_directory resolves there.
+# shellcheck source=/dev/null
+source "$mixed_dir/debian-vps-tuning-rc9.sh"
+PROFILE_FILE='debian12-1c1g-vps-tuning.sh'
+DETECTED_PROFILE='debian12-1c1g'
+mixed_network_fallback="$test_root/mixed-network-fallback"
+curl() { : >"$mixed_network_fallback"; return 22; }
+set +e
+mixed_output="$(resolve_profile_script 2>&1)"
+rc=$?
+set -e
+[ "$rc" -eq "$EXIT_INTEGRITY" ] ||
+  fail "mixed Release assets returned ${rc}, expected ${EXIT_INTEGRITY}"
+grep -Fq '可能混用了不同 Release 的资产' <<<"$mixed_output" ||
+  fail 'mixed Release error did not explain the likely cause'
+grep -Fq '独立临时目录' <<<"$mixed_output" ||
+  fail 'mixed Release error did not provide directory isolation guidance'
+[ ! -e "$mixed_network_fallback" ] ||
+  fail 'mixed Release integrity failure fell back to the network'
+unset -f curl
+# Restore functions and constants from the repository controller.
+# shellcheck source=debian-vps-tuning.sh
+source "$repo_root/debian-vps-tuning.sh"
 
 # shellcheck disable=SC2329  # Invoked indirectly by sourced download_file.
 curl() { return 22; }
@@ -281,5 +377,37 @@ set -e
 [ "$rc" -eq "$EXIT_INTEGRITY" ] || fail "remote hash mismatch returned ${rc}, expected ${EXIT_INTEGRITY}"
 
 unset -f curl mktemp
+
+update_log="$test_root/update.log"
+source_runner="$test_root/source-profile.sh"
+target_runner="$test_root/target-controller.sh"
+cat >"$source_runner" <<'EOF_SOURCE_RUNNER'
+#!/usr/bin/env bash
+printf 'source:%s\n' "$*" >>"$UPDATE_TEST_LOG"
+exit 0
+EOF_SOURCE_RUNNER
+cat >"$target_runner" <<'EOF_TARGET_RUNNER'
+#!/usr/bin/env bash
+printf 'target:%s:port=%s:update_preflight=%s\n' \
+  "$*" "${PORT_SPEED_MBPS:-unset}" "${UPDATE_PREFLIGHT:-unset}" >>"$UPDATE_TEST_LOG"
+exit 0
+EOF_TARGET_RUNNER
+chmod 0700 "$source_runner" "$target_runner"
+export UPDATE_TEST_LOG="$update_log"
+resolve_update_release() { UPDATE_TAG_SELECTED='v0.1.0-rc.11'; }
+resolve_installed_profile() { SOURCE_PROFILE_PATH="$source_runner"; SOURCE_PROFILE_SHA256='source-hash'; }
+resolve_update_controller() { UPDATE_CONTROLLER_PATH="$target_runner"; UPDATE_CONTROLLER_SHA256='target-hash'; }
+STATE_PROFILE='debian12-1c1g'
+STATE_VERSION='0.1.0-rc.10'
+STATE_PORT_SPEED_MBPS=200
+update_output="$(run_update)"
+expected_update_log=$'source:verify\ntarget:preflight --port 200:port=200:update_preflight=1'
+[ "$(<"$update_log")" = "$expected_update_log" ] || fail 'read-only update check sequence changed'
+grep -Fq '升级检查通过；系统配置未修改。' <<<"$update_output" ||
+  fail 'update did not report its read-only result'
+if grep -Eq '(^|:)(rollback|apply)( |:|$)' "$update_log"; then
+  fail 'read-only update invoked a mutating action'
+fi
+unset UPDATE_TEST_LOG
 
 printf 'controller checks passed\n'
