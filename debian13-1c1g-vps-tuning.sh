@@ -389,13 +389,9 @@ report_sysctl_conflicts() {
   local -a files=()
   declare -A seen=()
 
-  if [ "$#" -gt 0 ]; then
-    files=("$@")
-  else
-    shopt -s nullglob
-    files=("${SYSCTL_SCAN_ROOT}/sysctl.conf" "${SYSCTL_SCAN_ROOT}/sysctl.d/"*.conf)
-    shopt -u nullglob
-  fi
+  shopt -s nullglob
+  files=("${SYSCTL_SCAN_ROOT}/sysctl.conf" "${SYSCTL_SCAN_ROOT}/sysctl.d/"*.conf)
+  shopt -u nullglob
 
   managed_canonical="$(readlink -f "$SYSCTL_FILE" 2>/dev/null || printf '%s' "$SYSCTL_FILE")"
   for file in "${files[@]}"; do
