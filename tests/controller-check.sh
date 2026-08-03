@@ -110,14 +110,29 @@ done
 ACTION=preflight
 CLI_PORT_SPEED_MBPS=''
 PORT_SPEED_MBPS_SELECTED=''
+STATE_PROFILE=''
+STATE_PORT_SPEED_MBPS=''
 unset PORT_SPEED_MBPS || true
 select_port_speed
 [ "$PORT_SPEED_MBPS_SELECTED" -eq 200 ] || fail 'non-interactive default is not 200 Mbps'
 
+ACTION=apply
+STATE_PROFILE='debian12-1c1g'
+STATE_PORT_SPEED_MBPS=500
+PORT_SPEED_MBPS_SELECTED=''
+select_port_speed
+[ "$PORT_SPEED_MBPS_SELECTED" -eq 500 ] || fail 'apply did not reuse the installed port speed'
+
+set +e
+( ACTION=apply; CLI_PORT_SPEED_MBPS=''; STATE_PROFILE='debian12-1c1g'; STATE_PORT_SPEED_MBPS=invalid; PORT_SPEED_MBPS_SELECTED=''; select_port_speed ) >/dev/null 2>&1
+rc=$?
+set -e
+[ "$rc" -eq "$EXIT_CONFLICT" ] || fail "invalid installed port returned ${rc}, expected ${EXIT_CONFLICT}"
+
 CLI_PORT_SPEED_MBPS=1000
 PORT_SPEED_MBPS_SELECTED=''
 select_port_speed
-[ "$PORT_SPEED_MBPS_SELECTED" -eq 1000 ] || fail '--port did not override the default'
+[ "$PORT_SPEED_MBPS_SELECTED" -eq 1000 ] || fail '--port did not override the installed value'
 
 # shellcheck disable=SC2034  # Consumed by sourced select_port_speed.
 CLI_PORT_SPEED_MBPS=''
@@ -125,8 +140,10 @@ CLI_PORT_SPEED_MBPS=''
 PORT_SPEED_MBPS=100
 PORT_SPEED_MBPS_SELECTED=''
 select_port_speed
-[ "$PORT_SPEED_MBPS_SELECTED" -eq 100 ] || fail 'PORT_SPEED_MBPS was not preserved'
+[ "$PORT_SPEED_MBPS_SELECTED" -eq 100 ] || fail 'PORT_SPEED_MBPS did not override the installed value'
 unset PORT_SPEED_MBPS
+STATE_PROFILE=''
+STATE_PORT_SPEED_MBPS=''
 
 ACTION=''
 ACTION_FROM_MENU=0

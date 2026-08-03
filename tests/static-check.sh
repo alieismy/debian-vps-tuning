@@ -136,6 +136,10 @@ for script in "${scripts[@]}"; do
   grep -Fq '事务状态尚未提交，未写入系统配置；不完整状态已清理。' "$script"
   grep -Fq "state_set_phase 'APPLYING'" "$script"
   grep -Fq "saved(port=\${saved_port},rtt=\${saved_rtt},buf=\${saved_buf})" "$script"
+  [ "$(grep -Fc 'remove_fstab_swap_line || return 1' "$script")" -eq 2 ] || {
+    printf 'fstab removal failure is not propagated by both swap purge paths: %s\n' "$script" >&2
+    exit 1
+  }
   # shellcheck disable=SC2016  # Intentionally match literal shell source.
   if grep -Fq 'value="${value}p"' "$script" || grep -Fq 'value="${value}b"' "$script"; then
     printf 'tc show unit suffix reused as fq_codel input: %s\n' "$script" >&2
@@ -377,6 +381,66 @@ fi
 EOF_TRANSACTION_TEST
 } >"$transaction_test"
 bash "$transaction_test"
+
+fstab_remove_test="$tmp_dir/fstab-remove-test.sh"
+{
+  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  awk '/^remove_fstab_swap_line\(\)/,/^}/' "${scripts[0]}"
+  cat <<'EOF_FSTAB_REMOVE_TEST'
+test_root="$(mktemp -d)"
+trap 'rm -rf -- "$test_root"' EXIT
+SWAP_FILE='/swapfile-proxy-vps-tuning'
+managed_line="${SWAP_FILE} none swap sw 0 0"
+fstab="$test_root/fstab"
+FSTAB_FILE="$fstab"
+
+printf '%s\n' 'UUID=root / ext4 defaults 0 1' "$managed_line" "$managed_line" '# keep' >"$fstab"
+chmod 0640 "$fstab"
+remove_fstab_swap_line
+expected="$test_root/expected"
+printf '%s\n' 'UUID=root / ext4 defaults 0 1' '# keep' >"$expected"
+cmp -s "$fstab" "$expected" || { printf 'managed fstab lines were not removed exactly\n' >&2; exit 1; }
+case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*) ;;
+  *) [ "$(stat -c '%a' "$fstab")" = '640' ] || { printf 'fstab mode was not preserved\n' >&2; exit 1; } ;;
+esac
+
+printf '%s\n' 'UUID=root / ext4 defaults 0 1' "$managed_line" >"$fstab"
+old_hash="$(sha256sum "$fstab" | awk '{print $1}')"
+awk() { return 42; }
+if remove_fstab_swap_line 2>/dev/null; then
+  printf 'fstab removal accepted an awk failure\n' >&2
+  exit 1
+fi
+unset -f awk
+[ "$(sha256sum "$fstab" | awk '{print $1}')" = "$old_hash" ] || { printf 'awk failure changed fstab\n' >&2; exit 1; }
+
+awk() { :; }
+if remove_fstab_swap_line 2>/dev/null; then
+  printf 'fstab removal accepted unexpected empty output\n' >&2
+  exit 1
+fi
+unset -f awk
+[ "$(sha256sum "$fstab" | awk '{print $1}')" = "$old_hash" ] || { printf 'unexpected empty output changed fstab\n' >&2; exit 1; }
+
+mv() { return 43; }
+if remove_fstab_swap_line 2>/dev/null; then
+  printf 'fstab removal accepted an atomic replace failure\n' >&2
+  exit 1
+fi
+unset -f mv
+[ "$(sha256sum "$fstab" | awk '{print $1}')" = "$old_hash" ] || { printf 'replace failure changed fstab\n' >&2; exit 1; }
+if compgen -G "${fstab}.proxy-vps-tuning.*" >/dev/null; then
+  printf 'fstab failure left a temporary file\n' >&2
+  exit 1
+fi
+
+printf '%s\n' "$managed_line" >"$fstab"
+remove_fstab_swap_line
+[ ! -s "$fstab" ] || { printf 'single managed fstab line was not removed\n' >&2; exit 1; }
+EOF_FSTAB_REMOVE_TEST
+} >"$fstab_remove_test"
+bash "$fstab_remove_test"
 
 state_validation_test="$tmp_dir/state-validation-test.sh"
 {

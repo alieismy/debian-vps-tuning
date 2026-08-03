@@ -28,7 +28,7 @@
 
 `debian-vps-tuning.sh` 是选择器和调用器，不是另一份调优实现。它只允许 Debian 12/13、amd64 下的四个资源档：1C + 384–767 MiB、1C + 768–1535 MiB、1C + 1536–3072 MiB、2C + 1536–3072 MiB。底层共有六个操作系统/内存 profile；1C2GB 和 2C2GB 共用兼容 ID `debian12-1c2g`/`debian13-1c2g`，不建立重复实现或迁移已有状态。2C512MB、2C1GB、3 vCPU 以上及边界外内存拒绝执行。存在可解析状态时，检测档位必须与 `.profile.id` 一致，否则阻断。
 
-总控入口支持交互安全引导和显式 action。带宽只为 `guided`、`preflight`、`apply` 选择，默认 200 Mbps，范围是 100–1000 的任意整数；`verify`、`status`、`diagnose`、`rollback` 不通过 `--port` 重写现有状态。安全引导先运行 preflight，只有交互终端再次明确确认才调用 apply。`diagnose` 只读取本机状态，不生成流量。普通菜单不提供 rc.2 专用 `recover`。
+总控入口支持交互安全引导和显式 action。带宽只为 `guided`、`preflight`、`apply` 选择，默认 200 Mbps，范围是 100–1000 的任意整数；`apply` 的选择优先级是 `--port`、`PORT_SPEED_MBPS`、已安装状态值、交互选择/默认值，因而无显式值的重复 `apply` 复用已安装带宽；`verify`、`status`、`diagnose`、`rollback` 不通过 `--port` 重写现有状态。安全引导先运行 preflight，只有交互终端再次明确确认才调用 apply。`diagnose` 只读取本机状态，不生成流量。普通菜单不提供 rc.2 专用 `recover`。
 
 本地模式要求总控脚本、目标 profile 和 `SHA256SUMS` 位于同一目录，并在调用前核对唯一清单条目。远程模式只允许 HTTPS，从总控脚本内固定的 GitHub Release tag 下载 `SHA256SUMS` 和目标 profile；HTTP 错误、重定向协议降级、超时、空文件、重复清单条目或哈希不匹配均阻断。下载失败不得回退到可变分支、latest、第三方镜像或另一个 profile。
 
