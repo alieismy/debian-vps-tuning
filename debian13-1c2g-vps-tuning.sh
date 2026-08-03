@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Generated from tools/profile-template.sh.in. Do not edit generated profiles directly.
-# Debian 13 / 1 vCPU / 2 GiB / 3X-UI-first conservative VPS tuning.
+# Debian 13 / 1–2 vCPU / 2 GiB / 3X-UI-first conservative VPS tuning.
 
 set -Eeuo pipefail
 IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 
-SCRIPT_VERSION='0.1.0-rc.8'
+SCRIPT_VERSION='0.1.0-rc.9'
 STATE_SCHEMA_VERSION=3
 NAMESPACE='proxy-vps'
 MANAGED_MARKER='# Managed by debian-vps-tuning; namespace=proxy-vps'
@@ -15,12 +15,16 @@ MANAGED_MARKER='# Managed by debian-vps-tuning; namespace=proxy-vps'
 TARGET_DEBIAN_VERSION='13'
 TARGET_DEBIAN_CODENAME='trixie'
 PROFILE_ID='debian13-1c2g'
-PROFILE_LABEL='Debian 13 / 1 vCPU / 2 GiB'
+PROFILE_LABEL='Debian 13 / 1–2 vCPU / 2 GiB'
+PROFILE_CPU_MIN=1
+PROFILE_CPU_MAX=2
 PROFILE_RAM_MIN_MIB=1536
 PROFILE_RAM_MAX_MIB=3072
 SWAP_MAX_MIB=4096
 SWAP_CREATE_RESERVE_MIB=1024
+JOURNAL_SYSTEM_MAX_USE='128M'
 JOURNAL_SYSTEM_KEEP_FREE='1G'
+JOURNAL_RUNTIME_MAX_USE='64M'
 
 DEFAULT_PORT_SPEED_MBPS=200
 DEFAULT_BUFFER_TARGET_RTT_MS=200
@@ -45,6 +49,7 @@ BUF_MAX=''
 BUF_MAX_MODE=''
 BUFFER_BDP_BYTES=''
 BUFFER_COVERAGE_MS=''
+BUFFER_CLAMPED=0
 ROOT_FS_TYPE=''
 SWAP_CREATE_ALLOWED='1'
 SWAP_SKIP_REASON=''
@@ -56,6 +61,9 @@ JOURNAL_FILE="/etc/systemd/journald.conf.d/90-${NAMESPACE}.conf"
 FQ_HELPER="/usr/local/sbin/${NAMESPACE}-fq"
 FQ_SERVICE_NAME="${NAMESPACE}-fq.service"
 FQ_SERVICE="/etc/systemd/system/${FQ_SERVICE_NAME}"
+XUI_DROPIN_DIR='/etc/systemd/system/x-ui.service.d'
+XUI_DROPIN="${XUI_DROPIN_DIR}/90-${NAMESPACE}.conf"
+XUI_NOFILE_LIMIT=65536
 STATE_DIR="/var/lib/${NAMESPACE}-tuning"
 STATE_FILE="${STATE_DIR}/state.json"
 QDISC_STATE_FILE="${STATE_DIR}/qdisc-original.json"
@@ -121,6 +129,7 @@ acquire_lock() {
 is_bool() { [ "$1" = '0' ] || [ "$1" = '1' ]; }
 
 validate_inputs() {
+  BUFFER_CLAMPED=0
   PORT_SPEED_MBPS="${PORT_SPEED_MBPS_INPUT:-$DEFAULT_PORT_SPEED_MBPS}"
   BUFFER_TARGET_RTT_MS="${BUFFER_TARGET_RTT_MS_INPUT:-$DEFAULT_BUFFER_TARGET_RTT_MS}"
 
@@ -146,6 +155,11 @@ validate_inputs() {
     else
       BUF_MAX=67108864
     fi
+    if [ "$BUF_MAX" -gt "$MAX_BUF_MAX" ]; then
+      BUF_MAX="$MAX_BUF_MAX"
+      BUF_MAX_MODE='auto-clamped'
+      BUFFER_CLAMPED=1
+    fi
   else
     [[ "$BUF_MAX_INPUT" =~ ^[0-9]{6,8}$ ]] ||
       die "$EXIT_USAGE" 'BUF_MAX 必须为 auto 或允许范围内的整数字节数。'
@@ -155,6 +169,9 @@ validate_inputs() {
   [ "$BUF_MAX" -ge "$MIN_BUF_MAX" ] && [ "$BUF_MAX" -le "$MAX_BUF_MAX" ] ||
     die "$EXIT_USAGE" "BUF_MAX 必须在 ${MIN_BUF_MAX}–${MAX_BUF_MAX} 字节之间。"
   BUFFER_COVERAGE_MS=$((BUF_MAX * 8 / (PORT_SPEED_MBPS * 1000)))
+  if [ "$BUFFER_CLAMPED" -eq 1 ]; then
+    warn "按 ${PROFILE_LABEL} 的内存预算将自动 socket 上限限制为 $((MAX_BUF_MAX / 1048576)) MiB；约覆盖 ${BUFFER_COVERAGE_MS} ms，低于目标 RTT ${BUFFER_TARGET_RTT_MS} ms。"
+  fi
 
   is_bool "$ENABLE_SWAP" || die "$EXIT_USAGE" 'ENABLE_SWAP 只能为 0 或 1。'
   is_bool "$PURGE_CREATED_SWAP" || die "$EXIT_USAGE" 'PURGE_CREATED_SWAP 只能为 0 或 1。'
@@ -168,7 +185,7 @@ validate_inputs() {
 
 missing_commands() {
   local cmd
-  for cmd in awk grep sed sysctl ip tc ss modprobe modinfo systemctl swapon swapoff mkswap findmnt flock sha256sum pgrep jq stat readlink install; do
+  for cmd in awk grep sed sysctl ip tc ss modprobe modinfo systemctl swapon swapoff mkswap findmnt find flock sha256sum pgrep jq stat readlink install nproc; do
     command -v "$cmd" >/dev/null 2>&1 || printf '%s\n' "$cmd"
   done
 }
@@ -207,14 +224,16 @@ check_supported_os() {
 memory_mib() { awk '/^MemTotal:/ {print int($2 / 1024); exit}' /proc/meminfo; }
 
 check_resource_profile() {
-  local mem
+  local mem cpus
+  cpus="$(nproc 2>/dev/null || true)"
   mem="$(memory_mib)"
+  [[ "$cpus" =~ ^[1-9][0-9]*$ ]] || die "$EXIT_UNSUPPORTED" '无法读取可用逻辑 CPU 数。'
   [ -n "$mem" ] || die "$EXIT_UNSUPPORTED" '无法读取物理内存。'
+  if [ "$cpus" -lt "$PROFILE_CPU_MIN" ] || [ "$cpus" -gt "$PROFILE_CPU_MAX" ]; then
+    die "$EXIT_UNSUPPORTED" "检测到 ${cpus} vCPU，不符合 ${PROFILE_LABEL} 的 ${PROFILE_CPU_MIN}–${PROFILE_CPU_MAX} vCPU 范围。"
+  fi
   if [ "$mem" -lt "$PROFILE_RAM_MIN_MIB" ] || [ "$mem" -gt "$PROFILE_RAM_MAX_MIB" ]; then
     die "$EXIT_UNSUPPORTED" "检测到 ${mem} MiB RAM，不符合 ${PROFILE_LABEL} 的 ${PROFILE_RAM_MIN_MIB}–${PROFILE_RAM_MAX_MIB} MiB 范围。"
-  fi
-  if [ "$mem" -le 1536 ] && [ "$BUF_MAX" -gt 16777216 ]; then
-    warn '1 GiB 档位使用超过 16 MiB 的 socket 上限；仅在高 BDP 线路上采用。'
   fi
 }
 
@@ -302,7 +321,7 @@ check_managed_paths() {
   local path
   if state_exists; then
     validate_state_file
-    for path in "$SYSCTL_FILE" "$JOURNAL_FILE" "$FQ_HELPER" "$FQ_SERVICE"; do
+    for path in "$SYSCTL_FILE" "$JOURNAL_FILE" "$FQ_HELPER" "$FQ_SERVICE" "$XUI_DROPIN"; do
       if [ -e "$path" ] || [ -L "$path" ]; then
         assert_owned_file "$path"
       fi
@@ -311,7 +330,7 @@ check_managed_paths() {
     if [ -e "$STATE_DIR" ] || [ -L "$STATE_DIR" ]; then
       die "$EXIT_CONFLICT" "状态目录存在但没有有效状态：${STATE_DIR}"
     fi
-    for path in "$SYSCTL_FILE" "$JOURNAL_FILE" "$FQ_HELPER" "$FQ_SERVICE"; do
+    for path in "$SYSCTL_FILE" "$JOURNAL_FILE" "$FQ_HELPER" "$FQ_SERVICE" "$XUI_DROPIN"; do
       if [ -e "$path" ] || [ -L "$path" ]; then
         die "$EXIT_CONFLICT" "目标路径已存在且不属于本项目：${path}"
       fi
@@ -387,6 +406,20 @@ qdisc_snapshot_for_iface() {
   tc -j qdisc show dev "$iface" | jq --arg iface "$iface" '{interface:$iface,qdiscs:.}'
 }
 
+is_conventional_pfifo_fast_snapshot() {
+  jq -e '
+    (.qdiscs | length) == 1 and
+    (.qdiscs[0].root == true) and
+    (.qdiscs[0].kind == "pfifo_fast") and
+    ((.qdiscs[0].options // {}) |
+      ((keys - ["bands", "multiqueue", "priomap"]) | length) == 0 and
+      ((.bands // 3) == 3) and
+      ((.multiqueue // false) == false) and
+      ((has("priomap") | not) or
+       .priomap == [1,2,2,2,1,2,0,0,1,1,1,1,1,1,1,1]))
+  ' <<<"$1" >/dev/null 2>&1
+}
+
 validate_qdisc_topology() {
   local iface snapshot root_kind unsupported leaf_count unknown_options
   mapfile -t IFACES < <(default_route_ifaces)
@@ -401,6 +434,11 @@ validate_qdisc_topology() {
         unknown_options="$(jq -r '[.qdiscs[] | select(.root == true and .kind == "fq_codel") | .options // {} | keys[] | select(. != "limit" and . != "flows" and . != "quantum" and . != "target" and . != "interval" and . != "memory_limit" and . != "ecn" and . != "ce_threshold" and . != "drop_batch")] | unique | join(",")' <<<"$snapshot")"
         [ -z "$unknown_options" ] || die "$EXIT_UNSUPPORTED" "${iface}: fq_codel 含有无法可靠恢复的选项：${unknown_options}"
         info "${iface}: 支持从根 fq_codel 切换到 fq。"
+        ;;
+      pfifo_fast)
+        is_conventional_pfifo_fast_snapshot "$snapshot" ||
+          die "$EXIT_UNSUPPORTED" "${iface}: pfifo_fast 不是可无损恢复的常规默认拓扑。"
+        info "${iface}: 支持从常规根 pfifo_fast 切换到 fq，并在 rollback 时恢复。"
         ;;
       noqueue) warn "${iface}: 根 qdisc 为 noqueue，将跳过即时替换。" ;;
       mq)
@@ -454,12 +492,14 @@ check_swap_preconditions() {
 }
 
 show_environment() {
-  local mem
+  local mem cpus
+  cpus="$(nproc 2>/dev/null || printf '?')"
   mem="$(memory_mib)"
   info "脚本版本：${SCRIPT_VERSION}"
   info "配置档位：${PROFILE_ID} (${PROFILE_LABEL})"
   info "系统：${PRETTY_NAME:-unknown}"
   info "内核：$(uname -r)"
+  info "CPU：${cpus} vCPU"
   info "内存：${mem} MiB"
   info "端口上限：${PORT_SPEED_MBPS} Mbps；目标 RTT：${BUFFER_TARGET_RTT_MS} ms"
   info "理论 BDP：${BUFFER_BDP_BYTES} 字节；BUF_MAX：${BUF_MAX} 字节 (${BUF_MAX_MODE})"
@@ -573,7 +613,7 @@ write_managed_file() {
 
 refresh_managed_files() {
   local path json='[]' hash tmp
-  for path in "$SYSCTL_FILE" "$JOURNAL_FILE" "$FQ_HELPER" "$FQ_SERVICE"; do
+  for path in "$SYSCTL_FILE" "$JOURNAL_FILE" "$FQ_HELPER" "$FQ_SERVICE" "$XUI_DROPIN"; do
     [ -f "$path" ] || continue
     hash="$(sha256sum "$path" | awk '{print $1}')"
     if ! json="$(jq -c --arg path "$path" --arg hash "$hash" '. + [{path:$path,sha256:$hash}]' <<<"$json")"; then
@@ -619,10 +659,18 @@ write_journal_profile() {
   write_managed_file "$JOURNAL_FILE" 0644 <<EOF_JOURNAL || return 1
 ${MANAGED_MARKER}
 [Journal]
-SystemMaxUse=128M
+SystemMaxUse=${JOURNAL_SYSTEM_MAX_USE}
 SystemKeepFree=${JOURNAL_SYSTEM_KEEP_FREE}
-RuntimeMaxUse=64M
+RuntimeMaxUse=${JOURNAL_RUNTIME_MAX_USE}
 EOF_JOURNAL
+}
+
+write_xui_dropin() {
+  write_managed_file "$XUI_DROPIN" 0644 <<EOF_XUI || return 1
+${MANAGED_MARKER}
+[Service]
+LimitNOFILE=${XUI_NOFILE_LIMIT}
+EOF_XUI
 }
 
 write_fq_helper() {
@@ -651,7 +699,7 @@ while IFS= read -r iface; do
           [ -n "$parent" ] && tc qdisc replace dev "$iface" parent "$parent" fq
         done
       ;;
-    fq_codel) tc qdisc replace dev "$iface" root fq ;;
+    fq_codel | pfifo_fast) tc qdisc replace dev "$iface" root fq ;;
     *) printf '[proxy-vps-fq] unsupported qdisc on %s: %s\n' "$iface" "$root_kind" >&2; exit 1 ;;
   esac
 done <<<"$ifaces"
@@ -777,9 +825,24 @@ read_nofile_limits() {
   awk '$1 == "Max" && $2 == "open" && $3 == "files" {printf "%s\t%s\n", $4, $5; exit}' "$limits_file"
 }
 
+verify_runtime_nofile() {
+  local unit="$1" process_label="$2" limits_file="$3" runtime_strict="$4" soft='' hard=''
+  IFS=$'\t' read -r soft hard < <(read_nofile_limits "$limits_file")
+  printf '[service] %s %s NOFILE soft=%s hard=%s\n' "$unit" "$process_label" "$soft" "$hard"
+  if ! [[ "$soft" =~ ^[0-9]+$ ]] || [ "$soft" -lt "$XUI_NOFILE_LIMIT" ] ||
+    ! [[ "$hard" =~ ^[0-9]+$ ]] || [ "$hard" -lt "$XUI_NOFILE_LIMIT" ]; then
+    if [ "$unit" = 'x-ui.service' ] && [ "$runtime_strict" -eq 1 ]; then
+      error "${unit} 的 ${process_label} 运行时 NOFILE soft/hard limit 未达到 ${XUI_NOFILE_LIMIT}。"
+      return 1
+    fi
+    warn "${unit} 的 ${process_label} 运行时 NOFILE soft/hard limit 低于 ${XUI_NOFILE_LIMIT}；重启服务或主机后再验证。"
+  fi
+}
+
 verify_proxy_services() {
-  local unit loaded=0 active_count=0 active main_pid child soft hard strict=0 failures=0
+  local unit loaded=0 active_count=0 active main_pid child strict=0 runtime_strict=0 failures=0 configured_soft configured_hard
   [ -z "$PROXY_SERVICE_UNITS_INPUT" ] || strict=1
+  if [ "$strict" -eq 1 ] || [ "$REQUIRE_PROXY_SERVICE" = '1' ]; then runtime_strict=1; fi
   while IFS= read -r unit; do
     [ -n "$unit" ] || continue
     [ "$(systemctl show -p LoadState --value "$unit" 2>/dev/null || true)" = 'loaded' ] || continue
@@ -787,27 +850,32 @@ verify_proxy_services() {
     active="$(systemctl show -p ActiveState --value "$unit" 2>/dev/null || true)"
     main_pid="$(systemctl show -p MainPID --value "$unit" 2>/dev/null || true)"
     printf '[service] %s ActiveState=%s MainPID=%s\n' "$unit" "$active" "${main_pid:-0}"
+    if [ "$unit" = 'x-ui.service' ]; then
+      configured_soft="$(systemctl show -p LimitNOFILESoft --value "$unit" 2>/dev/null || true)"
+      configured_hard="$(systemctl show -p LimitNOFILE --value "$unit" 2>/dev/null || true)"
+      printf '[service] %s configured NOFILE soft=%s hard=%s\n' "$unit" "${configured_soft:-unknown}" "${configured_hard:-unknown}"
+      if ! [[ "$configured_soft" =~ ^[0-9]+$ ]] || [ "$configured_soft" -lt "$XUI_NOFILE_LIMIT" ] ||
+        ! [[ "$configured_hard" =~ ^[0-9]+$ ]] || [ "$configured_hard" -lt "$XUI_NOFILE_LIMIT" ]; then
+        error "x-ui.service 的 systemd LimitNOFILE 未达到 ${XUI_NOFILE_LIMIT}。"
+        failures=$((failures + 1))
+      fi
+    fi
     if [ "$active" != 'active' ]; then
       if [ "$strict" -eq 1 ]; then error "指定的服务未运行：${unit}"; failures=$((failures + 1)); else warn "检测到未运行的兼容服务：${unit}"; fi
       continue
     fi
     active_count=$((active_count + 1))
     if [[ "$main_pid" =~ ^[1-9][0-9]*$ ]] && [ -r "/proc/${main_pid}/limits" ]; then
-      soft=''; hard=''
-      IFS=$'\t' read -r soft hard < <(read_nofile_limits "/proc/${main_pid}/limits")
-      printf '[service] %s MainPID NOFILE soft=%s hard=%s\n' "$unit" "$soft" "$hard"
-      if [[ "$soft" =~ ^[0-9]+$ ]] && [ "$soft" -lt 65536 ]; then warn "${unit} 的运行时 NOFILE soft limit 低于 65536。"; fi
+      verify_runtime_nofile "$unit" MainPID "/proc/${main_pid}/limits" "$runtime_strict" || failures=$((failures + 1))
       while IFS= read -r child; do
         [ -r "/proc/${child}/limits" ] || continue
-        soft=''; hard=''
-        IFS=$'\t' read -r soft hard < <(read_nofile_limits "/proc/${child}/limits")
-        printf '[service] %s child=%s NOFILE soft=%s hard=%s\n' "$unit" "$child" "$soft" "$hard"
+        verify_runtime_nofile "$unit" "child=${child}" "/proc/${child}/limits" "$runtime_strict" || failures=$((failures + 1))
       done < <(pgrep -P "$main_pid" 2>/dev/null || true)
     fi
   done < <(profile_service_units)
   if [ "$loaded" -eq 0 ]; then
     if [ "$REQUIRE_PROXY_SERVICE" = '1' ]; then error '没有发现要求的代理服务。'; return 1; fi
-    warn '尚未发现已加载的代理服务；安装 3X-UI 后请重新 verify。'
+    info '尚未安装代理服务；x-ui.service 的 LimitNOFILE drop-in 已预置，安装 3X-UI 后请重新 verify。'
   fi
   if [ "$REQUIRE_PROXY_SERVICE" = '1' ] && [ "$active_count" -eq 0 ]; then error '没有发现活动的目标代理服务。'; failures=$((failures + 1)); fi
   [ "$failures" -eq 0 ]
@@ -850,7 +918,7 @@ verify_settings() {
   done
   qhash="$(sha256sum "$QDISC_STATE_FILE" | awk '{print $1}')"
   [ "$qhash" = "$(state_get '.qdisc.sha256')" ] || { error 'qdisc 原始状态文件哈希不匹配。'; failures=$((failures + 1)); }
-  for key in "$SYSCTL_FILE" "$JOURNAL_FILE" "$FQ_HELPER" "$FQ_SERVICE"; do assert_owned_file "$key"; done
+  for key in "$SYSCTL_FILE" "$JOURNAL_FILE" "$FQ_HELPER" "$FQ_SERVICE" "$XUI_DROPIN"; do assert_owned_file "$key"; done
   unit_path="$(systemctl show -p FragmentPath --value "$FQ_SERVICE_NAME" 2>/dev/null || true)"
   [ "$(readlink -f "$unit_path" 2>/dev/null || true)" = "$(readlink -f "$FQ_SERVICE")" ] || {
     error 'fq helper 的 systemd FragmentPath 不匹配。'; failures=$((failures + 1)); }
@@ -910,6 +978,7 @@ restore_qdiscs() {
     case "$root_kind" in
       fq) : ;;
       fq_codel) restore_fq_codel "$iface" root '' "$root_json" || return 1 ;;
+      pfifo_fast) tc qdisc replace dev "$iface" root pfifo_fast || return 1 ;;
       noqueue) ;;
       mq)
         [ "$(tc -j qdisc show dev "$iface" | jq -r '.[] | select(.root == true) | .kind' | head -n1)" = 'mq' ] || return 1
@@ -979,7 +1048,7 @@ restore_original_sysctls() {
 
 project_managed_files_exist() {
   local path
-  for path in "$SYSCTL_FILE" "$JOURNAL_FILE" "$FQ_HELPER" "$FQ_SERVICE"; do
+  for path in "$SYSCTL_FILE" "$JOURNAL_FILE" "$FQ_HELPER" "$FQ_SERVICE" "$XUI_DROPIN"; do
     if [ -e "$path" ] || [ -L "$path" ]; then return 0; fi
   done
   return 1
@@ -1119,7 +1188,7 @@ rollback_internal() {
       fi
       ;;
   esac
-  for path in "$SYSCTL_FILE" "$JOURNAL_FILE" "$FQ_HELPER" "$FQ_SERVICE"; do
+  for path in "$SYSCTL_FILE" "$JOURNAL_FILE" "$FQ_HELPER" "$FQ_SERVICE" "$XUI_DROPIN"; do
     [ -e "$path" ] || continue
     assert_owned_file "$path"
   done
@@ -1144,10 +1213,11 @@ rollback_internal() {
       info 'qdisc 已恢复并通过原始快照语义验证。'
     fi
   fi
-  if ! rm -f -- "$SYSCTL_FILE" "$JOURNAL_FILE" "$FQ_HELPER" "$FQ_SERVICE"; then
+  if ! rm -f -- "$SYSCTL_FILE" "$JOURNAL_FILE" "$FQ_HELPER" "$FQ_SERVICE" "$XUI_DROPIN"; then
     error '回滚步骤失败：无法删除一个或多个项目管理文件。'
     failures=$((failures + 1))
   fi
+  rmdir -- "$XUI_DROPIN_DIR" >/dev/null 2>&1 || true
   if ! systemctl daemon-reload; then
     error '回滚步骤失败：systemctl daemon-reload。'
     failures=$((failures + 1))
@@ -1214,6 +1284,8 @@ apply_settings() {
   refresh_managed_files || die "$EXIT_CONFLICT" '无法记录 sysctl 文件所有权。'
   write_journal_profile || die "$EXIT_CONFLICT" '无法写入 journald 配置。'
   refresh_managed_files || die "$EXIT_CONFLICT" '无法记录 journald 文件所有权。'
+  write_xui_dropin || die "$EXIT_CONFLICT" '无法预置 x-ui.service 的 LimitNOFILE drop-in。'
+  refresh_managed_files || die "$EXIT_CONFLICT" '无法记录 x-ui.service drop-in 所有权。'
   write_fq_helper || die "$EXIT_CONFLICT" '无法写入或记录 fq helper。'
   apply_kernel_settings || die "$EXIT_CONFLICT" '无法应用内核或 systemd 配置。'
   create_swap_if_needed || die "$EXIT_CONFLICT" 'swap 处理失败。'
@@ -1242,14 +1314,52 @@ show_status() {
   ss -lntup 2>/dev/null || true
 }
 
+show_diagnostics() {
+  local diagnostic_state='UNMANAGED' iface
+  ensure_required_tools
+  check_supported_os
+  if [ -e "$STATE_FILE" ] || [ -L "$STATE_FILE" ]; then
+    diagnostic_state="$(jq -er '.state | select(type == "string")' "$STATE_FILE" 2>/dev/null || printf 'INVALID')"
+  fi
+  info '只读诊断：不会修改 sysctl、qdisc、systemd、swap 或代理服务。'
+  printf '[system] version=%s profile=%s kernel=%s arch=%s cpu=%s memory_mib=%s\n' \
+    "$SCRIPT_VERSION" "$PROFILE_ID" "$(uname -r)" "$(uname -m)" "$(nproc)" "$(memory_mib)"
+  printf '[system] root_fs=%s state=%s\n' \
+    "$(findmnt -n -o FSTYPE / 2>/dev/null || true)" \
+    "$diagnostic_state"
+  printf '[network] congestion_control=%s available_cc=%s default_qdisc=%s\n' \
+    "$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || true)" \
+    "$(sysctl -n net.ipv4.tcp_available_congestion_control 2>/dev/null || true)" \
+    "$(sysctl -n net.core.default_qdisc 2>/dev/null || true)"
+  ip -br address show 2>/dev/null || true
+  ip -4 route show default 2>/dev/null || true
+  ip -6 route show default 2>/dev/null || true
+  while IFS= read -r iface; do
+    [ -n "$iface" ] || continue
+    printf '[interface] %s rx_queues=%s tx_queues=%s\n' "$iface" \
+      "$(find "/sys/class/net/${iface}/queues" -maxdepth 1 -type d -name 'rx-*' 2>/dev/null | wc -l)" \
+      "$(find "/sys/class/net/${iface}/queues" -maxdepth 1 -type d -name 'tx-*' 2>/dev/null | wc -l)"
+    ip -s link show dev "$iface" 2>/dev/null || true
+    tc -s qdisc show dev "$iface" 2>/dev/null || true
+    if command -v ethtool >/dev/null 2>&1; then
+      ethtool -k "$iface" 2>/dev/null | grep -E '^(receive-hashing|tcp-segmentation-offload|generic-segmentation-offload|generic-receive-offload):' || true
+    fi
+  done < <(default_route_ifaces)
+  ss -s 2>/dev/null || true
+  printf '[softnet] cpu processed dropped time_squeeze (hex; first 32 CPUs)\n'
+  awk 'NR <= 32 {printf "%d %s %s %s\n", NR-1, $1, $2, $3}' /proc/net/softnet_stat 2>/dev/null || true
+  swapon --show 2>/dev/null || true
+  info '诊断完成；该输出是采样证据，不等同于 1/3/5/10 并发性能测试。'
+}
+
 usage() {
   cat <<EOF_USAGE
-Usage: $0 {preflight|apply|verify|status|rollback|recover}
+Usage: $0 {preflight|apply|verify|status|diagnose|rollback|recover}
 
 Environment:
   PORT_SPEED_MBPS=100..1000       default 200
   BUFFER_TARGET_RTT_MS=20..500    default 200
-  BUF_MAX=auto|262144..67108864   default auto
+  BUF_MAX=auto|262144..${MAX_BUF_MAX}   default auto; profile memory cap
   ENABLE_SWAP=0|1                 default 1
   SWAP_MB=512..${SWAP_MAX_MIB}             default 1024
   PURGE_CREATED_SWAP=0|1          default 0
@@ -1277,6 +1387,9 @@ main() {
       ;;
     status)
       need_root; acquire_lock; show_status
+      ;;
+    diagnose)
+      need_root; acquire_lock; show_diagnostics
       ;;
     rollback)
       need_root; acquire_lock; ensure_required_tools; check_supported_os

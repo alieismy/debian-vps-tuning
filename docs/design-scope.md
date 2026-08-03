@@ -2,7 +2,7 @@
 
 ## 目标
 
-为 Debian 12/13 amd64 小型 VPS 提供保守、可验证、可回滚的主机网络配置。主要验收负载是原生 systemd 部署的 3X-UI v3.4.2、Xray-core v26.6.27、VLESS + REALITY + TCP，默认 200 Mbps、少于 10 名用户。
+为 Debian 12/13 amd64 小型 VPS 提供性能优先、稳定性受约束且可验证、可回滚的主机网络配置。资源范围严格限定为 1C512MB、1C1GB、1C2GB 和 2C2GB。主要验收负载是原生 systemd 部署的 3X-UI v3.4.2、Xray-core v26.6.27、VLESS + REALITY + TCP，默认 200 Mbps、目标 RTT 200 ms、通常 3–5 人且最多 10 人并发。
 
 ## 信任边界
 
@@ -24,6 +24,26 @@
 
 唯一命名空间为 `proxy-vps`。状态文件是脚本所有权、资源档位、原始 qdisc、swap 和 managed file 哈希的唯一事实来源。状态文件使用 JSON，不通过 `source` 或 `eval` 解释。
 
+## 总控入口与分发边界
+
+`debian-vps-tuning.sh` 是选择器和调用器，不是另一份调优实现。它只允许 Debian 12/13、amd64 下的四个资源档：1C + 384–767 MiB、1C + 768–1535 MiB、1C + 1536–3072 MiB、2C + 1536–3072 MiB。底层共有六个操作系统/内存 profile；1C2GB 和 2C2GB 共用兼容 ID `debian12-1c2g`/`debian13-1c2g`，不建立重复实现或迁移已有状态。2C512MB、2C1GB、3 vCPU 以上及边界外内存拒绝执行。存在可解析状态时，检测档位必须与 `.profile.id` 一致，否则阻断。
+
+总控入口支持交互安全引导和显式 action。带宽只为 `guided`、`preflight`、`apply` 选择，默认 200 Mbps，范围是 100–1000 的任意整数；`verify`、`status`、`diagnose`、`rollback` 不通过 `--port` 重写现有状态。安全引导先运行 preflight，只有交互终端再次明确确认才调用 apply。`diagnose` 只读取本机状态，不生成流量。普通菜单不提供 rc.2 专用 `recover`。
+
+本地模式要求总控脚本、目标 profile 和 `SHA256SUMS` 位于同一目录，并在调用前核对唯一清单条目。远程模式只允许 HTTPS，从总控脚本内固定的 GitHub Release tag 下载 `SHA256SUMS` 和目标 profile；HTTP 错误、重定向协议降级、超时、空文件、重复清单条目或哈希不匹配均阻断。下载失败不得回退到可变分支、latest、第三方镜像或另一个 profile。
+
+总控脚本不写 sysctl、systemd、qdisc、swap、journald 或状态文件，不捕获后伪造底层成功，不改变底层退出码。SHA-256 证明下载内容与同一发布清单一致，不单独证明发布者身份；Release tag、资产不可变性和发布来源仍属于用户信任边界。
+
+## CPU 调优边界
+
+CPU 数只参与资源档位选择和底层预检，不改变 BBR、fq、TCP 缓冲、backlog、swap 或 journald 参数。首发版本不配置 RPS/RFS/XPS、IRQ affinity、CPU affinity、busy polling 或 `GOMAXPROCS`；这些行为依赖虚拟网卡队列、软中断分布和实测瓶颈，不由 2 vCPU 这一条件单独触发。
+
+## 资源参数边界
+
+自动 socket 上限先按端口带宽和目标 RTT 的 BDP 选择 16/32/64 MiB，再限制为 512M/1G/2G profile 的 16/32/64 MiB 上限。显式 `BUF_MAX` 不得越过对应 profile 上限；自动值因 512M 内存预算被截断时必须给出覆盖 RTT 警告。
+
+journald 的 `SystemMaxUse`/`RuntimeMaxUse`/`SystemKeepFree` 分别为：512M 档 `64M/16M/256M`，1G 档 `128M/32M/512M`，2G 档 `128M/64M/1G`。swap 默认均为 1 GiB；512M/1G 上限 2 GiB，2G 上限 4 GiB；创建后必须分别保留至少 256/512/1024 MiB 可用磁盘。所有档位保持 `vm.swappiness=20`。
+
 ## 事务状态
 
 正常路径：
@@ -44,12 +64,13 @@ UNMANAGED → PREPARED → APPLYING → APPLIED → VERIFIED
 
 - 根 `fq`；
 - 根 `fq_codel`；
+- 仅含默认参数且没有附加层次的常规根 `pfifo_fast`；
 - 根 `noqueue`，只警告；
 - 根 `mq` 且叶子为 `fq`/`fq_codel`。
 
 其他拓扑在第一次系统写入前阻断。IPv4 和 IPv6 默认路由网卡分别发现并去重；策略路由表不属于该发现范围。
 
-已有根 `fq` 和 `mq` 下已有 `fq` 叶子视为不需要修改，应用和回滚均保留其现有参数。只有已保存完整可恢复参数的 `fq_codel` 根或叶子会被切换并在回滚时重建。
+已有根 `fq` 和 `mq` 下已有 `fq` 叶子视为不需要修改，应用和回滚均保留其现有参数。只有已保存完整可恢复参数的 `fq_codel` 根/叶子或常规根 `pfifo_fast` 会被切换并在回滚时重建。HTB、TBF、CAKE、自定义 `pfifo_fast` 或其他未知层次继续阻断。
 
 qdisc 状态以 `tc -j` 数值为准，但恢复命令按 `tc` 输入语法生成：`limit` 使用纯数据包数量，`memory_limit` 使用原始字节数，不复用文本显示后缀。语义比较忽略运行时 `refcnt` 和 JSON 字段顺序；`target`、`interval`、`ce_threshold` 仅允许 ±1 微秒量化差异。原快照 `handle 0:` 代表未指定，允许内核为受支持的 classless qdisc 自动分配 handle；显式非零 handle、kind、parent、root 及其他 options 仍严格比较。rollback 恢复命令完成后必须再次读取并比较实际 qdisc，只有通过后置验证才允许删除状态和快照。
 
@@ -59,7 +80,7 @@ qdisc 状态以 `tc -j` 数值为准，但恢复命令按 `tc` 输入语法生�
 
 ## 3X-UI 边界
 
-脚本只识别 `x-ui.service`、主进程、子进程和运行时 NOFILE。它不安装、升级、停止或重启 3X-UI，也不读取数据库、凭据、REALITY 密钥或 Xray JSON。
+脚本预先托管 `/etc/systemd/system/x-ui.service.d/90-proxy-vps.conf`，设置 `LimitNOFILE=65536`，因此先调优、后安装 3X-UI 是正常路径。未安装时 verify 报告待安装但不警告；安装后严格验证 systemd 配置、主进程和直接子进程的运行时限制。脚本不主动重启代理服务；若 apply 时 `x-ui.service` 已在运行，非严格验证只警告旧运行时限制，用户重启服务或主机后再执行严格验证。脚本不安装、升级 3X-UI，也不读取数据库、凭据、REALITY 密钥或 Xray JSON。
 
 ## 防火墙边界
 

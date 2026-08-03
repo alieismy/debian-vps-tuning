@@ -5,11 +5,14 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 scripts=(
+  debian12-1c512m-vps-tuning.sh
   debian12-1c1g-vps-tuning.sh
   debian12-1c2g-vps-tuning.sh
+  debian13-1c512m-vps-tuning.sh
   debian13-1c1g-vps-tuning.sh
   debian13-1c2g-vps-tuning.sh
 )
+controller='debian-vps-tuning.sh'
 
 if command -v python3 >/dev/null 2>&1; then
   python_cmd=python3
@@ -20,7 +23,10 @@ else
   exit 1
 fi
 "$python_cmd" tools/render_profiles.py --check
-bash -n "${scripts[@]}" tools/profile-template.sh.in tests/static-check.sh
+bash -n "${scripts[@]}" "$controller" tools/profile-template.sh.in \
+  tests/static-check.sh tests/controller-check.sh
+
+bash tests/controller-check.sh
 
 for script in "${scripts[@]}"; do
   if LC_ALL=C grep -n $'\r' "$script"; then
@@ -38,9 +44,24 @@ for script in "${scripts[@]}"; do
   [ "$rc" -eq 2 ] || { printf 'invalid action did not return 2: %s (%s)\n' "$script" "$rc" >&2; exit 1; }
 done
 
+if LC_ALL=C grep -n $'\r' "$controller"; then
+  printf 'CRLF detected: %s\n' "$controller" >&2
+  exit 1
+fi
+if [ "$(od -An -tx1 -N3 "$controller" | tr -d ' \n')" = 'efbbbf' ]; then
+  printf 'UTF-8 BOM detected: %s\n' "$controller" >&2
+  exit 1
+fi
+
 forbidden='ip_local_port_range|ip_local_reserved_ports|tcp_tw_reuse|tcp_tw_recycle|tcp_mem|tcp_fin_timeout|ip_forward|disable_ipv6|fs\.file-max|fs\.nr_open|nf_conntrack_max|busy_poll|busy_read'
 if grep -nE "^[[:space:]]*(${forbidden})[[:space:]]*=" "${scripts[@]}"; then
   printf 'forbidden sysctl assignment detected\n' >&2
+  exit 1
+fi
+
+forbidden_features='rps_cpus|rps_flow_cnt|xps_cpus|rps_sock_flow_entries|smp_affinity|GOMAXPROCS|zram|irqbalance'
+if grep -nE "${forbidden_features}" "${scripts[@]}" "$controller" tools/profile-template.sh.in; then
+  printf 'out-of-scope CPU steering or compressed-swap feature detected\n' >&2
   exit 1
 fi
 
@@ -48,10 +69,46 @@ expected_keys=17
 for script in "${scripts[@]}"; do
   actual="$(awk '/^PROFILE_SYSCTL_KEYS=\(/,/^\)/ {if ($1 ~ /^(net\.|vm\.)/) count++} END {print count+0}' "$script")"
   [ "$actual" -eq "$expected_keys" ] || { printf 'unexpected managed-key count: %s (%s)\n' "$script" "$actual" >&2; exit 1; }
-  grep -Fq "SCRIPT_VERSION='0.1.0-rc.8'" "$script"
+  grep -Fq "SCRIPT_VERSION='0.1.0-rc.9'" "$script"
   grep -Fq "STATE_SCHEMA_VERSION=3" "$script"
+  grep -Fq 'PROFILE_CPU_MIN=' "$script"
+  grep -Fq 'PROFILE_CPU_MAX=' "$script"
+  grep -Fq '无法读取可用逻辑 CPU 数' "$script"
+  # shellcheck disable=SC2016  # Intentionally match literal shell source.
+  grep -Fq 'CPU：${cpus} vCPU' "$script"
+  case "$script" in
+    *-1c512m-*)
+      grep -Fq "PROFILE_CPU_MIN=1" "$script"
+      grep -Fq "PROFILE_CPU_MAX=1" "$script"
+      grep -Fq "MAX_BUF_MAX=16777216" "$script"
+      grep -Fq "JOURNAL_SYSTEM_MAX_USE='64M'" "$script"
+      grep -Fq "JOURNAL_RUNTIME_MAX_USE='16M'" "$script"
+      grep -Fq '/ 1 vCPU / 512 MiB' "$script"
+      ;;
+    *-1c1g-*)
+      grep -Fq "PROFILE_CPU_MIN=1" "$script"
+      grep -Fq "PROFILE_CPU_MAX=1" "$script"
+      grep -Fq "MAX_BUF_MAX=33554432" "$script"
+      grep -Fq "JOURNAL_RUNTIME_MAX_USE='32M'" "$script"
+      grep -Fq '/ 1 vCPU / 1 GiB' "$script"
+      ;;
+    *-1c2g-*)
+      grep -Fq "PROFILE_CPU_MIN=1" "$script"
+      grep -Fq "PROFILE_CPU_MAX=2" "$script"
+      grep -Fq "MAX_BUF_MAX=67108864" "$script"
+      grep -Fq "JOURNAL_RUNTIME_MAX_USE='64M'" "$script"
+      grep -Fq '/ 1–2 vCPU / 2 GiB' "$script"
+      ;;
+  esac
   grep -Fq "SWAP_FILE='/swapfile-proxy'" "$script"
   grep -Fq 'x-ui.service' "$script"
+  grep -Fq "XUI_DROPIN=\"\${XUI_DROPIN_DIR}/90-\${NAMESPACE}.conf\"" "$script"
+  # shellcheck disable=SC2016  # Intentionally match literal shell source.
+  grep -Fq 'LimitNOFILE=${XUI_NOFILE_LIMIT}' "$script"
+  grep -Fq 'write_xui_dropin' "$script"
+  grep -Fq '尚未安装代理服务；x-ui.service 的 LimitNOFILE drop-in 已预置' "$script"
+  grep -Fq 'show_diagnostics' "$script"
+  grep -Fq '只读诊断：不会修改 sysctl、qdisc、systemd、swap 或代理服务' "$script"
   grep -Fq "ext2 | ext3 | ext4 | xfs)" "$script"
   grep -Fq "ROOT_FS_TYPE='unknown'" "$script"
   grep -Fq "SWAP_CREATE_ALLOWED='0'" "$script"
@@ -87,6 +144,10 @@ for script in "${scripts[@]}"; do
   # shellcheck disable=SC2016  # Intentionally match literal shell source.
   grep -Fq 'fq_codel) restore_fq_codel "$iface" root' "$script"
   # shellcheck disable=SC2016  # Intentionally match literal shell source.
+  grep -Fq 'pfifo_fast) tc qdisc replace dev "$iface" root pfifo_fast || return 1' "$script"
+  # shellcheck disable=SC2016  # Intentionally match literal shell source.
+  grep -Fq 'fq_codel | pfifo_fast) tc qdisc replace dev "$iface" root fq' "$script"
+  # shellcheck disable=SC2016  # Intentionally match literal shell source.
   grep -Fq '"$root_json" || return 1 ;;' "$script"
   # shellcheck disable=SC2016  # Intentionally match literal shell source.
   grep -Fq 'fq_codel) restore_fq_codel "$iface" leaf "$parent" "$leaf_json" || return 1' "$script"
@@ -116,8 +177,113 @@ for script in "${scripts[@]}"; do
   }
 done
 
+grep -Fq "CONTROLLER_VERSION='0.1.0-rc.9'" "$controller"
+grep -Fq "RELEASE_TAG='v0.1.0-rc.9'" "$controller"
+grep -Fq "DEFAULT_PORT_SPEED_MBPS=200" "$controller"
+grep -Fq 'verify_profile_contract' "$controller"
+grep -Fq 'debian12-1c512m-vps-tuning.sh' "$controller"
+grep -Fq 'debian13-1c512m-vps-tuning.sh' "$controller"
+grep -Fq "resource_class='2C2GB'" "$controller"
+grep -Fq 'diagnose（只读诊断）' "$controller"
+# shellcheck disable=SC2016  # Intentionally match literal shell source.
+grep -Fq '[ "$RELEASE_TAG" = "v${CONTROLLER_VERSION}" ]' "$controller"
+grep -Fq -- "--proto '=https' --proto-redir '=https'" "$controller"
+if grep -Eq 'raw\.githubusercontent\.com|/master/|/main/|releases/latest|http://' "$controller"; then
+  printf 'mutable or insecure controller download source detected\n' >&2
+  exit 1
+fi
+
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf -- "$tmp_dir"' EXIT
+
+resource_profile_test="$tmp_dir/resource-profile-test.sh"
+{
+  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  awk '/^check_resource_profile\(\)/,/^}/' "${scripts[0]}"
+  cat <<'EOF_RESOURCE_PROFILE_TEST'
+EXIT_UNSUPPORTED=3
+BUF_MAX=16777216
+PROFILE_LABEL='Test profile'
+warn() { :; }
+die() { local code="$1"; shift; printf '%s\n' "$*" >&2; exit "$code"; }
+nproc() { printf '%s\n' "$TEST_CPUS"; }
+memory_mib() { printf '%s\n' "$TEST_MEMORY_MIB"; }
+
+( TEST_CPUS=1; TEST_MEMORY_MIB=1024; PROFILE_CPU_MIN=1; PROFILE_CPU_MAX=1; PROFILE_RAM_MIN_MIB=768; PROFILE_RAM_MAX_MIB=1536; check_resource_profile )
+( TEST_CPUS=2; TEST_MEMORY_MIB=2048; PROFILE_CPU_MIN=1; PROFILE_CPU_MAX=2; PROFILE_RAM_MIN_MIB=1536; PROFILE_RAM_MAX_MIB=3072; check_resource_profile )
+
+if ( TEST_CPUS=2; TEST_MEMORY_MIB=1024; PROFILE_CPU_MIN=1; PROFILE_CPU_MAX=1; PROFILE_RAM_MIN_MIB=768; PROFILE_RAM_MAX_MIB=1536; check_resource_profile ) 2>/dev/null; then
+  printf '2C1G was accepted by the 1C1G profile\n' >&2
+  exit 1
+fi
+if ( TEST_CPUS=3; TEST_MEMORY_MIB=2048; PROFILE_CPU_MIN=1; PROFILE_CPU_MAX=2; PROFILE_RAM_MIN_MIB=1536; PROFILE_RAM_MAX_MIB=3072; check_resource_profile ) 2>/dev/null; then
+  printf '3C2G was accepted by the 1-2C2G profile\n' >&2
+  exit 1
+fi
+EOF_RESOURCE_PROFILE_TEST
+} >"$resource_profile_test"
+bash "$resource_profile_test"
+
+buffer_profile_test="$tmp_dir/buffer-profile-test.sh"
+{
+  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  awk '/^is_bool\(\)/,/^}/' "${scripts[0]}"
+  awk '/^validate_inputs\(\)/,/^}/' "${scripts[0]}"
+  cat <<'EOF_BUFFER_PROFILE_TEST'
+EXIT_USAGE=2
+DEFAULT_PORT_SPEED_MBPS=200
+DEFAULT_BUFFER_TARGET_RTT_MS=200
+DEFAULT_SWAP_MB=1024
+MIN_BUF_MAX=262144
+SWAP_MAX_MIB=2048
+PROFILE_LABEL='fixture'
+ENABLE_SWAP=1
+PURGE_CREATED_SWAP=0
+REQUIRE_PROXY_SERVICE=0
+SWAP_MB_INPUT=1024
+warn() { WARNED=1; }
+die() { exit "$1"; }
+
+PORT_SPEED_MBPS_INPUT=1000
+BUFFER_TARGET_RTT_MS_INPUT=200
+BUF_MAX_INPUT=auto
+MAX_BUF_MAX=16777216
+WARNED=0
+validate_inputs
+[ "$BUF_MAX" -eq 16777216 ] && [ "$BUF_MAX_MODE" = auto-clamped ] && [ "$WARNED" -eq 1 ] || {
+  printf '512 MiB auto buffer was not clamped and warned\n' >&2
+  exit 1
+}
+
+PORT_SPEED_MBPS_INPUT=1000
+BUFFER_TARGET_RTT_MS_INPUT=200
+BUF_MAX_INPUT=auto
+MAX_BUF_MAX=33554432
+WARNED=0
+validate_inputs
+[ "$BUF_MAX" -eq 33554432 ] && [ "$BUF_MAX_MODE" = auto ] && [ "$WARNED" -eq 0 ] || {
+  printf '1 GiB auto buffer did not select 32 MiB\n' >&2
+  exit 1
+}
+
+PORT_SPEED_MBPS_INPUT=1000
+BUFFER_TARGET_RTT_MS_INPUT=500
+BUF_MAX_INPUT=auto
+MAX_BUF_MAX=67108864
+WARNED=0
+validate_inputs
+[ "$BUF_MAX" -eq 67108864 ] && [ "$BUF_MAX_MODE" = auto ] || {
+  printf '2 GiB auto buffer did not select 64 MiB\n' >&2
+  exit 1
+}
+
+if ( PORT_SPEED_MBPS_INPUT=200 BUFFER_TARGET_RTT_MS_INPUT=200 BUF_MAX_INPUT=33554432 MAX_BUF_MAX=16777216 validate_inputs ) 2>/dev/null; then
+  printf '512 MiB profile accepted an explicit buffer above 16 MiB\n' >&2
+  exit 1
+fi
+EOF_BUFFER_PROFILE_TEST
+} >"$buffer_profile_test"
+bash "$buffer_profile_test"
 
 if command -v jq >/dev/null 2>&1; then
   for script in "${scripts[@]}"; do
@@ -342,6 +508,62 @@ EOF_NOFILE_PARSE_TEST
 } >"$nofile_parse_test"
 bash "$nofile_parse_test"
 
+nofile_pending_test="$tmp_dir/nofile-pending-test.sh"
+{
+  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail' 'IFS=$'\''\n\t'\'''
+  awk '/^profile_service_units\(\)/,/^}/' "${scripts[0]}"
+  awk '/^read_nofile_limits\(\)/,/^}/' "${scripts[0]}"
+  awk '/^verify_proxy_services\(\)/,/^}/' "${scripts[0]}"
+  cat <<'EOF_NOFILE_PENDING_TEST'
+DEFAULT_PROXY_SERVICE_UNITS=(x-ui.service)
+PROXY_SERVICE_UNITS_INPUT=''
+REQUIRE_PROXY_SERVICE=0
+XUI_NOFILE_LIMIT=65536
+EXIT_USAGE=2
+OUTPUT=''
+systemctl() { printf '%s\n' 'not-found'; }
+info() { OUTPUT="${OUTPUT}$*"; }
+warn() { printf 'unexpected warning: %s\n' "$*" >&2; exit 1; }
+error() { :; }
+die() { exit "$1"; }
+verify_proxy_services
+case "$OUTPUT" in *'LimitNOFILE drop-in 已预置'*) : ;; *) printf 'pre-install NOFILE state was not reported as pending\n' >&2; exit 1 ;; esac
+REQUIRE_PROXY_SERVICE=1
+if verify_proxy_services; then
+  printf 'strict verification accepted a missing proxy service\n' >&2
+  exit 1
+fi
+EOF_NOFILE_PENDING_TEST
+} >"$nofile_pending_test"
+bash "$nofile_pending_test"
+
+nofile_active_test="$tmp_dir/nofile-active-test.sh"
+{
+  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail' 'IFS=$'\''\n\t'\'''
+  awk '/^read_nofile_limits\(\)/,/^}/' "${scripts[0]}"
+  awk '/^verify_runtime_nofile\(\)/,/^}/' "${scripts[0]}"
+  cat <<'EOF_NOFILE_ACTIVE_TEST'
+XUI_NOFILE_LIMIT=65536
+warn() { :; }
+error() { :; }
+limits_file="$(mktemp)"
+trap 'rm -f -- "$limits_file"' EXIT
+printf '%s\n' 'Max open files            1024                 65536                 files' >"$limits_file"
+if verify_runtime_nofile x-ui.service MainPID "$limits_file" 1 >/dev/null; then
+  printf 'strict verification accepted x-ui runtime NOFILE soft=1024\n' >&2
+  exit 1
+fi
+printf '%s\n' 'Max open files            65536                1024                  files' >"$limits_file"
+if verify_runtime_nofile x-ui.service MainPID "$limits_file" 1 >/dev/null; then
+  printf 'strict verification accepted x-ui runtime NOFILE hard=1024\n' >&2
+  exit 1
+fi
+printf '%s\n' 'Max open files            65536                65536                 files' >"$limits_file"
+verify_runtime_nofile x-ui.service MainPID "$limits_file" 1 >/dev/null
+EOF_NOFILE_ACTIVE_TEST
+} >"$nofile_active_test"
+bash "$nofile_active_test"
+
 preflight_state_test="$tmp_dir/preflight-state-test.sh"
 {
   printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
@@ -369,6 +591,29 @@ EOF_PREFLIGHT_STATE_TEST
 } >"$preflight_state_test"
 bash "$preflight_state_test"
 
+pfifo_fast_test="$tmp_dir/pfifo-fast-test.sh"
+{
+  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  awk '/^is_conventional_pfifo_fast_snapshot\(\)/,/^}/' "${scripts[0]}"
+  cat <<'EOF_PFIFO_FAST_TEST'
+default_snapshot='{"interface":"eth0","qdiscs":[{"kind":"pfifo_fast","handle":"0:","root":true,"options":{"bands":3,"multiqueue":false,"priomap":[1,2,2,2,1,2,0,0,1,1,1,1,1,1,1,1]}}]}'
+is_conventional_pfifo_fast_snapshot "$default_snapshot" || {
+  printf 'conventional pfifo_fast snapshot was rejected\n' >&2
+  exit 1
+}
+for invalid in \
+  '{"interface":"eth0","qdiscs":[{"kind":"pfifo_fast","root":true,"options":{"bands":4}}]}' \
+  '{"interface":"eth0","qdiscs":[{"kind":"pfifo_fast","root":true,"options":{}},{"kind":"ingress","parent":"ffff:fff1"}]}' \
+  '{"interface":"eth0","qdiscs":[{"kind":"pfifo_fast","root":true,"options":{"custom":1}}]}'; do
+  if is_conventional_pfifo_fast_snapshot "$invalid"; then
+    printf 'non-conventional pfifo_fast snapshot was accepted: %s\n' "$invalid" >&2
+    exit 1
+  fi
+done
+EOF_PFIFO_FAST_TEST
+} >"$pfifo_fast_test"
+bash "$pfifo_fast_test"
+
 qdisc_match_test="$tmp_dir/qdisc-match-test.sh"
 {
   printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
@@ -391,6 +636,7 @@ tc() {
     auto_handle) printf '%s\n' '[{"dev":"eth0","kind":"fq_codel","handle":"8001:","root":true,"refcnt":99,"options":{"ecn":true,"limit":10240,"target":4999,"interval":99999}}]' ;;
     different) printf '%s\n' '[{"dev":"eth0","kind":"fq_codel","handle":"8001:","root":true,"refcnt":99,"options":{"ecn":true,"limit":9999,"target":4999,"interval":99999}}]' ;;
     explicit_match) printf '%s\n' '[{"dev":"eth0","kind":"fq_codel","handle":"1234:","root":true,"refcnt":99,"options":{"ecn":true,"limit":10240,"target":4999,"interval":99999}}]' ;;
+    pfifo_match) printf '%s\n' '[{"dev":"eth0","kind":"pfifo_fast","handle":"8002:","root":true,"refcnt":2,"options":{"bands":3,"multiqueue":false,"priomap":[1,2,2,2,1,2,0,0,1,1,1,1,1,1,1,1]}}]' ;;
   esac
 }
 qdisc_snapshot_matches_current
@@ -408,6 +654,11 @@ if qdisc_snapshot_matches_current; then
   exit 1
 fi
 TC_VARIANT='explicit_match'
+qdisc_snapshot_matches_current
+
+printf '%s\n' '[{"interface":"eth0","qdiscs":[{"dev":"eth0","kind":"pfifo_fast","handle":"0:","root":true,"refcnt":2,"options":{"bands":3,"multiqueue":false,"priomap":[1,2,2,2,1,2,0,0,1,1,1,1,1,1,1,1]}}]}]' >"$QDISC_STATE_FILE"
+fixture_hash="$(sha256sum "$QDISC_STATE_FILE" | awk '{print $1}')"
+TC_VARIANT='pfifo_match'
 qdisc_snapshot_matches_current
 EOF_QDISC_MATCH_TEST
 } >"$qdisc_match_test"
@@ -456,6 +707,10 @@ JOURNAL_FILE="$test_root/journal"
 FQ_HELPER="$test_root/helper"
 FQ_SERVICE="$test_root/service"
 FQ_SERVICE_NAME='proxy-vps-fq.service'
+XUI_DROPIN_DIR="$test_root/x-ui.service.d"
+XUI_DROPIN="$XUI_DROPIN_DIR/90-proxy-vps.conf"
+mkdir "$XUI_DROPIN_DIR"
+: >"$XUI_DROPIN"
 QDISC_STATE_FILE="$STATE_DIR/qdisc-original.json"
 SWAP_FILE="$test_root/swap"
 PURGE_CREATED_SWAP=0
@@ -484,6 +739,10 @@ fi
   printf 'rollback deleted state after qdisc post-restore failure\n' >&2
   exit 1
 }
+[ ! -e "$XUI_DROPIN" ] && [ ! -d "$XUI_DROPIN_DIR" ] || {
+  printf 'rollback did not remove the managed x-ui drop-in and empty directory\n' >&2
+  exit 1
+}
 case "$PHASES" in
   *' ROLLBACK_PENDING'*) : ;;
   *) printf 'rollback did not record ROLLBACK_PENDING\n' >&2; exit 1 ;;
@@ -509,7 +768,7 @@ for script in "${scripts[@]}"; do
 done
 
 if command -v shellcheck >/dev/null 2>&1; then
-  shellcheck -x "${scripts[@]}" tests/static-check.sh
+  shellcheck -x "${scripts[@]}" "$controller" tests/static-check.sh tests/controller-check.sh
   for helper in "$tmp_dir"/*.helper; do shellcheck -x "$helper"; done
 else
   printf '[WARN] shellcheck not found; syntax and structural checks only\n' >&2
