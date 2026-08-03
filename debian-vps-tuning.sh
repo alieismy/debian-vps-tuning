@@ -6,8 +6,8 @@ IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 
-CONTROLLER_VERSION='0.1.0-rc.9'
-RELEASE_TAG='v0.1.0-rc.9'
+CONTROLLER_VERSION='0.1.0-rc.10'
+RELEASE_TAG='v0.1.0-rc.10'
 REPOSITORY='alieismy/debian-vps-tuning'
 RELEASE_BASE_URL="https://github.com/${REPOSITORY}/releases/download/${RELEASE_TAG}"
 
@@ -41,6 +41,13 @@ PROFILE_PATH=''
 PROFILE_SHA256=''
 PROFILE_SOURCE=''
 TEMP_DIR=''
+UPDATE_TEMP_DIR=''
+CLI_UPDATE_TAG=''
+UPDATE_TAG_SELECTED=''
+UPDATE_CONTROLLER_PATH=''
+UPDATE_CONTROLLER_SHA256=''
+SOURCE_PROFILE_PATH=''
+SOURCE_PROFILE_SHA256=''
 
 info() { printf '[+] %s\n' "$*"; }
 warn() { printf '[!] %s\n' "$*" >&2; }
@@ -51,16 +58,22 @@ cleanup() {
   if [ -n "$TEMP_DIR" ] && [ -d "$TEMP_DIR" ]; then
     rm -rf -- "$TEMP_DIR"
   fi
+  if [ -n "$UPDATE_TEMP_DIR" ] && [ -d "$UPDATE_TEMP_DIR" ]; then
+    rm -rf -- "$UPDATE_TEMP_DIR"
+  fi
 }
 
 usage() {
   cat <<'EOF_USAGE'
 Usage:
   debian-vps-tuning.sh
-  debian-vps-tuning.sh {guided|preflight|apply|verify|status|diagnose|rollback|recover} [--port 100..1000]
+  debian-vps-tuning.sh {guided|preflight|apply|verify|status|diagnose|benchmark|update|rollback|recover} [options]
 
 Options:
   --port MBPS    provider port cap for guided/preflight/apply; default 200
+  --target TAG    update target, for example v0.1.0-rc.11; default is the
+                  highest non-draft Release in the installed major.minor line;
+                  stable installations ignore prereleases automatically
   -h, --help     show this help
   --version      show controller and pinned release versions
 
@@ -68,6 +81,10 @@ Behavior:
   - With a terminal and no action, shows an interactive menu.
   - Without a terminal, an explicit action is required.
   - guided runs preflight first and asks before apply.
+  - benchmark requires BENCHMARK_HOST and an existing iperf3 server; it changes
+    no system configuration but deliberately generates high-bandwidth traffic.
+  - update is read-only: it verifies the source and target Release assets, runs
+    source verify and target update-preflight, then prints a manual handoff plan.
   - recover is an advanced rc.2 empty-state recovery action and is not shown
     in the normal interactive menu.
 
@@ -199,7 +216,7 @@ state_profile_matches_detected() { [ "$1" = "$2" ]; }
 parse_arguments() {
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      guided | preflight | apply | verify | status | diagnose | rollback | recover)
+      guided | preflight | apply | verify | status | diagnose | benchmark | update | rollback | recover)
         [ -z "$ACTION" ] || die "$EXIT_USAGE" '只能指定一个 action。'
         ACTION="$1"
         ;;
@@ -209,6 +226,12 @@ parse_arguments() {
         shift
         ;;
       --port=*) CLI_PORT_SPEED_MBPS="${1#*=}" ;;
+      --target)
+        [ "$#" -ge 2 ] || die "$EXIT_USAGE" '--target 缺少 Release tag。'
+        CLI_UPDATE_TAG="$2"
+        shift
+        ;;
+      --target=*) CLI_UPDATE_TAG="${1#*=}" ;;
       -h | --help) usage; exit 0 ;;
       --version)
         printf 'controller=%s release=%s\n' "$CONTROLLER_VERSION" "$RELEASE_TAG"
@@ -231,8 +254,10 @@ choose_action_interactively() {
   3) 执行 apply
   4) verify
   5) status
-  6) diagnose（只读诊断）
-  7) rollback
+  6) diagnose（5 秒只读增量诊断）
+  7) benchmark（需 BENCHMARK_HOST，会产生测试流量）
+  8) update（只读检查并生成升级计划）
+  9) rollback
   0) 退出
 EOF_MENU
   printf '\n请选择 [默认 1]：'
@@ -244,7 +269,9 @@ EOF_MENU
     4) ACTION='verify' ;;
     5) ACTION='status' ;;
     6) ACTION='diagnose' ;;
-    7) ACTION='rollback' ;;
+    7) ACTION='benchmark' ;;
+    8) ACTION='update' ;;
+    9) ACTION='rollback' ;;
     0) exit 0 ;;
     *) die "$EXIT_USAGE" '无效操作选择。' ;;
   esac
@@ -281,6 +308,9 @@ EOF_PORT
 }
 
 select_port_speed() {
+  if [ -n "$CLI_UPDATE_TAG" ] && [ "$ACTION" != 'update' ]; then
+    die "$EXIT_USAGE" '--target 只能与 update 一起使用。'
+  fi
   case "$ACTION" in
     guided | preflight | apply) ;;
     *)
@@ -304,6 +334,40 @@ select_port_speed() {
   else
     PORT_SPEED_MBPS_SELECTED=$DEFAULT_PORT_SPEED_MBPS
   fi
+}
+
+parse_release_version() {
+  local value="${1#v}" stable rc part
+  if [[ "$value" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-rc\.([0-9]+))?$ ]]; then
+    for part in "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}" "${BASH_REMATCH[5]}"; do
+      [ -z "$part" ] && continue
+      [ "${#part}" -le 9 ] || return 1
+      [ "$part" = '0' ] || [[ "$part" != 0* ]] || return 1
+    done
+    if [ -n "${BASH_REMATCH[4]}" ]; then stable=0; rc="$((10#${BASH_REMATCH[5]}))"; else stable=1; rc=0; fi
+    printf '%d\t%d\t%d\t%d\t%d\n' \
+      "$((10#${BASH_REMATCH[1]}))" "$((10#${BASH_REMATCH[2]}))" \
+      "$((10#${BASH_REMATCH[3]}))" "$stable" "$rc"
+    return 0
+  fi
+  return 1
+}
+
+release_is_newer() {
+  local candidate current c_major c_minor c_patch c_stable c_rc o_major o_minor o_patch o_stable o_rc
+  candidate="$(parse_release_version "$1")" || return 2
+  current="$(parse_release_version "$2")" || return 2
+  IFS=$'\t' read -r c_major c_minor c_patch c_stable c_rc <<<"$candidate"
+  IFS=$'\t' read -r o_major o_minor o_patch o_stable o_rc <<<"$current"
+  [ "$c_major" -gt "$o_major" ] && return 0
+  [ "$c_major" -lt "$o_major" ] && return 1
+  [ "$c_minor" -gt "$o_minor" ] && return 0
+  [ "$c_minor" -lt "$o_minor" ] && return 1
+  [ "$c_patch" -gt "$o_patch" ] && return 0
+  [ "$c_patch" -lt "$o_patch" ] && return 1
+  [ "$c_stable" -gt "$o_stable" ] && return 0
+  [ "$c_stable" -lt "$o_stable" ] && return 1
+  [ "$c_rc" -gt "$o_rc" ]
 }
 
 verify_manifest_entry() {
@@ -339,6 +403,126 @@ download_file() {
     --remove-on-error --output "$output" "$url"
 }
 
+select_highest_release_tag() {
+  local releases_json="$1" current_version="${2:-$CONTROLLER_VERSION}"
+  local tag best='' candidate parsed current_parsed current_major current_minor current_stable tag_major tag_minor tag_stable
+  current_parsed="$(parse_release_version "$current_version")" || return 1
+  IFS=$'\t' read -r current_major current_minor _ current_stable _ <<<"$current_parsed"
+  while IFS= read -r tag; do
+    parsed="$(parse_release_version "$tag")" || continue
+    IFS=$'\t' read -r tag_major tag_minor _ tag_stable _ <<<"$parsed"
+    [ "$tag_major" -eq "$current_major" ] && [ "$tag_minor" -eq "$current_minor" ] || continue
+    [ "$current_stable" -eq 0 ] || [ "$tag_stable" -eq 1 ] || continue
+    if [ -z "$best" ] || release_is_newer "$tag" "$best"; then
+      best="$tag"
+    fi
+  done < <(jq -r '.[] | select(.draft == false) | .tag_name // empty' "$releases_json")
+  [ -n "$best" ] || return 1
+  candidate="${best#v}"
+  printf 'v%s\n' "$candidate"
+}
+
+resolve_update_release() {
+  local releases_json requested
+  [ -n "$STATE_PROFILE" ] || die "$EXIT_CONFLICT" '当前没有已安装的管理状态；update 只用于升级已应用的配置。'
+  parse_release_version "$STATE_VERSION" >/dev/null 2>&1 ||
+    die "$EXIT_CONFLICT" "状态版本无法参与安全升级比较：${STATE_VERSION}"
+  need_command curl
+  need_command jq
+  need_command sha256sum
+  umask 077
+  UPDATE_TEMP_DIR="$(mktemp -d)" || die "$EXIT_DOWNLOAD" '无法创建 update 临时目录。'
+
+  requested="${CLI_UPDATE_TAG:-${UPDATE_TAG:-}}"
+  if [ -n "$requested" ]; then
+    parse_release_version "$requested" >/dev/null 2>&1 ||
+      die "$EXIT_USAGE" '目标 Release 必须符合 vMAJOR.MINOR.PATCH 或 vMAJOR.MINOR.PATCH-rc.N。'
+    UPDATE_TAG_SELECTED="v${requested#v}"
+  else
+    releases_json="${UPDATE_TEMP_DIR}/releases.json"
+    if [[ "$STATE_VERSION" == *-rc.* ]]; then
+      info '查询 GitHub Releases（rc 通道接受更高 rc 或同版本线稳定版）。'
+    else
+      info '查询 GitHub Releases（稳定通道自动排除 prerelease）。'
+    fi
+    curl --fail --show-error --silent --location \
+      --proto '=https' --proto-redir '=https' \
+      --connect-timeout 15 --max-time 120 --max-redirs 5 \
+      --header 'Accept: application/vnd.github+json' \
+      --header 'X-GitHub-Api-Version: 2022-11-28' \
+      --remove-on-error --output "$releases_json" \
+      "https://api.github.com/repos/${REPOSITORY}/releases?per_page=30" ||
+      die "$EXIT_DOWNLOAD" '无法查询 GitHub Releases；可用 --target 显式指定目标 tag。'
+    jq -e 'type == "array"' "$releases_json" >/dev/null 2>&1 ||
+      die "$EXIT_DOWNLOAD" 'GitHub Releases 响应不是预期的 JSON 数组。'
+    UPDATE_TAG_SELECTED="$(select_highest_release_tag "$releases_json" "$STATE_VERSION")" ||
+      die "$EXIT_DOWNLOAD" '没有找到同一 major.minor 发布线且符合项目版本格式的非草稿 Release。'
+  fi
+
+  if ! release_is_newer "$UPDATE_TAG_SELECTED" "$STATE_VERSION"; then
+    if [ "${UPDATE_TAG_SELECTED#v}" = "${STATE_VERSION#v}" ]; then
+      info "当前已是目标版本：${STATE_VERSION}"
+      UPDATE_TAG_SELECTED=''
+      return 0
+    fi
+    die "$EXIT_CONFLICT" "目标版本 ${UPDATE_TAG_SELECTED} 不高于已安装版本 ${STATE_VERSION}；拒绝降级或重复迁移。"
+  fi
+}
+
+resolve_update_controller() {
+  local target_base manifest expected_version
+  target_base="https://github.com/${REPOSITORY}/releases/download/${UPDATE_TAG_SELECTED}"
+  manifest="${UPDATE_TEMP_DIR}/SHA256SUMS"
+  UPDATE_CONTROLLER_PATH="${UPDATE_TEMP_DIR}/debian-vps-tuning.sh"
+  info "下载目标发布清单：${UPDATE_TAG_SELECTED}/SHA256SUMS"
+  download_file "${target_base}/SHA256SUMS" "$manifest" ||
+    die "$EXIT_DOWNLOAD" "无法下载目标发布清单：${UPDATE_TAG_SELECTED}"
+  info "下载目标总控脚本：${UPDATE_TAG_SELECTED}/debian-vps-tuning.sh"
+  download_file "${target_base}/debian-vps-tuning.sh" "$UPDATE_CONTROLLER_PATH" ||
+    die "$EXIT_DOWNLOAD" "无法下载目标总控脚本：${UPDATE_TAG_SELECTED}"
+  PROFILE_SHA256=''
+  verify_manifest_entry "$manifest" "$UPDATE_CONTROLLER_PATH" 'debian-vps-tuning.sh' ||
+    die "$EXIT_INTEGRITY" "目标总控脚本未通过 SHA-256 校验：${UPDATE_TAG_SELECTED}"
+  UPDATE_CONTROLLER_SHA256="$PROFILE_SHA256"
+  expected_version="${UPDATE_TAG_SELECTED#v}"
+  if ! grep -Fq "CONTROLLER_VERSION='${expected_version}'" "$UPDATE_CONTROLLER_PATH" ||
+    ! grep -Fq "RELEASE_TAG='${UPDATE_TAG_SELECTED}'" "$UPDATE_CONTROLLER_PATH"; then
+    die "$EXIT_INTEGRITY" '目标总控脚本的版本或 Release tag 契约不匹配。'
+  fi
+  chmod 0700 "$UPDATE_CONTROLLER_PATH"
+}
+
+resolve_installed_profile() {
+  local source_tag source_base manifest expected_version
+  expected_version="${STATE_VERSION#v}"
+  source_tag="v${expected_version}"
+  if [ "$expected_version" = "$CONTROLLER_VERSION" ]; then
+    resolve_profile_script
+    SOURCE_PROFILE_PATH="$PROFILE_PATH"
+    SOURCE_PROFILE_SHA256="$PROFILE_SHA256"
+    return 0
+  fi
+
+  source_base="https://github.com/${REPOSITORY}/releases/download/${source_tag}"
+  manifest="${UPDATE_TEMP_DIR}/source-SHA256SUMS"
+  SOURCE_PROFILE_PATH="${UPDATE_TEMP_DIR}/source-${PROFILE_FILE}"
+  info "下载已安装版本清单：${source_tag}/SHA256SUMS"
+  download_file "${source_base}/SHA256SUMS" "$manifest" ||
+    die "$EXIT_DOWNLOAD" "无法下载已安装版本清单：${source_tag}"
+  info "下载已安装版本档位脚本：${source_tag}/${PROFILE_FILE}"
+  download_file "${source_base}/${PROFILE_FILE}" "$SOURCE_PROFILE_PATH" ||
+    die "$EXIT_DOWNLOAD" "无法下载已安装版本档位脚本：${source_tag}/${PROFILE_FILE}"
+  PROFILE_SHA256=''
+  verify_manifest_entry "$manifest" "$SOURCE_PROFILE_PATH" "$PROFILE_FILE" ||
+    die "$EXIT_INTEGRITY" "已安装版本档位脚本未通过 SHA-256 校验：${source_tag}/${PROFILE_FILE}"
+  SOURCE_PROFILE_SHA256="$PROFILE_SHA256"
+  if ! grep -Fq "SCRIPT_VERSION='${expected_version}'" "$SOURCE_PROFILE_PATH" ||
+    ! grep -Fq "PROFILE_ID='${STATE_PROFILE}'" "$SOURCE_PROFILE_PATH"; then
+    die "$EXIT_INTEGRITY" '已安装版本档位脚本的版本或 profile 契约不匹配。'
+  fi
+  chmod 0700 "$SOURCE_PROFILE_PATH"
+}
+
 resolve_profile_script() {
   local local_dir local_manifest local_profile controller_source remote_manifest
   need_command sha256sum
@@ -350,11 +534,11 @@ resolve_profile_script() {
 
   if [ -f "$local_manifest" ] && [ -f "$local_profile" ]; then
     verify_manifest_entry "$local_manifest" "$controller_source" 'debian-vps-tuning.sh' ||
-      die "$EXIT_INTEGRITY" '本地总控脚本未通过 SHA-256 校验；拒绝使用同目录 profile。'
+      die "$EXIT_INTEGRITY" "检测到同目录 SHA256SUMS 和 ${PROFILE_FILE}，但当前总控不属于该清单；可能混用了不同 Release 的资产。请为每个版本使用独立临时目录；拒绝使用同目录 profile，也不会回退联网下载。"
     verify_manifest_entry "$local_manifest" "$local_profile" "$PROFILE_FILE" ||
-      die "$EXIT_INTEGRITY" "本地文件未通过 SHA-256 校验：${PROFILE_FILE}"
+      die "$EXIT_INTEGRITY" "本地 profile 未通过同目录清单校验：${PROFILE_FILE}；可能混用了不同 Release 的资产。请为每个版本使用独立临时目录。"
     verify_profile_contract "$local_profile" ||
-      die "$EXIT_INTEGRITY" "本地脚本的版本或档位契约不匹配：${PROFILE_FILE}"
+      die "$EXIT_INTEGRITY" "本地 profile 的版本或档位契约不匹配：${PROFILE_FILE}；请确认总控、SHA256SUMS 和 profile 来自同一 Release。"
     PROFILE_PATH="$local_profile"
     PROFILE_SOURCE='local'
     return 0
@@ -428,6 +612,41 @@ run_profile() {
   esac
 }
 
+run_update() {
+  local source_tag source_url target_url
+  validate_port_speed "$STATE_PORT_SPEED_MBPS" ||
+    die "$EXIT_CONFLICT" '已安装状态缺少有效端口带宽；无法生成安全升级计划。'
+  resolve_update_release
+  [ -n "$UPDATE_TAG_SELECTED" ] || return 0
+  resolve_installed_profile
+  resolve_update_controller
+
+  printf '\n升级计划：\n'
+  printf '  当前版本：%s\n' "$STATE_VERSION"
+  printf '  当前 profile SHA-256：%s\n' "$SOURCE_PROFILE_SHA256"
+  printf '  目标版本：%s\n' "$UPDATE_TAG_SELECTED"
+  printf '  目标总控 SHA-256：%s\n' "$UPDATE_CONTROLLER_SHA256"
+  printf '  保留端口带宽：%s Mbps\n' "$STATE_PORT_SPEED_MBPS"
+  printf '  模式：只读检查；不会执行 rollback、purge、apply 或 reboot\n\n'
+
+  info "先验证当前 ${STATE_VERSION} 配置。"
+  bash "$SOURCE_PROFILE_PATH" verify
+  info "用目标 ${UPDATE_TAG_SELECTED} 执行只读 update-preflight。"
+  env UPDATE_PREFLIGHT=1 PORT_SPEED_MBPS="$STATE_PORT_SPEED_MBPS" \
+    bash "$UPDATE_CONTROLLER_PATH" preflight --port "$STATE_PORT_SPEED_MBPS"
+  source_tag="v${STATE_VERSION#v}"
+  source_url="https://github.com/${REPOSITORY}/releases/download/${source_tag}/${PROFILE_FILE}"
+  target_url="https://github.com/${REPOSITORY}/releases/download/${UPDATE_TAG_SELECTED}/debian-vps-tuning.sh"
+  printf '\n升级检查通过；系统配置未修改。\n'
+  printf '维护窗口迁移材料：\n'
+  printf '  当前 profile URL：%s\n' "$source_url"
+  printf '  当前 profile SHA-256：%s\n' "$SOURCE_PROFILE_SHA256"
+  printf '  目标总控 URL：%s\n' "$target_url"
+  printf '  目标总控 SHA-256：%s\n' "$UPDATE_CONTROLLER_SHA256"
+  printf '  端口带宽：%s Mbps\n' "$STATE_PORT_SPEED_MBPS"
+  printf '请按 README 的人工迁移顺序执行：rollback/purge → reboot → 目标 preflight/apply → reboot → verify。\n'
+}
+
 dispatch_action() {
   local rc
   case "$ACTION" in
@@ -452,6 +671,19 @@ dispatch_action() {
       fi
       run_profile apply
       ;;
+    benchmark)
+      if [ "$ACTION_FROM_MENU" -eq 1 ]; then
+        printf 'benchmark 会向 BENCHMARK_HOST 产生高带宽 TCP 流量。是否继续？[y/N]：'
+        local answer
+        IFS= read -r answer
+        case "$answer" in
+          y | Y | yes | YES) ;;
+          *) info '已停止；没有产生 benchmark 流量。'; return 0 ;;
+        esac
+      fi
+      run_profile benchmark
+      ;;
+    update) run_update ;;
     preflight | verify | status | diagnose | rollback | recover) run_profile "$ACTION" ;;
     *) die "$EXIT_USAGE" "不支持的 action：${ACTION}" ;;
   esac
@@ -474,8 +706,10 @@ main() {
     choose_action_interactively
   fi
   select_port_speed
-  resolve_profile_script
-  print_execution_plan
+  if [ "$ACTION" != 'update' ]; then
+    resolve_profile_script
+    print_execution_plan
+  fi
   dispatch_action
 }
 

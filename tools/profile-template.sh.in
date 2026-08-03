@@ -7,7 +7,7 @@ IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 
-SCRIPT_VERSION='0.1.0-rc.9'
+SCRIPT_VERSION='0.1.0-rc.10'
 STATE_SCHEMA_VERSION=3
 NAMESPACE='proxy-vps'
 MANAGED_MARKER='# Managed by debian-vps-tuning; namespace=proxy-vps'
@@ -28,6 +28,8 @@ JOURNAL_RUNTIME_MAX_USE='@JOURNAL_RUNTIME_MAX_USE@'
 
 DEFAULT_PORT_SPEED_MBPS=200
 DEFAULT_BUFFER_TARGET_RTT_MS=200
+BUFFER_TARGET_NUMERATOR=@BUFFER_TARGET_NUMERATOR@
+BUFFER_TARGET_DENOMINATOR=@BUFFER_TARGET_DENOMINATOR@
 DEFAULT_SWAP_MB=1024
 MIN_BUF_MAX=262144
 MAX_BUF_MAX=@BUF_MAX_LIMIT@
@@ -43,12 +45,16 @@ PURGE_CREATED_SWAP="${PURGE_CREATED_SWAP:-0}"
 ALLOW_EMPTY_STATE_RECOVERY="${ALLOW_EMPTY_STATE_RECOVERY:-0}"
 PROXY_SERVICE_UNITS_INPUT="${PROXY_SERVICE_UNITS:-}"
 REQUIRE_PROXY_SERVICE="${REQUIRE_PROXY_SERVICE:-0}"
+DIAG_INTERVAL_SECONDS="${DIAG_INTERVAL_SECONDS:-5}"
+DIAG_INCLUDE_SOCKET_DETAILS="${DIAG_INCLUDE_SOCKET_DETAILS:-0}"
+UPDATE_PREFLIGHT="${UPDATE_PREFLIGHT:-0}"
 
 PORT_SPEED_MBPS=''
 BUFFER_TARGET_RTT_MS=''
 BUF_MAX=''
 BUF_MAX_MODE=''
 BUFFER_BDP_BYTES=''
+BUFFER_TARGET_BYTES=''
 BUFFER_COVERAGE_MS=''
 BUFFER_CLAMPED=0
 ROOT_FS_TYPE=''
@@ -58,6 +64,7 @@ STATE_DIR_CREATED=0
 QDISC_MATCH_REASON=''
 
 SYSCTL_FILE="/etc/sysctl.d/90-${NAMESPACE}.conf"
+SYSCTL_SCAN_ROOT='/etc'
 JOURNAL_FILE="/etc/systemd/journald.conf.d/90-${NAMESPACE}.conf"
 FQ_HELPER="/usr/local/sbin/${NAMESPACE}-fq"
 FQ_SERVICE_NAME="${NAMESPACE}-fq.service"
@@ -149,11 +156,12 @@ validate_inputs() {
   fi
 
   BUFFER_BDP_BYTES=$((PORT_SPEED_MBPS * 125 * BUFFER_TARGET_RTT_MS))
+  BUFFER_TARGET_BYTES=$(((BUFFER_BDP_BYTES * BUFFER_TARGET_NUMERATOR + BUFFER_TARGET_DENOMINATOR - 1) / BUFFER_TARGET_DENOMINATOR))
   if [ "$BUF_MAX_INPUT" = 'auto' ]; then
     BUF_MAX_MODE='auto'
-    if [ "$BUFFER_BDP_BYTES" -le 16777216 ]; then
+    if [ "$BUFFER_TARGET_BYTES" -le 16777216 ]; then
       BUF_MAX=16777216
-    elif [ "$BUFFER_BDP_BYTES" -le 33554432 ]; then
+    elif [ "$BUFFER_TARGET_BYTES" -le 33554432 ]; then
       BUF_MAX=33554432
     else
       BUF_MAX=67108864
@@ -174,12 +182,13 @@ validate_inputs() {
   fi
   BUFFER_COVERAGE_MS=$((BUF_MAX * 8 / (PORT_SPEED_MBPS * 1000)))
   if [ "$BUFFER_CLAMPED" -eq 1 ]; then
-    warn "按 ${PROFILE_LABEL} 的内存预算将自动 socket 上限限制为 $((MAX_BUF_MAX / 1048576)) MiB；约覆盖 ${BUFFER_COVERAGE_MS} ms，低于目标 RTT ${BUFFER_TARGET_RTT_MS} ms。"
+    warn "按 ${PROFILE_LABEL} 的内存预算将自动 socket 上限限制为 $((MAX_BUF_MAX / 1048576)) MiB；约覆盖 ${BUFFER_COVERAGE_MS} ms，未达到 ${BUFFER_TARGET_NUMERATOR}/${BUFFER_TARGET_DENOMINATOR}×BDP 性能目标。"
   fi
 
   is_bool "$ENABLE_SWAP" || die "$EXIT_USAGE" 'ENABLE_SWAP 只能为 0 或 1。'
   is_bool "$PURGE_CREATED_SWAP" || die "$EXIT_USAGE" 'PURGE_CREATED_SWAP 只能为 0 或 1。'
   is_bool "$REQUIRE_PROXY_SERVICE" || die "$EXIT_USAGE" 'REQUIRE_PROXY_SERVICE 只能为 0 或 1。'
+  is_bool "$UPDATE_PREFLIGHT" || die "$EXIT_USAGE" 'UPDATE_PREFLIGHT 只能为 0 或 1。'
   [[ "$SWAP_MB_INPUT" =~ ^[0-9]{3,4}$ ]] ||
     die "$EXIT_USAGE" "SWAP_MB 必须是 512–${SWAP_MAX_MIB} 的整数。"
   SWAP_MB=$((10#$SWAP_MB_INPUT))
@@ -351,6 +360,17 @@ check_preflight_state() {
   state_exists || return 0
   local phase
   phase="$(state_get '.state')"
+  if [ "$UPDATE_PREFLIGHT" = '1' ]; then
+    case "$phase" in
+      VERIFIED | APPLIED)
+        info "检测到现有管理状态 ${phase}；进入只读 update-preflight，不执行任何系统写入。"
+        return 0
+        ;;
+      *)
+        die "$EXIT_CONFLICT" "update-preflight 只接受 VERIFIED/APPLIED；当前状态 ${phase} 必须先按现有版本处理。"
+        ;;
+    esac
+  fi
   case "$phase" in
     VERIFIED | APPLIED)
       die "$EXIT_CONFLICT" "检测到现有管理状态 ${phase}；已安装配置请执行 verify，需要更改参数时请先 rollback。"
@@ -364,22 +384,42 @@ check_preflight_state() {
   esac
 }
 
-scan_sysctl_conflicts() {
-  local key file found=0 escaped
-  shopt -s nullglob
-  for key in "${PROFILE_SYSCTL_KEYS[@]}"; do
-    escaped="${key//./\\.}"
-    for file in /etc/sysctl.conf /etc/sysctl.d/*.conf; do
-      [ "$file" = "$SYSCTL_FILE" ] && continue
-      [ -f "$file" ] || continue
+report_sysctl_conflicts() {
+  local key file found=0 escaped canonical managed_canonical
+  local -a files=()
+  declare -A seen=()
+
+  if [ "$#" -gt 0 ]; then
+    files=("$@")
+  else
+    shopt -s nullglob
+    files=("${SYSCTL_SCAN_ROOT}/sysctl.conf" "${SYSCTL_SCAN_ROOT}/sysctl.d/"*.conf)
+    shopt -u nullglob
+  fi
+
+  managed_canonical="$(readlink -f "$SYSCTL_FILE" 2>/dev/null || printf '%s' "$SYSCTL_FILE")"
+  for file in "${files[@]}"; do
+    [ -f "$file" ] || continue
+    canonical="$(readlink -f "$file" 2>/dev/null || printf '%s' "$file")"
+    [ "$file" = "$SYSCTL_FILE" ] && continue
+    [ "$canonical" = "$managed_canonical" ] && continue
+    [ -z "${seen[$canonical]:-}" ] || continue
+    seen["$canonical"]=1
+    for key in "${PROFILE_SYSCTL_KEYS[@]}"; do
+      escaped="${key//./\\.}"
       if grep -Eq "^[[:space:]]*${escaped}[[:space:]]*=" "$file"; then
-        error "sysctl 冲突：${key} 已在 ${file} 中定义。"
+        error "sysctl 冲突：${key} 已在 ${file} 中定义；即使值相同也属于重复配置归属。"
         found=1
       fi
     done
   done
-  shopt -u nullglob
-  [ "$found" -eq 0 ] || die "$EXIT_CONFLICT" '请先人工合并或移除上述重复 sysctl 定义。'
+  [ "$found" -eq 0 ]
+}
+
+scan_sysctl_conflicts() {
+  if ! report_sysctl_conflicts "$@"; then
+    die "$EXIT_CONFLICT" '请先人工合并或移除上述重复 sysctl 定义。'
+  fi
 }
 
 default_route_ifaces() {
@@ -508,7 +548,8 @@ show_environment() {
   info "CPU：${cpus} vCPU"
   info "内存：${mem} MiB"
   info "端口上限：${PORT_SPEED_MBPS} Mbps；目标 RTT：${BUFFER_TARGET_RTT_MS} ms"
-  info "理论 BDP：${BUFFER_BDP_BYTES} 字节；BUF_MAX：${BUF_MAX} 字节 (${BUF_MAX_MODE})"
+  info "理论 BDP：${BUFFER_BDP_BYTES} 字节；${BUFFER_TARGET_NUMERATOR}/${BUFFER_TARGET_DENOMINATOR}×BDP 目标：${BUFFER_TARGET_BYTES} 字节"
+  info "BUF_MAX：${BUF_MAX} 字节 (${BUF_MAX_MODE})"
   info "所选缓冲上限的理论线路覆盖：${BUFFER_COVERAGE_MS} ms"
   info "默认路由网卡：$(default_route_ifaces | paste -sd, -)"
   if command -v ufw >/dev/null 2>&1; then
@@ -581,11 +622,13 @@ write_initial_state() {
     --arg kernel "$(uname -r)" --argjson mem "$(memory_mib)" \
     --argjson port "$PORT_SPEED_MBPS" --argjson rtt "$BUFFER_TARGET_RTT_MS" \
     --argjson buf "$BUF_MAX" --arg mode "$BUF_MAX_MODE" \
+    --argjson target_numerator "$BUFFER_TARGET_NUMERATOR" \
+    --argjson target_denominator "$BUFFER_TARGET_DENOMINATOR" \
     --arg qfile "$QDISC_STATE_FILE" --arg qhash "$qhash" --arg now "$now" \
     --argjson original "$original" \
     '{schema_version:$schema,script_version:$version,state:"PREPARED",
       profile:{id:$profile,label:$profile_label,debian_version:$debian,architecture:$arch,kernel_release:$kernel,memory_mib:$mem},
-      network:{port_speed_mbps:$port,target_rtt_ms:$rtt,buffer_max_bytes:$buf,buffer_mode:$mode},
+       network:{port_speed_mbps:$port,target_rtt_ms:$rtt,buffer_target_numerator:$target_numerator,buffer_target_denominator:$target_denominator,buffer_max_bytes:$buf,buffer_mode:$mode},
       original_sysctls:$original,qdisc:{file:$qfile,sha256:$qhash},
       swap:{created_by_script:false,path:"/swapfile-proxy",size_mib:0,device:0,inode:0,active:false},
       managed_files:[],timestamps:{prepared:$now,last_update:$now}}' >"$tmp" ||
@@ -915,6 +958,10 @@ verify_settings() {
   validate_state_file || return 1
   [ "$(state_get '.state')" = 'APPLIED' ] || [ "$(state_get '.state')" = 'VERIFIED' ] || {
     error "当前状态不允许 verify：$(state_get '.state')"; return 1; }
+  if ! report_sysctl_conflicts; then
+    error '检测到本项目以外的重复 sysctl 配置归属；verify 拒绝通过。'
+    failures=$((failures + 1))
+  fi
   for key in "${PROFILE_SYSCTL_KEYS[@]}"; do
     expected="$(awk -F= -v k="$key" '{name=$1; gsub(/^[[:space:]]+|[[:space:]]+$/, "", name); if(name==k){v=$2; gsub(/^[[:space:]]+|[[:space:]]+$/, "", v); print v; exit}}' "$SYSCTL_FILE")"
     actual="$(sysctl -n "$key" 2>/dev/null || true)"
@@ -936,6 +983,7 @@ verify_settings() {
     grep -Fqx "${SWAP_FILE} none swap sw 0 0" /etc/fstab || { error 'swap 的 fstab 行缺失。'; failures=$((failures + 1)); }
   fi
   verify_proxy_services || failures=$((failures + 1))
+  show_xray_socket_options
   [ "$failures" -eq 0 ] || return 1
   info "验证通过；警告数：${WARNINGS}。"
 }
@@ -1294,8 +1342,12 @@ apply_failure_handler() {
 apply_settings() {
   run_preflight apply
   if state_exists; then
-    local state saved_port saved_rtt saved_buf
+    local state saved_version saved_port saved_rtt saved_buf
     state="$(state_get '.state')"
+    saved_version="$(state_get '.script_version')"
+    if [ "$saved_version" != "$SCRIPT_VERSION" ]; then
+      die "$EXIT_CONFLICT" "已安装状态属于 ${saved_version}，当前脚本为 ${SCRIPT_VERSION}；verify 可继续只读核验，升级配置必须先 rollback。"
+    fi
     saved_port="$(state_get '.network.port_speed_mbps')"; saved_rtt="$(state_get '.network.target_rtt_ms')"; saved_buf="$(state_get '.network.buffer_max_bytes')"
     if [ "$saved_port" != "$PORT_SPEED_MBPS" ] || [ "$saved_rtt" != "$BUFFER_TARGET_RTT_MS" ] || [ "$saved_buf" != "$BUF_MAX" ]; then
       die "$EXIT_CONFLICT" "已安装参数与当前参数不同：saved(port=${saved_port},rtt=${saved_rtt},buf=${saved_buf}) current(port=${PORT_SPEED_MBPS},rtt=${BUFFER_TARGET_RTT_MS},buf=${BUF_MAX})；请先 rollback。"
@@ -1343,10 +1395,126 @@ show_status() {
   ss -lntup 2>/dev/null || true
 }
 
+softnet_snapshot() {
+  local source="${1:-/proc/net/softnet_stat}"
+  local cpu=0 processed dropped squeezed
+  while IFS=$' \t' read -r processed dropped squeezed _; do
+    [ -n "$processed" ] || continue
+    printf '%s\t%s\t%s\t%s\n' "$cpu" \
+      "$((16#$processed))" "$((16#$dropped))" "$((16#$squeezed))"
+    cpu=$((cpu + 1))
+  done <"$source"
+}
+
+tcp_counter_snapshot() {
+  local snmp_file="${1:-/proc/net/snmp}" netstat_file="${2:-/proc/net/netstat}"
+  awk '
+    FNR % 2 == 1 {
+      prefix=$1
+      sub(/:$/, "", prefix)
+      for (i=2; i<=NF; i++) header[i]=$i
+      next
+    }
+    {
+      prefix=$1
+      sub(/:$/, "", prefix)
+      for (i=2; i<=NF; i++) {
+        key=prefix header[i]
+        if (key ~ /^(IpInDiscards|IpOutDiscards|TcpRetransSegs|TcpExtListenDrops|TcpExtListenOverflows|TcpExtTCPLostRetransmit|TcpExtTCPTimeouts|TcpExtTCPSpuriousRTOs|TcpExtTCPSynRetrans|TcpExtTCPFastOpenActive|TcpExtTCPFastOpenActiveFail|TcpExtTCPFastOpenPassive|TcpExtTCPFastOpenPassiveFail|TcpExtTCPFastOpenListenOverflow)$/) {
+          print key "\t" $i
+        }
+      }
+    }
+  ' "$snmp_file" "$netstat_file" 2>/dev/null
+}
+
+show_counter_delta() {
+  local before="$1" after="$2" prefix="$3"
+  awk -F '\t' -v prefix="$prefix" '
+    NR == FNR {old[$1]=$2; next}
+    {delta=$2-(old[$1]+0); printf "[%s] %s=%d\n", prefix, $1, delta}
+  ' "$before" "$after"
+}
+
+show_softnet_delta() {
+  local before="$1" after="$2"
+  awk -F '\t' '
+    NR == FNR {processed[$1]=$2; dropped[$1]=$3; squeezed[$1]=$4; next}
+    {
+      printf "[softnet-delta] cpu=%s processed=%d dropped=%d time_squeeze=%d\n",
+        $1, $2-(processed[$1]+0), $3-(dropped[$1]+0), $4-(squeezed[$1]+0)
+    }
+  ' "$before" "$after"
+}
+
+show_queue_cpu_evidence() {
+  local iface="$1" queue file value
+  for queue in "/sys/class/net/${iface}/queues"/rx-*; do
+    [ -d "$queue" ] || continue
+    printf '[queue] %s/%s' "$iface" "${queue##*/}"
+    for file in rps_cpus rps_flow_cnt; do
+      if [ -r "${queue}/${file}" ]; then
+        IFS= read -r value <"${queue}/${file}" || value='unreadable'
+        printf ' %s=%s' "$file" "$value"
+      fi
+    done
+    printf '\n'
+  done
+  for queue in "/sys/class/net/${iface}/queues"/tx-*; do
+    [ -d "$queue" ] || continue
+    printf '[queue] %s/%s' "$iface" "${queue##*/}"
+    for file in xps_cpus xps_rxqs; do
+      if [ -r "${queue}/${file}" ]; then
+        IFS= read -r value <"${queue}/${file}" || value='unreadable'
+        printf ' %s=%s' "$file" "$value"
+      fi
+    done
+    printf '\n'
+  done
+  awk -v iface="$iface" 'index($0, iface) {print "[interrupt] " $0}' /proc/interrupts 2>/dev/null || true
+}
+
+show_xray_socket_options() {
+  local config='/usr/local/x-ui/bin/config.json' tfo keep_idle keep_interval
+  if [ ! -r "$config" ]; then
+    printf '[xray] generated_config=%s status=not-readable-or-not-installed\n' "$config"
+    return 0
+  fi
+  if ! jq -e 'type == "object"' "$config" >/dev/null 2>&1; then
+    printf '[xray] generated_config=%s status=invalid-json\n' "$config"
+    return 0
+  fi
+  tfo="$(jq -r '[.. | objects | select(has("tcpFastOpen")) | .tcpFastOpen] | unique | map(tostring) | join(",")' "$config")"
+  keep_idle="$(jq -r '[.. | objects | select(has("tcpKeepAliveIdle")) | .tcpKeepAliveIdle] | unique | map(tostring) | join(",")' "$config")"
+  keep_interval="$(jq -r '[.. | objects | select(has("tcpKeepAliveInterval")) | .tcpKeepAliveInterval] | unique | map(tostring) | join(",")' "$config")"
+  if [ -n "$tfo" ]; then
+    printf '[xray] tcpFastOpen=%s source=generated-config\n' "$tfo"
+  else
+    printf '[xray] tcpFastOpen=not-explicit; kernel net.ipv4.tcp_fastopen alone does not prove Xray listener TFO\n'
+  fi
+  printf '[xray] tcpKeepAliveIdle=%s tcpKeepAliveInterval=%s source=generated-config\n' \
+    "${keep_idle:-not-explicit}" "${keep_interval:-not-explicit}"
+}
+
 show_diagnostics() {
-  local diagnostic_state='UNMANAGED' iface
+  local diagnostic_state='UNMANAGED' iface tmp_dir
   ensure_required_tools
   check_supported_os
+  if ! report_sysctl_conflicts; then
+    warn '只读诊断发现重复 sysctl 配置归属；请先按文件归属合并或移除，再执行 verify/apply。'
+  fi
+  [[ "$DIAG_INTERVAL_SECONDS" =~ ^[0-9]{1,2}$ ]] ||
+    die "$EXIT_USAGE" 'DIAG_INTERVAL_SECONDS 必须是 1–60 的整数。'
+  DIAG_INTERVAL_SECONDS=$((10#$DIAG_INTERVAL_SECONDS))
+  if [ "$DIAG_INTERVAL_SECONDS" -lt 1 ] || [ "$DIAG_INTERVAL_SECONDS" -gt 60 ]; then
+    die "$EXIT_USAGE" 'DIAG_INTERVAL_SECONDS 必须在 1–60 之间。'
+  fi
+  is_bool "$DIAG_INCLUDE_SOCKET_DETAILS" ||
+    die "$EXIT_USAGE" 'DIAG_INCLUDE_SOCKET_DETAILS 只能为 0 或 1。'
+  umask 077
+  tmp_dir="$(mktemp -d)" || die "$EXIT_UNSUPPORTED" '无法创建诊断临时目录。'
+  softnet_snapshot >"${tmp_dir}/softnet.before"
+  tcp_counter_snapshot >"${tmp_dir}/tcp.before"
   if [ -e "$STATE_FILE" ] || [ -L "$STATE_FILE" ]; then
     diagnostic_state="$(jq -er '.state | select(type == "string")' "$STATE_FILE" 2>/dev/null || printf 'INVALID')"
   fi
@@ -1369,21 +1537,98 @@ show_diagnostics() {
       "$(find "/sys/class/net/${iface}/queues" -maxdepth 1 -type d -name 'rx-*' 2>/dev/null | wc -l)" \
       "$(find "/sys/class/net/${iface}/queues" -maxdepth 1 -type d -name 'tx-*' 2>/dev/null | wc -l)"
     ip -s link show dev "$iface" 2>/dev/null || true
-    tc -s qdisc show dev "$iface" 2>/dev/null || true
+    printf '[qdisc-before] interface=%s\n' "$iface"
+    tc -s -d qdisc show dev "$iface" 2>/dev/null || true
+    show_queue_cpu_evidence "$iface"
     if command -v ethtool >/dev/null 2>&1; then
       ethtool -k "$iface" 2>/dev/null | grep -E '^(receive-hashing|tcp-segmentation-offload|generic-segmentation-offload|generic-receive-offload):' || true
+      ethtool -S "$iface" 2>/dev/null |
+        grep -Ei 'drop|discard|miss|error|timeout|no.?buffer|overrun' || true
     fi
   done < <(default_route_ifaces)
+  show_xray_socket_options
   ss -s 2>/dev/null || true
-  printf '[softnet] cpu processed dropped time_squeeze (hex; first 32 CPUs)\n'
-  awk 'NR <= 32 {printf "%d %s %s %s\n", NR-1, $1, $2, $3}' /proc/net/softnet_stat 2>/dev/null || true
+  if [ "$DIAG_INCLUDE_SOCKET_DETAILS" = '1' ]; then
+    ss -tinp 2>/dev/null || true
+  fi
+  info "开始 ${DIAG_INTERVAL_SECONDS} 秒增量采样；期间可复现实际 VLESS + REALITY + TCP 负载。"
+  sleep "$DIAG_INTERVAL_SECONDS"
+  softnet_snapshot >"${tmp_dir}/softnet.after"
+  tcp_counter_snapshot >"${tmp_dir}/tcp.after"
+  show_counter_delta "${tmp_dir}/tcp.before" "${tmp_dir}/tcp.after" 'tcp-delta'
+  show_softnet_delta "${tmp_dir}/softnet.before" "${tmp_dir}/softnet.after"
+  while IFS= read -r iface; do
+    [ -n "$iface" ] || continue
+    printf '[qdisc-after] interface=%s\n' "$iface"
+    tc -s -d qdisc show dev "$iface" 2>/dev/null || true
+  done < <(default_route_ifaces)
   swapon --show 2>/dev/null || true
-  info '诊断完成；该输出是采样证据，不等同于 1/3/5/10 并发性能测试。'
+  rm -rf -- "$tmp_dir"
+  info '诊断完成；增量计数是采样证据，不单独证明端到端业务性能。'
+}
+
+run_network_benchmark() {
+  local host="${BENCHMARK_HOST:-}" port="${BENCHMARK_PORT:-5201}"
+  local seconds="${BENCHMARK_SECONDS:-10}" parallel="${BENCHMARK_PARALLEL:-1}"
+  local direction="${BENCHMARK_DIRECTION:-both}" tmp_dir rc=0 current_rc iface
+  ensure_required_tools
+  check_supported_os
+  command -v iperf3 >/dev/null 2>&1 ||
+    die "$EXIT_UNSUPPORTED" 'benchmark 需要已安装 iperf3；脚本不会自动安装软件包。'
+  [ -n "$host" ] || die "$EXIT_USAGE" 'benchmark 必须显式设置 BENCHMARK_HOST。'
+  [[ "$host" =~ ^[A-Za-z0-9][A-Za-z0-9._:%-]*$ ]] ||
+    die "$EXIT_USAGE" 'BENCHMARK_HOST 含不支持的字符。'
+  [[ "$port" =~ ^[0-9]{1,5}$ ]] || die "$EXIT_USAGE" 'BENCHMARK_PORT 必须是 1–65535 的整数。'
+  port=$((10#$port)); [ "$port" -ge 1 ] && [ "$port" -le 65535 ] ||
+    die "$EXIT_USAGE" 'BENCHMARK_PORT 必须在 1–65535 之间。'
+  [[ "$seconds" =~ ^[0-9]{1,3}$ ]] || die "$EXIT_USAGE" 'BENCHMARK_SECONDS 必须是 5–120 的整数。'
+  seconds=$((10#$seconds)); [ "$seconds" -ge 5 ] && [ "$seconds" -le 120 ] ||
+    die "$EXIT_USAGE" 'BENCHMARK_SECONDS 必须在 5–120 之间。'
+  [[ "$parallel" =~ ^[0-9]$ ]] || die "$EXIT_USAGE" 'BENCHMARK_PARALLEL 必须是 1–4 的整数。'
+  parallel=$((10#$parallel)); [ "$parallel" -ge 1 ] && [ "$parallel" -le 4 ] ||
+    die "$EXIT_USAGE" 'BENCHMARK_PARALLEL 必须在 1–4 之间。'
+  case "$direction" in upload | download | both) ;; *) die "$EXIT_USAGE" 'BENCHMARK_DIRECTION 只能为 upload、download 或 both。' ;; esac
+
+  info 'benchmark 不修改系统配置，但会向用户指定的 iperf3 服务器产生高带宽 TCP 流量。'
+  info '该测试测量 VPS 到 iperf3 服务端的直连 TCP，不等同于 VLESS + REALITY + TCP 业务链路。'
+  umask 077
+  tmp_dir="$(mktemp -d)" || die "$EXIT_UNSUPPORTED" '无法创建 benchmark 临时目录。'
+  softnet_snapshot >"${tmp_dir}/softnet.before"
+  tcp_counter_snapshot >"${tmp_dir}/tcp.before"
+  while IFS= read -r iface; do
+    [ -n "$iface" ] || continue
+    printf '[qdisc-before] interface=%s\n' "$iface"
+    tc -s -d qdisc show dev "$iface" 2>/dev/null || true
+  done < <(default_route_ifaces)
+
+  set +e
+  if [ "$direction" = 'upload' ] || [ "$direction" = 'both' ]; then
+    iperf3 --client "$host" --port "$port" --time "$seconds" --parallel "$parallel" --json
+    current_rc=$?; [ "$current_rc" -eq 0 ] || rc="$current_rc"
+  fi
+  if [ "$direction" = 'download' ] || [ "$direction" = 'both' ]; then
+    iperf3 --client "$host" --port "$port" --time "$seconds" --parallel "$parallel" --reverse --json
+    current_rc=$?; [ "$current_rc" -eq 0 ] || rc="$current_rc"
+  fi
+  set -e
+
+  softnet_snapshot >"${tmp_dir}/softnet.after"
+  tcp_counter_snapshot >"${tmp_dir}/tcp.after"
+  show_counter_delta "${tmp_dir}/tcp.before" "${tmp_dir}/tcp.after" 'benchmark-tcp-delta'
+  show_softnet_delta "${tmp_dir}/softnet.before" "${tmp_dir}/softnet.after"
+  while IFS= read -r iface; do
+    [ -n "$iface" ] || continue
+    printf '[qdisc-after] interface=%s\n' "$iface"
+    tc -s -d qdisc show dev "$iface" 2>/dev/null || true
+  done < <(default_route_ifaces)
+  rm -rf -- "$tmp_dir"
+  [ "$rc" -eq 0 ] || die "$EXIT_VERIFY" "iperf3 benchmark 失败，退出码：${rc}。"
+  info 'benchmark 完成；请结合业务流量下的 diagnose 和客户端指标判断。'
 }
 
 usage() {
   cat <<EOF_USAGE
-Usage: $0 {preflight|apply|verify|status|diagnose|rollback|recover}
+Usage: $0 {preflight|apply|verify|status|diagnose|benchmark|rollback|recover}
 
 Environment:
   PORT_SPEED_MBPS=100..1000       default 200
@@ -1395,6 +1640,13 @@ Environment:
   ALLOW_EMPTY_STATE_RECOVERY=0|1  default 0; only for confirmed rc.2 pre-write empty state
   PROXY_SERVICE_UNITS='x-ui.service ...'
   REQUIRE_PROXY_SERVICE=0|1       default 0
+  DIAG_INTERVAL_SECONDS=1..60     default 5
+  DIAG_INCLUDE_SOCKET_DETAILS=0|1 default 0; 1 may expose peer addresses/processes
+  BENCHMARK_HOST=host             required by benchmark; user-authorized iperf3 server
+  BENCHMARK_PORT=1..65535         default 5201
+  BENCHMARK_SECONDS=5..120        default 10
+  BENCHMARK_PARALLEL=1..4         default 1
+  BENCHMARK_DIRECTION=upload|download|both   default both
 EOF_USAGE
 }
 
@@ -1419,6 +1671,9 @@ main() {
       ;;
     diagnose)
       need_root; acquire_lock; show_diagnostics
+      ;;
+    benchmark)
+      need_root; acquire_lock; run_network_benchmark
       ;;
     rollback)
       need_root; acquire_lock; ensure_required_tools; check_supported_os

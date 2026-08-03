@@ -4,7 +4,7 @@
 
 脚本使用 BBR + fq、受控 TCP 缓冲、常规队列参数、应急 swap 和 journald 空间限制，目标是形成可预检、可验证、可重复执行、可回滚的配置。它不承诺在所有线路上提高吞吐或降低延迟。
 
-> 当前公开版本：[`v0.1.0-rc.9`](https://github.com/alieismy/debian-vps-tuning/releases/tag/v0.1.0-rc.9)，标记为 Pre-release。正式 `v0.1.0` 仍需完成 [目标 VPS 运行验收](docs/validation.md)，不要把候选版本视为全平台、全带宽或性能验收已经完成。
+> 当前预发行版本：`v0.1.0-rc.10`。下面的联网命令固定到该 Release 及其校验和资产，不跟随分支或 `latest`。正式 `v0.1.0` 仍需完成 [目标 VPS 运行验收](docs/validation.md)，不要把候选版本视为全平台、全带宽或性能验收已经完成。
 
 ## 联网安装与验证
 
@@ -12,7 +12,7 @@
 
 ### 1. 联网安装
 
-推荐先执行 rc.9 固定 Release 的总控入口。它会自动识别 Debian 12/13、amd64、CPU 和内存档位，默认先执行只读 `preflight`，只有预检通过且再次明确输入 `y` 才执行 `apply`：
+推荐执行 rc.10 固定 Release 的总控入口。它会自动识别 Debian 12/13、amd64、CPU 和内存档位，默认先执行只读 `preflight`，只有预检通过且再次明确输入 `y` 才执行 `apply`：
 
 ```bash
 (
@@ -27,10 +27,10 @@
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.9/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.10/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    '09cbb77591760fa1789729c31f64e03b29f145f50c8c419bca6057b23f492979' \
+    'f0d5a7c04f32cc0a088dd45824e7e46bfcc1fe7fd2db1def29e0bda5ef31196c' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   bash "$dvt_tmp/debian-vps-tuning.sh"
@@ -68,10 +68,10 @@ reboot
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.9/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.10/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    '09cbb77591760fa1789729c31f64e03b29f145f50c8c419bca6057b23f492979' \
+    'f0d5a7c04f32cc0a088dd45824e7e46bfcc1fe7fd2db1def29e0bda5ef31196c' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   bash "$dvt_tmp/debian-vps-tuning.sh" verify
@@ -99,10 +99,10 @@ printf 'verify_after_reboot_exit=%s\n' "$?"
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.9/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.10/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    '09cbb77591760fa1789729c31f64e03b29f145f50c8c419bca6057b23f492979' \
+    'f0d5a7c04f32cc0a088dd45824e7e46bfcc1fe7fd2db1def29e0bda5ef31196c' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   env \
@@ -116,20 +116,56 @@ printf 'strict_verify_after_3xui_exit=%s\n' "$?"
 
 严格验证要求 `x-ui.service` 处于 active，并检查 systemd 配置、3X-UI 主进程和直接 Xray 子进程的 NOFILE soft/hard limit 均不低于 65536。安装 3X-UI 后再重启一次，并重复执行这条严格验证命令，才能证明开机启动和新进程继承仍然正确。
 
-### 4. 联网执行注意事项
+### 4. 从 rc.9 联网升级及后续 update
+
+已经由 rc.9 管理的 VPS，第一次需要下载 rc.10 总控来获得 `update` 功能；不要替换已经发布的 rc.9 Release 资产。下面的命令会读取现有状态中的资源档和端口带宽，校验当前 profile、目标 `SHA256SUMS` 和目标总控脚本，然后执行当前版本 `verify` 与目标版本的只读 `update-preflight`，最后输出维护窗口所需的固定 URL、SHA-256 和迁移顺序。整个 `update` 过程不会执行 rollback、purge、apply 或 reboot：
+
+总控、`SHA256SUMS` 和 profile 被视为一个不可拆分的 Release 包。**不同版本的资产不得放在同一目录。**例如，rc.9 总控旁边不能放 rc.10 的 `SHA256SUMS` 和 profile；否则总控会按完整性保护规则拒绝执行，也不会自动回退联网下载。下面的联网命令以及后续 rollback 示例都使用独立 `mktemp -d` 目录，避免版本碰撞。
+
+```bash
+(
+  set -e
+
+  dvt_tmp="$(mktemp -d)"
+  trap 'rm -rf -- "$dvt_tmp"' EXIT
+
+  curl --fail --show-error --silent --location \
+    --proto '=https' \
+    --proto-redir '=https' \
+    --connect-timeout 15 \
+    --max-time 120 \
+    -o "$dvt_tmp/debian-vps-tuning.sh" \
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.10/debian-vps-tuning.sh
+
+  printf '%s  %s\n' \
+    'f0d5a7c04f32cc0a088dd45824e7e46bfcc1fe7fd2db1def29e0bda5ef31196c' \
+    "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
+
+  bash "$dvt_tmp/debian-vps-tuning.sh" update
+)
+```
+
+指定目标版本可使用 `update --target v0.1.0-rc.11`。自动发现不跨 `major.minor` 发布线：当前是 rc 时可选择同线更高 rc 或稳定版；当前是稳定版时自动排除 prerelease。跨线升级必须用 `--target` 明确指定，仍会拒绝降级和重复升级。显式指定 prerelease 代表用户主动选择该目标，不受稳定通道自动排除规则影响。
+
+`update` 只是升级兼容性检查和计划生成器，不会改写磁盘上的旧脚本、系统调优配置或 3X-UI。检查通过不代表升级已经完成；应在维护窗口按输出和本 README 的顺序人工执行 rollback/purge、重启、目标 preflight/apply、再次重启和 verify。GitHub API 查询失败或受匿名速率限制时，使用审阅过的 `--target` 可跳过自动发现，但仍会校验目标 Release 资产。
+
+### 5. 联网执行注意事项
 
 - 只支持厂商最小化 Debian 12/13、`x86_64/amd64` 和 README 列出的四个 CPU/内存资源档；其他组合会拒绝执行；
 - 端口带宽填写服务商套餐上限，不要填写虚拟网卡显示的链路速率；默认 200 Mbps，允许 100–1000 Mbps；
-- 联网入口固定到 `v0.1.0-rc.9`，不会回退到 `master`、`main`、`latest`、HTTP 或第三方镜像；
-- 上述命令在执行总控脚本前核对 rc.9 总控资产的固定 SHA-256；总控随后下载固定 Release 的 `SHA256SUMS` 和匹配 profile，并再次校验；
-- rc.9 Release 当前未启用 GitHub Release immutability；发布后不应移动 tag 或替换同名资产，发现缺陷时应发布新版本；
+- 联网入口固定到 `v0.1.0-rc.10`，不会回退到 `master`、`main`、`latest`、HTTP 或第三方镜像；
+- 上述命令在执行总控脚本前核对 rc.10 总控资产的固定 SHA-256；总控随后下载固定 Release 的 `SHA256SUMS` 和匹配 profile，并再次校验；
+- 总控、`SHA256SUMS` 和 profile 必须来自同一 Release；不同版本使用不同的临时目录，不要把 rc.9 与 rc.10 资产混放在 `/root` 或同一工作目录；
+- 发布后不应移动 tag 或替换同名资产，发现缺陷时应发布新版本；
+- `update` 是只读升级检查，不会自动迁移配置；检查通过后仍必须另选维护窗口完成人工 rollback/apply 和两次重启；
 - 脚本不配置或放行 UFW 端口，不要把 UFW 状态提示当成防火墙已配置；先确保 SSH 管理端口不会被锁死；
 - `apply` 会写入系统配置并可能创建 `/swapfile-proxy`；生产 VPS 应先备份、确认控制台/救援入口，并在维护窗口执行；
 - `verify` 通过证明当前配置和受检查服务符合脚本契约，不证明线路吞吐、延迟、丢包或 VLESS + REALITY + TCP 业务性能一定改善；
+- `verify` 和 `preflight` 会拒绝本项目之外的重复 sysctl 定义，即使外部文件写入的值与本项目相同；不要再运行 3X-UI/X-UI 内置的 BBR 或网络优化菜单，以免重新创建 `99-bbr-x-ui.conf`；
 - `rollback` 会撤销本项目管理的调优配置，应在维护窗口测试；普通 rollback 默认保留脚本创建的 swap；
 - 不要在未阅读脚本和发布说明时使用 `curl ... | bash` 或 `bash <(curl ...)`。
 
-## rc.9 真实环境验证状态
+## rc.9 真实环境验证基线
 
 2026-08-03 已取得一台真实 VPS 的主路径证据：
 
@@ -154,7 +190,7 @@ printf 'strict_verify_after_3xui_exit=%s\n' "$?"
 - 安装 3X-UI 后严格验证，以及再次重启后的严格验证，均为退出码 0、警告 0；
 - 重启后 `x-ui.service` 主进程和直接 Xray 子进程的 NOFILE soft/hard limit 均为 65536/65536。
 
-该结果只证明 **Debian 13、1C1G、1000 Mbps、ext4、3X-UI** 这一组合的上述主路径。尚未在这台机器上完成无显式端口参数的重复 `apply`、rollback/purge、VLESS + REALITY + TCP 客户端连通性和 1/3/5/10 并发性能测试，也不能替代 Debian 12、512 MiB、2G、2C2G 或其他带宽组合的目标机证据。完整状态见 [验证矩阵](docs/validation.md)。
+该结果只证明 **rc.9、Debian 13、1C1G、1000 Mbps、ext4、3X-UI** 这一组合的上述主路径。rc.10 修改了自动缓冲选择和诊断能力，不能继承 rc.9 的目标机通过结论；尚未在这台机器上完成无显式端口参数的重复 `apply`、rollback/purge、VLESS + REALITY + TCP 客户端连通性和 1/3/5/10 并发性能测试，也不能替代 Debian 12、512 MiB、2G、2C2G 或其他带宽组合的目标机证据。完整状态见 [验证矩阵](docs/validation.md)。
 
 ## 本地使用与命令行模式
 
@@ -174,6 +210,10 @@ bash ./debian-vps-tuning.sh apply --port 200
 bash ./debian-vps-tuning.sh verify
 bash ./debian-vps-tuning.sh status
 bash ./debian-vps-tuning.sh diagnose
+# benchmark 还需要 BENCHMARK_HOST，见下文
+bash ./debian-vps-tuning.sh benchmark
+bash ./debian-vps-tuning.sh update
+bash ./debian-vps-tuning.sh update --target v0.1.0-rc.11
 bash ./debian-vps-tuning.sh rollback
 ```
 
@@ -250,6 +290,19 @@ Debian 12 适合已经部署、依赖既定兼容性或希望维持现有环境�
 - `vm.swappiness=20`。
 
 完整边界见 [设计范围](docs/design-scope.md)。
+
+### TCP Fast Open 与 Xray 的边界
+
+`net.ipv4.tcp_fastopen=3` 只启用 Linux 的客户端/服务端基础能力。Linux 内核文档明确区分全局位图与单个 listener 的 `TCP_FASTOPEN` socket option；Xray 也通过 `streamSettings.sockopt.tcpFastOpen` 控制入站或出站 socket。因而下面的命令没有输出时，只能说明 3X-UI 生成的 Xray 配置中没有显式 `tcpFastOpen` 字段，**不能据此证明 TFO 已启用，也不能证明 TFO 已禁用**：
+
+```bash
+jq '.. | objects | select(has("tcpFastOpen")) | .tcpFastOpen' \
+  /usr/local/x-ui/bin/config.json
+```
+
+rc.10 的 `verify` 和 `diagnose` 会只读报告该字段是否显式存在，但不会修改代理配置。不要直接编辑 `/usr/local/x-ui/bin/config.json`：它是 3X-UI 生成文件，面板重建配置时可能覆盖。只有在当前 3X-UI 版本明确提供对应的入站/出站 sockopt 或高级配置入口、并完成客户端兼容性测试后，才通过面板配置；配置后重新检查生成 JSON 和实际连接。TFO 主要影响握手阶段，不能替代 BBR、fq 或线路质量，也不保证跨所有中间设备都获益。
+
+同理，主机的 `tcp_keepalive_time/intvl/probes` 只影响已经启用 `SO_KEEPALIVE` 且没有被应用覆盖的 socket。Xray 官方文档说明：入站 Keep-Alive 默认关闭，配置 `tcpKeepAliveIdle` 或 `tcpKeepAliveInterval` 才启用；出站还有自己的默认值。因此，主机 sysctl 不能单独证明 Xray 连接正在采用这些 keepalive 值。参见 [Linux IP sysctl](https://docs.kernel.org/networking/ip-sysctl.html) 和 [Xray Sockopt](https://xtls.github.io/en/config/transports/sockopt.html)。
 
 ## 脚本不会修改什么
 
@@ -405,7 +458,34 @@ env REQUIRE_PROXY_SERVICE=1 \
 bash ./debian-vps-tuning.sh diagnose
 ```
 
-`diagnose` 只采集系统、路由、网卡队列、qdisc 统计、socket 汇总和 softnet 采样，不发起性能流量，也不修改系统。输出可用于定位丢包、CPU softnet 压力或队列异常，但不能代替真实客户端测试。
+`diagnose` 默认做 5 秒前后采样，输出 TCP 重传/超时/监听溢出/TFO 计数增量、每 CPU softnet `dropped`/`time_squeeze` 增量、`tc -s -d`、网卡错误计数以及 RPS/XPS/IRQ 的只读证据。它不发起性能流量，也不修改系统；建议在这 5 秒内由客户端复现实际 VLESS + REALITY + TCP 负载：
+
+```bash
+env DIAG_INTERVAL_SECONDS=15 \
+  bash ./debian-vps-tuning.sh diagnose
+```
+
+默认不输出连接对端和进程详情。如确需采集 `ss -tinp`，应在保存和共享日志前脱敏：
+
+```bash
+env DIAG_INCLUDE_SOCKET_DETAILS=1 \
+  bash ./debian-vps-tuning.sh diagnose
+```
+
+### 6. 显式 iperf3 benchmark
+
+`benchmark` 不改变系统配置，但会主动产生高带宽 TCP 流量。它要求用户自行准备并授权使用 iperf3 服务端，脚本不会安装软件包、开启端口或选择公共服务器。默认顺序执行 10 秒上传和 10 秒下载，并输出 JSON、TCP/softnet 增量及 qdisc 前后统计：
+
+```bash
+env BENCHMARK_HOST='iperf.example.com' \
+  BENCHMARK_PORT=5201 \
+  BENCHMARK_SECONDS=10 \
+  BENCHMARK_PARALLEL=1 \
+  BENCHMARK_DIRECTION=both \
+  bash ./debian-vps-tuning.sh benchmark
+```
+
+该结果只测量 VPS 到 iperf3 服务端的直连 TCP，不经过 VLESS + REALITY + TCP 客户端链路；不能拿公共测试点的单次结果直接判断代理体验。`BENCHMARK_PARALLEL` 限制为 1–4，1C1G/1C2G 的基线测试先用 1。iperf3 参数语义见 [ESnet 官方文档](https://software.es.net/iperf/invoking.html)。
 
 ## 100–1000 Mbps
 
@@ -430,7 +510,15 @@ env PORT_SPEED_MBPS=1000 \
   bash ./debian13-1c2g-vps-tuning.sh apply
 ```
 
-100–1000 内的任意整数都可以使用，500 Mbps 也在总控菜单中提供。默认目标 RTT 为 200 ms。自动缓冲先按 BDP 选择 16/32/64 MiB，再受内存档上限约束：512 MiB 档最多 16 MiB、1 GiB 档最多 32 MiB、2 GiB 档最多 64 MiB。512 MiB 高 BDP 场景被限制时会明确警告覆盖 RTT 不足；这是内存保护，不代表输入无效。没有持续监控和高 BDP 证据时，不建议手工指定 `BUF_MAX`。
+100–1000 内的任意整数都可以使用，500 Mbps 也在总控菜单中提供。rc.10 默认目标 RTT 为 200 ms，按资源档分别采用 1×、1.25×、1.5×BDP 目标，再向上选择 16/32/64 MiB，并受 512M/1G/2G profile 的 16/32/64 MiB 上限约束：
+
+| 资源档 | BDP 系数 | 100 Mbps | 200 Mbps | 500 Mbps | 1000 Mbps |
+|---|---:|---:|---:|---:|---:|
+| 512M | 1× | 16 MiB | 16 MiB | 16 MiB | 16 MiB（截断警告） |
+| 1G | 1.25× | 16 MiB | 16 MiB | 16 MiB | 32 MiB |
+| 2G | 1.5× | 16 MiB | 16 MiB | 32 MiB | 64 MiB |
+
+主力 200 Mbps 的所有资源档均为 16 MiB。512M 档优先限制内存压力；1G/2G 档逐级增加高 BDP 余量，只有 512M/1000 Mbps/200 ms 组合触发资源截断警告。这里的上限是自动调优允许的最大 socket 缓冲，不表示每条连接会立即占满。Linux TCP 接收缓冲仍由自动调优按连接需求增长；应用显式 `setsockopt(SO_RCVBUF)` 时可能改变该行为。资源截断是内存保护，不代表带宽输入无效。没有持续监控和高 BDP 证据时，不建议手工指定 `BUF_MAX`。
 
 ## 参数
 
@@ -444,6 +532,14 @@ env PORT_SPEED_MBPS=1000 \
 | `PURGE_CREATED_SWAP` | `0` | 回滚时是否清理脚本创建的 swap |
 | `PROXY_SERVICE_UNITS` | 自动识别 | 空格分隔的 systemd service |
 | `REQUIRE_PROXY_SERVICE` | `0` | 为 `1` 时没有目标代理服务即验证失败 |
+| `DIAG_INTERVAL_SECONDS` | `5` | `1–60`，diagnose 增量窗口 |
+| `DIAG_INCLUDE_SOCKET_DETAILS` | `0` | `1` 时输出可能包含对端地址的 `ss -tinp` |
+| `BENCHMARK_HOST` | 无 | benchmark 必填，用户授权的 iperf3 服务端 |
+| `BENCHMARK_PORT` | `5201` | `1–65535` |
+| `BENCHMARK_SECONDS` | `10` | `5–120`，每个方向 |
+| `BENCHMARK_PARALLEL` | `1` | `1–4` |
+| `BENCHMARK_DIRECTION` | `both` | `upload`、`download` 或 `both` |
+| `UPDATE_TAG` | 自动发现 | `update` 的目标 Release；等价命令行参数为 `--target` |
 
 不支持自定义 swap 文件路径；脚本只可能创建 `/swapfile-proxy`。
 
@@ -455,9 +551,49 @@ env PORT_SPEED_MBPS=1000 \
 /var/lib/proxy-vps-tuning/state.json
 ```
 
-同一参数下重复执行 `apply` 时，脚本先验证当前配置；验证通过后不重复写入。通过总控脚本重复执行 `apply` 且未提供 `--port` 或 `PORT_SPEED_MBPS` 时，会复用状态中已安装的端口带宽；显式参数仍优先。使用不同资源脚本或改变带宽/缓冲参数前，应先回滚现有配置。
+同一脚本版本、同一参数下重复执行 `apply` 时，脚本先验证当前配置；验证通过后不重复写入。通过总控脚本重复执行 `apply` 且未提供 `--port` 或 `PORT_SPEED_MBPS` 时，会复用状态中已安装的端口带宽；显式参数仍优先。状态版本与当前脚本不同、使用不同资源脚本或改变带宽/缓冲参数时，`apply` 会要求先回滚，避免把“旧配置仍可验证”误报为“新版本已经安装”。
 
 状态更新先由 `jq` 写入同目录临时文件，随后检查命令退出码、非空、仅含一个 JSON 对象及完整 schema，全部通过后才原子替换 `state.json`。空文件、空白文件、多个 JSON 文档或更新失败均不得覆盖上一个有效状态。
+
+### 从 rc.8/rc.9 或旧 v5/v6 升级到 rc.10
+
+`tcpFastOpen` 查询无输出本身不是必须升级的故障：rc.10 只增加检测与说明，仍不会替用户修改 3X-UI/Xray 配置。升级 rc.10 的主要配置变化是按 512M/1G/2G 使用 1×/1.25×/1.5×BDP 档位；200 Mbps 仍为 16 MiB，1000 Mbps 的 1G/2G 分别为 32/64 MiB。
+
+对已经由 rc.8 或 rc.9 管理、且 `/var/lib/proxy-vps-tuning/state.json` 有效的主机，先使用前文 rc.10 总控的 `update --target v0.1.0-rc.10` 做只读兼容性检查并保存它输出的 URL、SHA-256、profile 和端口带宽。检查通过后，另选维护窗口。以 rc.9 为例，应在独立临时目录重新下载并校验 rc.9 总控，再由 rc.9 固定 Release profile 完成 verify/rollback/purge：
+
+```bash
+(
+  set -e
+
+  dvt_rc9_tmp="$(mktemp -d)"
+  trap 'rm -rf -- "$dvt_rc9_tmp"' EXIT
+
+  curl --fail --show-error --silent --location \
+    --proto '=https' \
+    --proto-redir '=https' \
+    --connect-timeout 15 \
+    --max-time 120 \
+    -o "$dvt_rc9_tmp/debian-vps-tuning.sh" \
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.9/debian-vps-tuning.sh
+
+  printf '%s  %s\n' \
+    '09cbb77591760fa1789729c31f64e03b29f145f50c8c419bca6057b23f492979' \
+    "$dvt_rc9_tmp/debian-vps-tuning.sh" | sha256sum -c -
+
+  bash "$dvt_rc9_tmp/debian-vps-tuning.sh" verify
+
+  env PURGE_CREATED_SWAP=1 \
+    bash "$dvt_rc9_tmp/debian-vps-tuning.sh" rollback
+)
+
+printf 'rc9_rollback_exit=%s\n' "$?"
+
+reboot
+```
+
+重新登录后，使用另一个独立临时目录重新下载并校验 rc.10 总控，执行 `preflight --port <原状态中的端口带宽>`；确认通过后再执行 `apply --port <相同带宽>`、重启并 `verify`。安装了 3X-UI 时还应执行前文严格验证。`PURGE_CREATED_SWAP=1` 只会尝试删除状态确认由本项目创建的 `/swapfile-proxy`；如果 `swapoff` 失败，脚本保留 swap、fstab 行和状态，不应强制删除。若使用的是外部 swap，rollback 不会接管或删除它。任何一步失败都应停止并保留当前状态，不能跳过重启或直接执行后续 apply。
+
+旧 v5/v6 没有 rc.8+ 的同一状态/所有权契约，rc.10 不会猜测其原始 sysctl、qdisc 或 swap 归属。应先保存 `sysctl`、`tc -j qdisc show`、systemd unit、swap 和旧脚本备份，按对应旧脚本的清理流程退出旧配置并重启；确认旧 sysctl/service 文件不再生效后，再运行 rc.10 `preflight`。出现 sysctl 冲突时必须先按真实文件归属合并或移除，不能用 rc.10 `rollback` 冒充旧脚本卸载器。
 
 ### rc.2 空状态恢复
 
@@ -509,7 +645,7 @@ rollback 在执行 qdisc 恢复命令后会重新读取实际状态；只有恢�
 - 策略路由、TProxy、网关、Docker 防火墙和复杂 qdisc 不在范围内；
 - 性能结果受 CPU、虚拟化超售、线路、跨境路由、客户端和加密开销影响。
 - 性能验收应分别覆盖 1、3、5、10 并发；脚本不会自动生成代理流量。
-- 2C2G 已纳入 rc.9 资源契约和本地 fixture，真实 VPS 生命周期结果以 [验证矩阵](docs/validation.md) 为准。
+- 2C2G 已纳入 rc.10 资源契约和本地 fixture，真实 VPS 生命周期结果以 [验证矩阵](docs/validation.md) 为准。
 
 详见 [运行验收说明](docs/validation.md)。
 
