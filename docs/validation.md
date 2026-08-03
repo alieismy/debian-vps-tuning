@@ -5,11 +5,52 @@
 验证结果必须分为：
 
 1. 本地静态检查；
-2. 同源模板与四个资源变体的一致性；
+2. 同源模板与六个操作系统/内存变体的一致性；
 3. 目标 VPS 运行、重启和回滚；
 4. 3X-UI/Xray 与客户端业务连接。
 
 前三项不能相互替代。静态检查通过不证明 BBR、qdisc、swap、重启持久性或代理连接成功。
+
+## 总控入口验证矩阵
+
+`debian-vps-tuning.sh` 只负责选择、校验和调用，但它决定最终执行哪一份 root 脚本，因此必须独立验证。控制器通过不代表目标 profile 或 VPS 生命周期通过。
+
+| ID | 场景 | 预期结果 | 当前状态 |
+|---|---|---|---|
+| C1 | Debian 12/13，1 vCPU，384/512/767 MiB | 选择对应 `1c512m` profile，资源档 `1C512MB` | fixture 通过 |
+| C2 | Debian 12/13，1 vCPU，768/1024/1535 MiB | 选择对应 `1c1g` profile，资源档 `1C1GB` | fixture 通过 |
+| C3 | Debian 12/13，1 vCPU，1536/2048 MiB | 选择兼容 `1c2g` profile，资源档 `1C2GB` | fixture 通过 |
+| C4 | Debian 12/13，2 vCPU，1536/2048 MiB | 选择兼容 `1c2g` profile，资源档 `2C2GB` | fixture 通过 |
+| C5 | 非 Debian、非 amd64、超范围内存、2C512、2C1G 或 3C2G | 返回不支持，不调用 profile | fixture 通过 |
+| C6 | 交互带宽直接 Enter | 使用 200 Mbps | fixture 通过 |
+| C7 | `--port` 和 `PORT_SPEED_MBPS` | 只接受 100–1000，显式参数优先 | fixture 通过 |
+| C8 | 清单缺失、重复条目、哈希不匹配 | 返回完整性错误，不调用 profile | fixture 通过 |
+| C9 | curl 失败、404、超时或中断 | 返回下载错误，不回退其他来源 | fixture 通过；真实 Release 待测 |
+| C10 | profile 返回非零 | 控制器返回同一退出码 | fixture 通过 |
+| C11 | `guided` | preflight 通过后询问；N/Enter 不 apply | 目标 VPS 待测 |
+| C12 | 菜单 `apply` | 再次确认；N/Enter 不 apply | 目标 VPS 待测 |
+| C13 | 无 TTY 且无 action | 返回 usage，不等待输入 | 目标 Linux 待测 |
+| C14 | 状态档位与检测档位不一致 | 阻断，不自动换 profile | fixture 通过；目标 VPS 待测 |
+| C15 | 固定 rc.9 Release assets | 下载清单和唯一 profile，SHA-256 通过 | 模拟远程 fixture 通过；rc.9 发布后待测 |
+
+本地检查入口：
+
+```bash
+bash tests/controller-check.sh
+bash tests/static-check.sh
+shellcheck -x \
+  debian-vps-tuning.sh \
+  debian12-1c512m-vps-tuning.sh \
+  debian12-1c1g-vps-tuning.sh \
+  debian12-1c2g-vps-tuning.sh \
+  debian13-1c512m-vps-tuning.sh \
+  debian13-1c1g-vps-tuning.sh \
+  debian13-1c2g-vps-tuning.sh \
+  tests/static-check.sh \
+  tests/controller-check.sh
+```
+
+发布前必须从 draft Release 下载总控、六份 profile 和清单共八个资产，在与仓库不同的临时目录执行 `sha256sum -c SHA256SUMS`，再分别验证本地模式和缺少同目录 profile 时的远程模式。Release 尚未上传资产时，不得把远程下载测试标为通过。
 
 ## 首发目标机矩阵
 
@@ -23,29 +64,33 @@
 | T4 | Debian 13 | 1C2G | 以实机为准 | 200 Mbps | `6.12.100+deb13-cloud-amd64` | 系统兼容 | 待执行 |
 | T5 | 与脚本匹配的 Debian 版本 | 1C1G | 10 GB | 100 Mbps | 以实机为准 | 低带宽边界 | 待执行 |
 | T6 | 与脚本匹配的 Debian 版本 | 1C1G | 50 GB | 1000 Mbps | 以实机为准 | 高带宽边界 | 待执行 |
+| T7 | Debian 12 | 2C2G | 以实机为准 | 200 Mbps | `6.1.x`，以实机为准 | 2C2G 资源契约 | 待执行 |
+| T8 | Debian 13 | 2C2G | 以实机为准 | 200 Mbps | `6.12.x`，以实机为准 | 2C2G 系统兼容 | 待执行 |
+| T9 | Debian 12 | 1C512MB | 以实机为准 | 200 Mbps | `6.1.x`，以实机为准 | 最小内存边界 | 待执行 |
+| T10 | Debian 13 | 1C512MB | 以实机为准 | 200 Mbps | `6.12.x`，以实机为准 | 最小内存系统兼容 | 待执行 |
 
-T1、T2 必须通过才能发布首个稳定版；T3、T4 是 Debian 13 稳定版门槛；T5、T6 用于确认 100–1000 Mbps 输入边界，不能用 200 Mbps 的结果代替。
+T1、T2 必须通过才能发布首个稳定版；T3、T4 是 Debian 13 稳定版门槛；T5、T6 用于确认 100–1000 Mbps 输入边界，不能用 200 Mbps 的结果代替。T7、T8 用于证明同一 `1c2g` 兼容 profile 在 2 vCPU 下的完整生命周期；T9、T10 用于证明 512 MiB 的缓冲截断、journald、swap 和 3X-UI 生命周期。本地 fixture 不能替代目标机证据。
 
 ## 每台目标机的生命周期矩阵
 
-每一行都要分别在 T1–T6 回填“通过/失败/不适用”、执行时间、脚本 SHA-256 和脱敏证据路径。任一失败都应保留退出码和错误输出。
+每一行都要分别在 T1–T10 回填“通过/失败/不适用”、执行时间、脚本 SHA-256 和脱敏证据路径。任一失败都应保留退出码和错误输出。
 
-| 阶段 | 操作 | 关键判据 | T1 | T2 | T3 | T4 | T5 | T6 |
-|---|---|---|---|---|---|---|---|---|
-| M0 | 基线采集 | OS、内核、内存、XFS、磁盘、双栈、qdisc、swap 可追溯 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
-| M1 | 未安装状态执行 `verify` | 退出码 5；提示先运行 `preflight`/`apply`；无系统写入 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
-| M2 | `preflight` | 退出码 0；识别 XFS；无系统写入 | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | 待执行 |
-| M3 | `apply` | 退出码 0；状态为 `VERIFIED`；swap/qdisc 行为符合预期 | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | 待执行 |
-| M4 | 立即 `verify` | 退出码 0；sysctl、qdisc、journald、swap 一致 | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | 待执行 |
-| M5 | 重启后 `verify` | 退出码 0；BBR、fq、sysctl、swap 持久 | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | 待执行 |
-| M6 | 重复 `apply` | 退出码 0；报告无需重复写入；无重复 fstab/unit | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | 待执行 |
-| M7 | 3X-UI/Xray 验证 | `REQUIRE_PROXY_SERVICE=1 verify` 通过；服务未被脚本重启 | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | 待执行 |
-| M8 | VLESS + REALITY + TCP | IPv4/IPv6 按实际能力建立连接；连续传输无异常 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
-| M9 | 普通 `rollback` | 系统配置恢复；脚本创建的 swap 默认保留；状态可追溯 | 待执行 | rc.7 实际恢复通过；rc.8 后置验证待复测 | 待执行 | 待执行 | 待执行 | 待执行 |
-| M10 | 回滚后重启 | `status` 行为正确；无残留 unit/sysctl/journald 配置 | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | 待执行 |
-| M11 | 显式 purge | `swapoff` 成功才删除 swap/fstab 行；失败时保留证据 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
+| 阶段 | 操作 | 关键判据 | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8 | T9 | T10 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| M0 | 基线采集 | OS、内核、CPU、内存、XFS、磁盘、双栈、qdisc、swap 可追溯 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M1 | 未安装状态执行 `verify` | 退出码 5；提示先运行 `preflight`/`apply`；无系统写入 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M2 | `preflight` | 退出码 0；识别资源档和文件系统；无系统写入 | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M3 | `apply` | 退出码 0；状态为 `VERIFIED`；含 NOFILE drop-in，swap/qdisc 符合预期 | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M4 | 立即 `verify` | 退出码 0；sysctl、qdisc、journald、swap、drop-in 一致 | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M5 | 重启后 `verify` | 退出码 0；BBR、fq、sysctl、swap 持久 | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M6 | 重复 `apply` | 退出码 0；报告无需重复写入；无重复 fstab/unit | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M7 | 安装 3X-UI 后严格验证 | `REQUIRE_PROXY_SERVICE=1 verify` 通过；x-ui/Xray 运行时 NOFILE ≥ 65536 | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M8 | VLESS + REALITY + TCP | IPv4/IPv6 按实际能力建立连接；连续传输无异常 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M9 | 普通 `rollback` | 恢复 qdisc/sysctl，删除 drop-in；脚本 swap 默认保留；状态可追溯 | 待执行 | rc.7 实际恢复通过；rc.8 后置验证待复测 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M10 | 回滚后重启 | `status` 正确；无残留 unit/sysctl/journald/drop-in | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M11 | 显式 purge | `swapoff` 成功才删除 swap/fstab 行；失败时保留证据 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
 
-状态初始化还必须覆盖 jq 构造器失败路径：状态 JSON 未成功提交时，不得创建 sysctl、journald、helper 或 unit；脚本应删除本次进程创建的 qdisc 快照、JSON 临时文件和空状态目录，并明确报告“未写入系统配置”。
+状态初始化还必须覆盖 jq 构造器失败路径：状态 JSON 未成功提交时，不得创建 sysctl、journald、helper、unit 或 x-ui drop-in；脚本应删除本次进程创建的 qdisc 快照、JSON 临时文件和空状态目录，并明确报告“未写入系统配置”。
 
 状态兼容性测试必须使用 Debian 12 的 jq 1.6 语义，至少覆盖：0 字节、仅空白、`null`、缺字段对象、多个连续 JSON 对象、jq 编译失败、jq 转换失败和有效单对象。任何无效输入都不得覆盖既有状态。不能只用 jq 1.7/1.8 的 `-e` 空输入退出码证明兼容。
 
@@ -55,7 +100,7 @@ rc.2 空状态的 `recover` 必须拒绝一般损坏 JSON、有效状态、仍�
 
 独立 `preflight` 的状态阻断不得破坏重复 `apply`：相同参数且状态为 `VERIFIED` 时，`apply` 必须进入验证后无写入返回；参数不同或事务状态不允许时才阻断。
 
-sysctl 校验应比较归一化后的字段值：内核通过 `sysctl -n` 返回的连续空格或制表符只用于显示对齐，不构成配置差异；字段数量或任一字段数值变化仍必须失败。NOFILE 审计必须把 `/proc/<PID>/limits` 的 soft/hard 两列分别输出，不能受脚本全局 `IFS` 影响。
+sysctl 校验应比较归一化后的字段值：内核通过 `sysctl -n` 返回的连续空格或制表符只用于显示对齐，不构成配置差异；字段数量或任一字段数值变化仍必须失败。NOFILE 审计必须把 `/proc/<PID>/limits` 的 soft/hard 两列分别输出，不能受脚本全局 `IFS` 影响。未安装 3X-UI 时，已托管 drop-in + 无服务属于正常待安装状态；安装后必须验证 `LimitNOFILESoft`、`LimitNOFILE`、主进程和直接 Xray 子进程，任一运行时 soft 或 hard limit 低于 65536 都失败。
 
 事务阶段顺序必须为 `PREPARED → APPLYING → APPLIED → VERIFIED`。`APPLYING` 必须在首个系统文件写入前提交。`PREPARED`、`ROLLBACK_PENDING` 或 `DEGRADED` 只有在项目文件均不存在、外部 swap 未被脚本接管、当前 qdisc 与快照语义一致且原始 sysctl 已恢复时，才允许直接清理残留状态。
 
@@ -71,6 +116,21 @@ sysctl 校验应比较归一化后的字段值：内核通过 `sysctl -n` 返回
 | Q4 | 根 `mq`，叶子混合 `fq`/`fq_codel` | 只替换 `fq_codel` 叶子 | 原 `fq` 不动，恢复原 `fq_codel` | 待执行 |
 | Q5 | HTB/TBF/CAKE 或未知层次 | `preflight` 阻断，无写入 | 不适用 | 待执行 |
 | Q6 | 根 `fq_codel`，`tc` 显示 `limit 10240p`，JSON 时间比整毫秒少 1 微秒 | 切换为 `fq` | 用纯整数 `limit 10240` 恢复；±1 微秒视为语义一致 | 待执行 |
+| Q7 | 默认参数、无附加层次的根 `pfifo_fast` | 切换为 `fq` | 恢复根 `pfifo_fast` 并通过语义比较 | fixture 通过；目标机待执行 |
+| Q8 | 自定义参数或带附加层次的 `pfifo_fast` | `preflight` 阻断，无写入 | 不适用 | fixture 通过；目标机待执行 |
+
+## 业务性能矩阵
+
+调优脚本不自动生成流量。应使用受控客户端和固定 VLESS + TCP + REALITY 配置，在相同路由时段记录至少三次测试；保留中位数以及异常值，不只保存最好结果。
+
+| 并发 | 目标 | 必记指标 | 通过判据 |
+|---:|---|---|---|
+| 1 | 单连接起速与稳定吞吐 | 首包/握手时间、5 s/30 s 吞吐、重传、CPU、RSS | 无连接失败；与未调优基线相比不得出现可重复的明显退化 |
+| 3 | 一般低并发 | 每连接吞吐、聚合吞吐、p50/p95 RTT、重传、softnet drop/time_squeeze | 三连接持续可用，无队列丢包持续增长 |
+| 5 | 典型峰值 | 聚合吞吐、公平性、p95 RTT、CPU steal/system、Xray RSS | 五连接无异常断开；512M 档无 OOM/持续 swap thrash |
+| 10 | 设计上限 | 成功连接数、聚合吞吐、p95/p99 RTT、重传、CPU、内存、swap | 10 个连接均建立并持续传输；无 OOM、服务重启或系统失联 |
+
+四个资源档至少各取得 200 Mbps/200 ms 目标下的 1、3、5、10 并发证据。100、500、1000 Mbps 或其他自定义端口值用于带宽边界扩展；高 BDP 线路还要记录实际 RTT 和 profile 是否发生缓冲截断。不同 VPS 的吞吐绝对值不能直接互相替代。
 
 ## 已取得的目标机证据
 
@@ -84,8 +144,8 @@ qdisc 快照往返测试必须区分显示单位和命令输入：不得把文�
 
 ```text
 基线采集
-→ preflight
-→ apply
+→ 总控脚本安全引导/独立 preflight
+→ 总控脚本确认后 apply
 → verify
 → reboot
 → verify
@@ -97,6 +157,8 @@ qdisc 快照往返测试必须区分显示单位和命令输入：不得把文�
 → reboot
 → status
 ```
+
+控制器目标机证据必须额外保存：控制器版本、固定 Release tag、自动档位、所选文件名、端口带宽、打印的 SHA-256、底层 action 和最终退出码。使用总控入口不得替代对同一 profile 的独立脚本回归；二者至少各执行一次 preflight、apply、verify 和 rollback。
 
 ## 必须保存的脱敏证据
 
@@ -115,7 +177,7 @@ sysctl net.core.default_qdisc
 tc -j qdisc show
 swapon --show
 systemctl status proxy-vps-fq.service --no-pager
-systemctl show x-ui.service -p LoadState -p ActiveState -p MainPID -p LimitNOFILE
+systemctl show x-ui.service -p LoadState -p ActiveState -p MainPID -p LimitNOFILE -p LimitNOFILESoft
 ufw status verbose
 ```
 
@@ -128,14 +190,16 @@ ufw status verbose
 - 重启后 BBR、fq、sysctl 和 swap 状态保持；
 - 重复 `apply` 不产生重复 fstab 行或漂移文件；
 - UFW 规则和代理配置不被修改；
-- `x-ui.service` 不被调优脚本重启；
+- 先调优、后安装 3X-UI 时不需要额外重启；若 apply 时 x-ui 已活动，脚本不主动重启，必须在人工重启服务或主机后再通过严格验证；
+- `x-ui.service` 和直接 Xray 子进程运行时 NOFILE soft/hard limit 均不低于 65536；
 - VLESS + REALITY + TCP 可以实际建立连接；
 - 回滚只删除本项目管理的文件；
 - 回滚失败时状态和证据保留；
 - 普通回滚保留 swap，显式 purge 只在 `swapoff` 成功后删除。
 - 原本已经是 `fq` 的根或 `mq` 叶子在 apply/rollback 后保持原有参数；
-- XFS 根文件系统允许创建 swap，已知不适用或未知文件系统只警告并跳过。
+- XFS 根文件系统允许创建 swap，已知不适用或未知文件系统只警告并跳过；
+- 1/3/5/10 并发业务矩阵无连接失败、OOM、意外服务重启或持续增长的 softnet/qdisc 丢包。
 
 ## 失败路径
 
-至少覆盖：已有 swap、同名非项目 swap 文件、XFS、已知不适用和未知根文件系统、磁盘不足、sysctl 冲突、同名非项目 unit、带自定义参数的根 `fq`、`mq` 下混合 `fq`/`fq_codel` 叶子、qdisc 快照仅 `refcnt` 不同、qdisc 时间回显相差 1 微秒、`fq_codel limit` 文本输出带 `p`、`noqueue`、复杂 qdisc、双栈不同默认网卡、未安装项目状态时执行 `verify`、已有 `DEGRADED` 状态时执行 `preflight`、0 字节/空白/多文档状态、状态 JSON 构造器编译失败、状态转换失败、rc.2 空状态 recover、状态提交前应用中断、`DEGRADED` 无活动配置恢复、未安装 3X-UI、停止的 `x-ui.service`、缺失的 Xray 子进程、应用中断和 `swapoff` 失败。
+至少覆盖：四个资源档边界、512M 自动缓冲截断和显式越界拒绝、已有 swap、同名非项目 swap 文件、XFS、已知不适用和未知根文件系统、磁盘不足、sysctl 冲突、同名非项目 unit/drop-in、带自定义参数的根 `fq`、常规和非常规 `pfifo_fast`、`mq` 下混合 `fq`/`fq_codel` 叶子、qdisc 快照仅 `refcnt` 不同、qdisc 时间回显相差 1 微秒、`fq_codel limit` 文本输出带 `p`、`noqueue`、复杂 qdisc、双栈不同默认网卡、未安装项目状态时执行 `verify`、已有 `DEGRADED` 状态时执行 `preflight`、0 字节/空白/多文档状态、状态 JSON 构造器编译失败、状态转换失败、rc.2 空状态 recover、状态提交前应用中断、`DEGRADED` 无活动配置恢复、调优后尚未安装 3X-UI、停止的 `x-ui.service`、NOFILE 低于 65536、缺失的 Xray 子进程、应用中断和 `swapoff` 失败。

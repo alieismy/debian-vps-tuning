@@ -2,6 +2,32 @@
 
 本项目采用 [Semantic Versioning](https://semver.org/)。
 
+## [0.1.0-rc.9] - Unreleased
+
+### Added
+
+- 新增 `debian-vps-tuning.sh` 总控入口，自动识别 Debian 12/13、amd64 和 1C512MB、1C1GB、1C2GB、2C2GB 四个资源档；
+- 新增交互安全引导，带宽默认 200 Mbps，支持 100–1000 Mbps；先执行 preflight，确认后才 apply；
+- 新增显式 `guided/preflight/apply/verify/status/diagnose/rollback/recover` 调用模式；`diagnose` 只读采集网络与 softnet 状态；
+- 新增本地及固定 GitHub Release 资源解析、严格 HTTPS 下载和目标 profile SHA-256 校验；
+- 新增 Debian 12/13 的 512 MiB profile、控制器映射、资源缓冲上限、常规 `pfifo_fast`、NOFILE 待安装状态、清单、失败下载和退出码透传测试；
+- 预置受状态哈希保护且可回滚的 `x-ui.service` drop-in，设置 `LimitNOFILE=65536`。
+
+### Changed
+
+- 六份资源脚本内部版本同步为 `0.1.0-rc.9`；状态 schema 保持 3；
+- 两个兼容名称为 `1c2g` 的 2G 档位正式支持 1–2 vCPU；总控和底层 profile 均校验 CPU/RAM 组合，不新增重复 2C2G 脚本；
+- socket 上限按 512M/1G/2G 资源分别限制为 16/32/64 MiB；journald 和磁盘保留量按资源档收敛，swap 默认仍为 1 GiB；
+- 2C2G 沿用 2G 网络、swap 和 journald 参数，不启用 RPS/RFS/XPS、IRQ affinity 或 CPU affinity；
+- README 将总控入口作为普通用户首选，独立 profile 作为离线、审计和恢复入口；
+- Release 必须上传总控脚本、六份 profile 和 `SHA256SUMS`，控制器不回退到 `master`、`main`、`latest`、HTTP 或第三方源。
+
+### Validation
+
+- `bash -n`、四资源档控制器/底层 fixture、六份模板生成一致性及状态/qdisc 故障注入测试已通过；
+- ShellCheck v0.11.0 已覆盖总控脚本、六份 profile 和测试脚本；
+- 固定 rc.9 Release 远程下载仍需在 Release assets 发布后验证；目标 VPS 的控制器生命周期测试仍待执行。
+
 ## [0.1.0-rc.8] - 2026-08-02
 
 ### Fixed

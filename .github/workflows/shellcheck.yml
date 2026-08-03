@@ -19,7 +19,7 @@ jobs:
       - name: ShellCheck 0.11.0
         run: |
           mkdir -p .tmp/ci-helpers
-          for script in debian*-vps-tuning.sh; do
+          for script in debian1*-vps-tuning.sh; do
             helper=".tmp/ci-helpers/${script}.helper"
             awk "/^  write_managed_file .*FQ_HELPER.*<<'EOF_HELPER'/ {inside=1; next} /^EOF_HELPER$/ {inside=0} inside" \
               "$script" >"$helper"
@@ -27,9 +27,13 @@ jobs:
           done
           docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.11.0 \
             -x \
+            debian-vps-tuning.sh \
+            debian12-1c512m-vps-tuning.sh \
             debian12-1c1g-vps-tuning.sh \
             debian12-1c2g-vps-tuning.sh \
+            debian13-1c512m-vps-tuning.sh \
             debian13-1c1g-vps-tuning.sh \
             debian13-1c2g-vps-tuning.sh \
             tests/static-check.sh \
+            tests/controller-check.sh \
             .tmp/ci-helpers/*.helper
