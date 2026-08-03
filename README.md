@@ -4,9 +4,159 @@
 
 脚本使用 BBR + fq、受控 TCP 缓冲、常规队列参数、应急 swap 和 journald 空间限制，目标是形成可预检、可验证、可重复执行、可回滚的配置。它不承诺在所有线路上提高吞吐或降低延迟。
 
-> 当前公开版本：`v0.1.0-rc.8`。本地源码正在准备下一候选版本 `v0.1.0-rc.9`，新增安全总控入口；rc.9 尚未提交或发布。正式 `v0.1.0` 还需要完成 [目标 VPS 运行验收](docs/validation.md)。
+> 当前公开版本：[`v0.1.0-rc.9`](https://github.com/alieismy/debian-vps-tuning/releases/tag/v0.1.0-rc.9)，标记为 Pre-release。正式 `v0.1.0` 仍需完成 [目标 VPS 运行验收](docs/validation.md)，不要把候选版本视为全平台、全带宽或性能验收已经完成。
 
-## 最简单的使用方式
+## 联网安装与验证
+
+以下命令均假定已经进入 VPS 的 root shell，提示符通常为 `#`，`id -u` 应输出 `0`。脚本会修改主机级网络、systemd、journald 和 swap 配置；首次执行前应确认服务商控制台或救援模式可用，并保存必要的基线信息。
+
+### 1. 联网安装
+
+推荐先执行 rc.9 固定 Release 的总控入口。它会自动识别 Debian 12/13、amd64、CPU 和内存档位，默认先执行只读 `preflight`，只有预检通过且再次明确输入 `y` 才执行 `apply`：
+
+```bash
+(
+  set -e
+
+  dvt_tmp="$(mktemp -d)"
+  trap 'rm -rf -- "$dvt_tmp"' EXIT
+
+  curl --fail --show-error --silent --location \
+    --proto '=https' \
+    --proto-redir '=https' \
+    --connect-timeout 15 \
+    --max-time 120 \
+    -o "$dvt_tmp/debian-vps-tuning.sh" \
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.9/debian-vps-tuning.sh
+
+  printf '%s  %s\n' \
+    '09cbb77591760fa1789729c31f64e03b29f145f50c8c419bca6057b23f492979' \
+    "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
+
+  bash "$dvt_tmp/debian-vps-tuning.sh"
+)
+```
+
+安全引导将：
+
+1. 显示检测到的系统、CPU、内存和档位；
+2. 选择服务商端口带宽，直接按 Enter 使用 200 Mbps；
+3. 显示实际调用脚本、来源和 SHA-256；
+4. 先执行只读 `preflight`；
+5. `preflight` 通过后再次询问，只有明确输入 `y` 才执行 `apply`。
+
+应用成功后按提示重启：
+
+```bash
+reboot
+```
+
+### 2. 重启后联网验证
+
+重新登录 VPS 后执行。`verify` 是只读验证，不会再次 apply，也不需要重新输入已经保存在状态中的端口带宽：
+
+```bash
+(
+  set -e
+
+  dvt_tmp="$(mktemp -d)"
+  trap 'rm -rf -- "$dvt_tmp"' EXIT
+
+  curl --fail --show-error --silent --location \
+    --proto '=https' \
+    --proto-redir '=https' \
+    --connect-timeout 15 \
+    --max-time 120 \
+    -o "$dvt_tmp/debian-vps-tuning.sh" \
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.9/debian-vps-tuning.sh
+
+  printf '%s  %s\n' \
+    '09cbb77591760fa1789729c31f64e03b29f145f50c8c419bca6057b23f492979' \
+    "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
+
+  bash "$dvt_tmp/debian-vps-tuning.sh" verify
+)
+
+printf 'verify_after_reboot_exit=%s\n' "$?"
+```
+
+`verify_after_reboot_exit=0` 才表示验证通过。保存完整输出；不要只截取最后一行。
+
+### 3. 安装 3X-UI 后严格联网验证
+
+推荐顺序是先完成调优和重启验证，再安装 3X-UI。安装并启动 3X-UI 后执行：
+
+```bash
+(
+  set -e
+
+  dvt_tmp="$(mktemp -d)"
+  trap 'rm -rf -- "$dvt_tmp"' EXIT
+
+  curl --fail --show-error --silent --location \
+    --proto '=https' \
+    --proto-redir '=https' \
+    --connect-timeout 15 \
+    --max-time 120 \
+    -o "$dvt_tmp/debian-vps-tuning.sh" \
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.9/debian-vps-tuning.sh
+
+  printf '%s  %s\n' \
+    '09cbb77591760fa1789729c31f64e03b29f145f50c8c419bca6057b23f492979' \
+    "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
+
+  env \
+    REQUIRE_PROXY_SERVICE=1 \
+    PROXY_SERVICE_UNITS='x-ui.service' \
+    bash "$dvt_tmp/debian-vps-tuning.sh" verify
+)
+
+printf 'strict_verify_after_3xui_exit=%s\n' "$?"
+```
+
+严格验证要求 `x-ui.service` 处于 active，并检查 systemd 配置、3X-UI 主进程和直接 Xray 子进程的 NOFILE soft/hard limit 均不低于 65536。安装 3X-UI 后再重启一次，并重复执行这条严格验证命令，才能证明开机启动和新进程继承仍然正确。
+
+### 4. 联网执行注意事项
+
+- 只支持厂商最小化 Debian 12/13、`x86_64/amd64` 和 README 列出的四个 CPU/内存资源档；其他组合会拒绝执行；
+- 端口带宽填写服务商套餐上限，不要填写虚拟网卡显示的链路速率；默认 200 Mbps，允许 100–1000 Mbps；
+- 联网入口固定到 `v0.1.0-rc.9`，不会回退到 `master`、`main`、`latest`、HTTP 或第三方镜像；
+- 上述命令在执行总控脚本前核对 rc.9 总控资产的固定 SHA-256；总控随后下载固定 Release 的 `SHA256SUMS` 和匹配 profile，并再次校验；
+- rc.9 Release 当前未启用 GitHub Release immutability；发布后不应移动 tag 或替换同名资产，发现缺陷时应发布新版本；
+- 脚本不配置或放行 UFW 端口，不要把 UFW 状态提示当成防火墙已配置；先确保 SSH 管理端口不会被锁死；
+- `apply` 会写入系统配置并可能创建 `/swapfile-proxy`；生产 VPS 应先备份、确认控制台/救援入口，并在维护窗口执行；
+- `verify` 通过证明当前配置和受检查服务符合脚本契约，不证明线路吞吐、延迟、丢包或 VLESS + REALITY + TCP 业务性能一定改善；
+- `rollback` 会撤销本项目管理的调优配置，应在维护窗口测试；普通 rollback 默认保留脚本创建的 swap；
+- 不要在未阅读脚本和发布说明时使用 `curl ... | bash` 或 `bash <(curl ...)`。
+
+## rc.9 真实环境验证状态
+
+2026-08-03 已取得一台真实 VPS 的主路径证据：
+
+| 项目 | 实测值 |
+|---|---|
+| 操作系统 | Debian GNU/Linux 13 (trixie) |
+| 内核 | `6.12.100+deb13-amd64` |
+| CPU / 内存 | 1 vCPU / 929 MiB，识别为 1C1GB |
+| 根文件系统 | ext4 |
+| 服务商端口上限 | 1000 Mbps |
+| profile | `debian13-1c1g` |
+| 总控/profile 版本 | `0.1.0-rc.9` |
+| profile SHA-256 | `9fd70c593b83d41337c6dfcada737855ce583e8bc3451ee8bb5952db850c81c6` |
+| 代理平台 | 3X-UI，systemd unit 为 `x-ui.service` |
+
+已通过：
+
+- 固定 rc.9 Release 总控、清单和 profile 的联网下载及 SHA-256 校验；
+- 交互安全引导、1000 Mbps 选择、`preflight`、首次 `apply` 和立即验证，均为退出码 0、警告 0；
+- 安装 3X-UI 前重启，联网 `verify` 退出码 0、警告 0；
+- 重启后 `proxy-vps-fq.service` 为 loaded/active/enabled，BBR、默认 fq、`eth0` 实际根 fq 和 `/swapfile-proxy` 均保持；
+- 安装 3X-UI 后严格验证，以及再次重启后的严格验证，均为退出码 0、警告 0；
+- 重启后 `x-ui.service` 主进程和直接 Xray 子进程的 NOFILE soft/hard limit 均为 65536/65536。
+
+该结果只证明 **Debian 13、1C1G、1000 Mbps、ext4、3X-UI** 这一组合的上述主路径。尚未在这台机器上完成无显式端口参数的重复 `apply`、rollback/purge、VLESS + REALITY + TCP 客户端连通性和 1/3/5/10 并发性能测试，也不能替代 Debian 12、512 MiB、2G、2C2G 或其他带宽组合的目标机证据。完整状态见 [验证矩阵](docs/validation.md)。
+
+## 本地使用与命令行模式
 
 `debian-vps-tuning.sh` 是总控入口。它自动读取 Debian 主版本、amd64 架构、可用逻辑 CPU 数和实际内存，在六份操作系统/内存 profile 中选择一份；用户不需要手工判断 512M/1G/2G 文件名。总控脚本不包含另一套调优逻辑，只负责选择、SHA-256 校验和调用。
 
@@ -15,14 +165,6 @@
 ```bash
 bash ./debian-vps-tuning.sh
 ```
-
-默认进入安全引导：
-
-1. 显示检测到的系统、CPU、内存和档位；
-2. 选择服务商端口带宽，直接按 Enter 使用 200 Mbps；
-3. 显示实际调用脚本、来源和 SHA-256；
-4. 先执行只读 `preflight`；
-5. `preflight` 通过后再次询问，只有明确输入 `y` 才执行 `apply`。
 
 直接使用命令行模式：
 
@@ -37,28 +179,6 @@ bash ./debian-vps-tuning.sh rollback
 
 在没有交互终端的自动化环境中必须明确指定 action；不会隐式进入菜单或自动 apply。`recover` 仍作为 rc.2 空状态的高级命令保留，但不出现在普通菜单中。
 
-### rc.9 发布后的快捷下载
-
-以下地址只有在 `v0.1.0-rc.9` 上传真实 Release assets 后才会生效；当前公开 rc.8 不包含总控脚本资产：
-
-```bash
-(
-  set -e
-  dvt_tmp="$(mktemp -d)"
-  trap 'rm -rf -- "$dvt_tmp"' EXIT
-  curl --fail --show-error --silent --location \
-    --proto '=https' \
-    --proto-redir '=https' \
-    --connect-timeout 15 \
-    --max-time 120 \
-    -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.9/debian-vps-tuning.sh
-  bash "$dvt_tmp/debian-vps-tuning.sh"
-)
-```
-
-这是便利入口，仍然要求信任 GitHub、仓库维护者和指定 Release。发布说明会同时给出总控脚本的固定 SHA-256，安全要求更高时应先核对哈希再执行。
-
 本项目不把下面的形式作为推荐入口：
 
 ```text
@@ -66,7 +186,7 @@ curl ... | bash
 bash <(curl ...)
 ```
 
-原因是它们在 root 权限下直接执行下载流，不具备独立的“下载完成 → 文件校验 → 再执行”门禁。总控脚本远程模式只下载固定 `v0.1.0-rc.9` Release，不回退到 `master`、`main`、`latest`、HTTP 或第三方镜像。
+原因是它们在 root 权限下直接执行下载流，不具备独立的“下载完成 → 文件校验 → 再执行”门禁。
 
 ## 适用场景
 

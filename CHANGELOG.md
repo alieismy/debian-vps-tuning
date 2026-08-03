@@ -2,7 +2,7 @@
 
 本项目采用 [Semantic Versioning](https://semver.org/)。
 
-## [0.1.0-rc.9] - Unreleased
+## [0.1.0-rc.9] - 2026-08-03
 
 ### Added
 
@@ -31,7 +31,8 @@
 
 - `bash -n`、四资源档控制器/底层 fixture、六份模板生成一致性及状态/qdisc 故障注入测试已通过；
 - ShellCheck v0.11.0 已覆盖总控脚本、六份 profile 和测试脚本；
-- 固定 rc.9 Release 远程下载仍需在 Release assets 发布后验证；目标 VPS 的控制器生命周期测试仍待执行。
+- 固定 rc.9 Release 的八个资产已发布，并从公开下载地址重新下载后通过 `SHA256SUMS`；
+- Debian 13、1C1G、1000 Mbps、ext4 目标机已通过安全引导、首次 apply、安装 3X-UI 前重启验证、安装后严格验证及再次重启后的严格验证；重复 apply、rollback 和业务性能仍待执行。
 
 ## [0.1.0-rc.8] - 2026-08-02
 

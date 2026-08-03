@@ -25,13 +25,13 @@
 | C6 | 交互带宽直接 Enter | 使用 200 Mbps | fixture 通过 |
 | C7 | `--port` 和 `PORT_SPEED_MBPS` | 只接受 100–1000，显式参数优先 | fixture 通过 |
 | C8 | 清单缺失、重复条目、哈希不匹配 | 返回完整性错误，不调用 profile | fixture 通过 |
-| C9 | curl 失败、404、超时或中断 | 返回下载错误，不回退其他来源 | fixture 通过；真实 Release 待测 |
+| C9 | curl 失败、404、超时或中断 | 返回下载错误，不回退其他来源 | fixture 通过；目标 VPS 的真实下载失败路径未注入 |
 | C10 | profile 返回非零 | 控制器返回同一退出码 | fixture 通过 |
-| C11 | `guided` | preflight 通过后询问；N/Enter 不 apply | 目标 VPS 待测 |
+| C11 | `guided` | preflight 通过后询问；N/Enter 不 apply | rc.9 Debian 13 1C1G/1000 Mbps 的确认后 apply 路径通过；拒绝路径 fixture 通过 |
 | C12 | 菜单 `apply` | 再次确认；N/Enter 不 apply | 目标 VPS 待测 |
 | C13 | 无 TTY 且无 action | 返回 usage，不等待输入 | 目标 Linux 待测 |
 | C14 | 状态档位与检测档位不一致 | 阻断，不自动换 profile | fixture 通过；目标 VPS 待测 |
-| C15 | 固定 rc.9 Release assets | 下载清单和唯一 profile，SHA-256 通过 | 模拟远程 fixture 通过；rc.9 发布后待测 |
+| C15 | 固定 rc.9 Release assets | 下载清单和唯一 profile，SHA-256 通过 | fixture 和 Debian 13 1C1G/1000 Mbps 目标机通过；八个公开资产重新下载校验通过 |
 | C16 | 已安装状态下无 `--port`/环境变量地重复 `apply` | 复用状态中的端口带宽；显式参数仍优先；无效状态值阻断 | fixture 通过；目标 VPS 待测 |
 
 本地检查入口：
@@ -57,14 +57,14 @@ shellcheck -x \
 
 下表是必须取得证据的目标矩阵，不是已经完成的测试结果。没有真实 VPS 回填证据前，不得把状态改为“通过”。
 
-| ID | 系统 | 资源 | XFS SSD | 端口 | 内核基线 | 定位 | 状态 |
+| ID | 系统 | 资源 | 磁盘/根文件系统 | 端口 | 内核基线 | 定位 | 状态 |
 |---|---|---|---:|---:|---|---|---|
-| T1 | Debian 12 | 1C1G | 10 GB | 200 Mbps | `6.1.0-51-cloud-amd64` | 主力/首要门槛 | 待执行 |
-| T2 | Debian 12 | 1C2G | 15 GB | 200 Mbps | `6.1.0-51-cloud-amd64` | 主力/首要门槛 | rc.7 部分通过；rc.8 rollback 待复测 |
+| T1 | Debian 12 | 1C1G | 10 GB / XFS | 200 Mbps | `6.1.0-51-cloud-amd64` | 主力/首要门槛 | 待执行 |
+| T2 | Debian 12 | 1C2G | 15 GB / XFS | 200 Mbps | `6.1.0-51-cloud-amd64` | 主力/首要门槛 | rc.7 部分通过；rc.8 rollback 待复测 |
 | T3 | Debian 13 | 1C1G | 以实机为准 | 200 Mbps | `6.12.100+deb13-cloud-amd64` | 系统兼容 | 待执行 |
 | T4 | Debian 13 | 1C2G | 以实机为准 | 200 Mbps | `6.12.100+deb13-cloud-amd64` | 系统兼容 | 待执行 |
 | T5 | 与脚本匹配的 Debian 版本 | 1C1G | 10 GB | 100 Mbps | 以实机为准 | 低带宽边界 | 待执行 |
-| T6 | 与脚本匹配的 Debian 版本 | 1C1G | 50 GB | 1000 Mbps | 以实机为准 | 高带宽边界 | 待执行 |
+| T6 | Debian 13 | 1C1G | 容量未采集 / ext4 | 1000 Mbps | `6.12.100+deb13-amd64` | 高带宽边界 | rc.9 主路径通过；重复 apply、rollback、业务性能待执行 |
 | T7 | Debian 12 | 2C2G | 以实机为准 | 200 Mbps | `6.1.x`，以实机为准 | 2C2G 资源契约 | 待执行 |
 | T8 | Debian 13 | 2C2G | 以实机为准 | 200 Mbps | `6.12.x`，以实机为准 | 2C2G 系统兼容 | 待执行 |
 | T9 | Debian 12 | 1C512MB | 以实机为准 | 200 Mbps | `6.1.x`，以实机为准 | 最小内存边界 | 待执行 |
@@ -78,14 +78,14 @@ T1、T2 必须通过才能发布首个稳定版；T3、T4 是 Debian 13 稳定�
 
 | 阶段 | 操作 | 关键判据 | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8 | T9 | T10 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| M0 | 基线采集 | OS、内核、CPU、内存、XFS、磁盘、双栈、qdisc、swap 可追溯 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M0 | 基线采集 | OS、内核、CPU、内存、根文件系统、磁盘、双栈、qdisc、swap 可追溯 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 部分完成，磁盘容量与地址未采集 | 待执行 | 待执行 | 待执行 | 待执行 |
 | M1 | 未安装状态执行 `verify` | 退出码 5；提示先运行 `preflight`/`apply`；无系统写入 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
-| M2 | `preflight` | 退出码 0；识别资源档和文件系统；无系统写入 | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
-| M3 | `apply` | 退出码 0；状态为 `VERIFIED`；含 NOFILE drop-in，swap/qdisc 符合预期 | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
-| M4 | 立即 `verify` | 退出码 0；sysctl、qdisc、journald、swap、drop-in 一致 | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
-| M5 | 重启后 `verify` | 退出码 0；BBR、fq、sysctl、swap 持久 | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M2 | `preflight` | 退出码 0；识别资源档和文件系统；无系统写入 | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | rc.9 通过 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M3 | `apply` | 退出码 0；状态为 `VERIFIED`；含 NOFILE drop-in，swap/qdisc 符合预期 | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | rc.9 通过 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M4 | 立即 `verify` | 退出码 0；sysctl、qdisc、journald、swap、drop-in 一致 | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | rc.9 通过 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M5 | 重启后 `verify` | 退出码 0；BBR、fq、sysctl、swap 持久 | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | rc.9 通过 | 待执行 | 待执行 | 待执行 | 待执行 |
 | M6 | 重复 `apply` | 退出码 0；报告无需重复写入；无重复 fstab/unit | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
-| M7 | 安装 3X-UI 后严格验证 | `REQUIRE_PROXY_SERVICE=1 verify` 通过；x-ui/Xray 运行时 NOFILE ≥ 65536 | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M7 | 安装 3X-UI 后严格验证 | `REQUIRE_PROXY_SERVICE=1 verify` 通过；x-ui/Xray 运行时 NOFILE ≥ 65536 | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | rc.9 安装后及再次重启后通过 | 待执行 | 待执行 | 待执行 | 待执行 |
 | M8 | VLESS + REALITY + TCP | IPv4/IPv6 按实际能力建立连接；连续传输无异常 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
 | M9 | 普通 `rollback` | 恢复 qdisc/sysctl，删除 drop-in；脚本 swap 默认保留；状态可追溯 | 待执行 | rc.7 实际恢复通过；rc.8 后置验证待复测 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
 | M10 | 回滚后重启 | `status` 正确；无残留 unit/sysctl/journald/drop-in | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
@@ -138,6 +138,8 @@ sysctl 校验应比较归一化后的字段值：内核通过 `sysctl -n` 返回
 2026-08-02，Debian 12 1C1G、1000 Mbps 目标机使用 rc.6 完成受控空状态恢复，随后 `preflight` 通过。`apply` 已写入并切换到 fq，但 `verify` 把 `tcp_rmem`/`tcp_wmem` 的制表符对齐误判为值不一致，因此事务按设计自动回滚；日志确认“回滚完成，管理状态已清理”。这证明 recover 和该次失败回滚路径通过，不代表 M3 apply 通过，也不代表 rc.7 已在目标机通过。
 
 2026-08-02，Debian 12 1C2G、200 Mbps、已有外部 `/swapfile-3xui` 的目标机使用 SHA-256 `8c241f3a5c58ab34c5d7286621ab52e2552dd17cdeaa4aa1c46137c17d53d7e4` 的 rc.7 完成干净迁移、preflight、apply、立即/重启后 verify、重复 apply、严格 3X-UI verify、rollback、回滚后重启、重新 apply 和最终重启后严格 verify。rollback 立即恢复为功能参数一致的 `fq_codel`，内核自动分配 `handle 8001:`，时间字段回显比快照少 1 微秒；重启后恢复为原始 `handle 0:`、`target 4999`、`interval 99999`。外部 swap 始终保留，x-ui/Xray 始终活动。该证据证明 rc.7 实际生命周期成功，同时暴露其恢复命令后缺少删除状态前语义复核；rc.8 已修复但尚未取得目标机运行证据。
+
+2026-08-03，Debian 13 1C1G、929 MiB、1000 Mbps、ext4、内核 `6.12.100+deb13-amd64` 的目标机使用固定 `v0.1.0-rc.9` Release 总控入口，自动选择 `debian13-1c1g-vps-tuning.sh`，profile SHA-256 为 `9fd70c593b83d41337c6dfcada737855ce583e8bc3451ee8bb5952db850c81c6`。安全引导、preflight、首次 apply 和立即验证均为退出码 0、警告 0；安装 3X-UI 前重启后联网 verify 通过，`proxy-vps-fq.service` 为 loaded/active/enabled，BBR、默认 fq、`eth0` 实际根 fq 和 1024 MiB `/swapfile-proxy` 均保持。安装 3X-UI 后严格 verify 通过，再次重启后严格 verify 仍通过；新 `x-ui.service` 主进程和直接 Xray 子进程 NOFILE soft/hard 均为 65536/65536。该证据覆盖 T6 的 M2–M5、M7 和固定 Release 真实下载，不覆盖 M0 完整基线、M1、M6、M8–M11，也不证明业务性能。
 
 qdisc 快照往返测试必须区分显示单位和命令输入：不得把文本输出的 `p` 后缀拼入 `limit`；`memory_limit` 使用 `tc -j` 返回的原始字节整数。`target`、`interval` 和 `ce_threshold` 可容忍 ±1 微秒回显量化差异。快照 `handle 0:` 与内核自动分配的 classless qdisc handle 视为等价；显式非零 handle、kind、parent、root 及其他 options 仍严格比较。恢复命令成功后还必须执行后置语义比较；不一致时保留状态和快照并进入 `DEGRADED`。
 
