@@ -32,6 +32,7 @@ DEFAULT_SWAP_MB=1024
 MIN_BUF_MAX=262144
 MAX_BUF_MAX=@BUF_MAX_LIMIT@
 SWAP_FILE='/swapfile-proxy'
+FSTAB_FILE='/etc/fstab'
 
 PORT_SPEED_MBPS_INPUT="${PORT_SPEED_MBPS:-}"
 BUFFER_TARGET_RTT_MS_INPUT="${BUFFER_TARGET_RTT_MS:-}"
@@ -1000,7 +1001,7 @@ restore_qdiscs() {
 }
 
 remove_fstab_swap_line() {
-  local fstab_file="${1:-/etc/fstab}" line="${SWAP_FILE} none swap sw 0 0" tmp grep_rc
+  local fstab_file="$FSTAB_FILE" line="${SWAP_FILE} none swap sw 0 0" tmp grep_rc
   [ -f "$fstab_file" ] && [ ! -L "$fstab_file" ] || return 1
   if grep -Fqx "$line" "$fstab_file"; then
     :

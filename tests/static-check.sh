@@ -392,10 +392,11 @@ trap 'rm -rf -- "$test_root"' EXIT
 SWAP_FILE='/swapfile-proxy-vps-tuning'
 managed_line="${SWAP_FILE} none swap sw 0 0"
 fstab="$test_root/fstab"
+FSTAB_FILE="$fstab"
 
 printf '%s\n' 'UUID=root / ext4 defaults 0 1' "$managed_line" "$managed_line" '# keep' >"$fstab"
 chmod 0640 "$fstab"
-remove_fstab_swap_line "$fstab"
+remove_fstab_swap_line
 expected="$test_root/expected"
 printf '%s\n' 'UUID=root / ext4 defaults 0 1' '# keep' >"$expected"
 cmp -s "$fstab" "$expected" || { printf 'managed fstab lines were not removed exactly\n' >&2; exit 1; }
@@ -407,7 +408,7 @@ esac
 printf '%s\n' 'UUID=root / ext4 defaults 0 1' "$managed_line" >"$fstab"
 old_hash="$(sha256sum "$fstab" | awk '{print $1}')"
 awk() { return 42; }
-if remove_fstab_swap_line "$fstab" 2>/dev/null; then
+if remove_fstab_swap_line 2>/dev/null; then
   printf 'fstab removal accepted an awk failure\n' >&2
   exit 1
 fi
@@ -415,7 +416,7 @@ unset -f awk
 [ "$(sha256sum "$fstab" | awk '{print $1}')" = "$old_hash" ] || { printf 'awk failure changed fstab\n' >&2; exit 1; }
 
 awk() { :; }
-if remove_fstab_swap_line "$fstab" 2>/dev/null; then
+if remove_fstab_swap_line 2>/dev/null; then
   printf 'fstab removal accepted unexpected empty output\n' >&2
   exit 1
 fi
@@ -423,7 +424,7 @@ unset -f awk
 [ "$(sha256sum "$fstab" | awk '{print $1}')" = "$old_hash" ] || { printf 'unexpected empty output changed fstab\n' >&2; exit 1; }
 
 mv() { return 43; }
-if remove_fstab_swap_line "$fstab" 2>/dev/null; then
+if remove_fstab_swap_line 2>/dev/null; then
   printf 'fstab removal accepted an atomic replace failure\n' >&2
   exit 1
 fi
@@ -435,7 +436,7 @@ if compgen -G "${fstab}.proxy-vps-tuning.*" >/dev/null; then
 fi
 
 printf '%s\n' "$managed_line" >"$fstab"
-remove_fstab_swap_line "$fstab"
+remove_fstab_swap_line
 [ ! -s "$fstab" ] || { printf 'single managed fstab line was not removed\n' >&2; exit 1; }
 EOF_FSTAB_REMOVE_TEST
 } >"$fstab_remove_test"
