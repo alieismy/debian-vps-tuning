@@ -22,6 +22,11 @@
 - README 将总控入口作为普通用户首选，独立 profile 作为离线、审计和恢复入口；
 - Release 必须上传总控脚本、六份 profile 和 `SHA256SUMS`，控制器不回退到 `master`、`main`、`latest`、HTTP 或第三方源。
 
+### Fixed
+
+- swap purge 仅在成功生成同目录临时文件、保留权限并完成原子替换后才更新 `/etc/fstab`；过滤或替换失败时保留原文件并返回失败；
+- 总控入口在无 `--port` 和 `PORT_SPEED_MBPS` 时为重复 `apply` 复用已安装状态中的端口带宽，显式参数继续优先。
+
 ### Validation
 
 - `bash -n`、四资源档控制器/底层 fixture、六份模板生成一致性及状态/qdisc 故障注入测试已通过；

@@ -1000,18 +1000,38 @@ restore_qdiscs() {
 }
 
 remove_fstab_swap_line() {
-  local line="${SWAP_FILE} none swap sw 0 0" tmp
-  tmp="$(mktemp)"
-  awk -v wanted="$line" '$0 != wanted' /etc/fstab >"$tmp"
-  cat "$tmp" >/etc/fstab
-  rm -f -- "$tmp"
+  local fstab_file="${1:-/etc/fstab}" line="${SWAP_FILE} none swap sw 0 0" tmp grep_rc
+  [ -f "$fstab_file" ] && [ ! -L "$fstab_file" ] || return 1
+  if grep -Fqx "$line" "$fstab_file"; then
+    :
+  else
+    grep_rc=$?
+    [ "$grep_rc" -eq 1 ] && return 0
+    return 1
+  fi
+  tmp="$(mktemp "${fstab_file}.proxy-vps-tuning.XXXXXX")" || return 1
+  if ! awk -v wanted="$line" '$0 != wanted' "$fstab_file" >"$tmp"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+  if [ ! -s "$tmp" ] && grep -Fvxq "$line" "$fstab_file"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+  if grep -Fqx "$line" "$tmp" ||
+    ! chown --reference="$fstab_file" "$tmp" ||
+    ! chmod --reference="$fstab_file" "$tmp" ||
+    ! mv -fT -- "$tmp" "$fstab_file"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
 }
 
 purge_owned_swap() {
   state_get '.swap.created_by_script' | grep -qx true || return 0
   [ "$(state_get '.swap.path')" = "$SWAP_FILE" ] || return 1
   if [ ! -e "$SWAP_FILE" ]; then
-    remove_fstab_swap_line
+    remove_fstab_swap_line || return 1
     return 0
   fi
   [ -f "$SWAP_FILE" ] && [ ! -L "$SWAP_FILE" ] || return 1
@@ -1020,7 +1040,7 @@ purge_owned_swap() {
   if swapon --show=NAME --noheadings | awk '{$1=$1;print}' | grep -Fxq "$SWAP_FILE"; then
     swapoff "$SWAP_FILE" || return 1
   fi
-  remove_fstab_swap_line
+  remove_fstab_swap_line || return 1
   rm -f -- "$SWAP_FILE"
 }
 

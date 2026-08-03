@@ -295,6 +295,10 @@ select_port_speed() {
   elif [ -n "${PORT_SPEED_MBPS:-}" ]; then
     validate_port_speed "$PORT_SPEED_MBPS" || die "$EXIT_USAGE" 'PORT_SPEED_MBPS 必须是 100–1000 的整数。'
     PORT_SPEED_MBPS_SELECTED=$((10#$PORT_SPEED_MBPS))
+  elif [ "$ACTION" = 'apply' ] && [ -n "$STATE_PROFILE" ]; then
+    validate_port_speed "$STATE_PORT_SPEED_MBPS" ||
+      die "$EXIT_CONFLICT" '已安装状态缺少有效的端口带宽；请执行 status/diagnose 并人工检查状态。'
+    PORT_SPEED_MBPS_SELECTED=$((10#$STATE_PORT_SPEED_MBPS))
   elif is_interactive_terminal; then
     choose_port_interactively
   else
