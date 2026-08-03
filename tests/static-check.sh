@@ -155,22 +155,22 @@ for script in "${scripts[@]}"; do
   post_restore_line="$(grep -nF 'elif ! qdisc_snapshot_semantically_matches_current; then' "$script" | head -n1 | cut -d: -f1)"
   # shellcheck disable=SC2016  # Intentionally match literal shell source.
   state_cleanup_line="$(grep -nF '    rm -rf -- "$STATE_DIR"' "$script" | tail -n1 | cut -d: -f1)"
-  [ -n "$post_restore_line" ] && [ -n "$state_cleanup_line" ] && [ "$post_restore_line" -lt "$state_cleanup_line" ] || {
+  if [ -z "$post_restore_line" ] || [ -z "$state_cleanup_line" ] || [ "$post_restore_line" -ge "$state_cleanup_line" ]; then
     printf 'qdisc post-restore verification must precede state cleanup: %s\n' "$script" >&2
     exit 1
-  }
+  fi
   applying_line="$(grep -nF "state_set_phase 'APPLYING'" "$script" | head -n1 | cut -d: -f1)"
   first_write_line="$(grep -nF '  write_sysctl_profile' "$script" | head -n1 | cut -d: -f1)"
-  [ -n "$applying_line" ] && [ -n "$first_write_line" ] && [ "$applying_line" -lt "$first_write_line" ] || {
+  if [ -z "$applying_line" ] || [ -z "$first_write_line" ] || [ "$applying_line" -ge "$first_write_line" ]; then
     printf 'APPLYING phase must be committed before the first system write: %s\n' "$script" >&2
     exit 1
-  }
+  fi
   verify_guard_line="$(grep -nF "state_exists || die \"\$EXIT_VERIFY\" '当前主机尚未安装本项目配置" "$script" | head -n1 | cut -d: -f1)"
   verify_tools_line="$(awk '/^    verify\)/,/^      ;;/ {if (/ensure_required_tools/) {print NR; exit}}' "$script")"
-  [ -n "$verify_guard_line" ] && [ -n "$verify_tools_line" ] && [ "$verify_guard_line" -lt "$verify_tools_line" ] || {
+  if [ -z "$verify_guard_line" ] || [ -z "$verify_tools_line" ] || [ "$verify_guard_line" -ge "$verify_tools_line" ]; then
     printf 'verify state guard must run before dependency checks: %s\n' "$script" >&2
     exit 1
-  }
+  fi
   [ "$(grep -Fc 'fq) : ;;' "$script")" -eq 2 ] || {
     printf 'existing fq qdisc is not preserved during rollback: %s\n' "$script" >&2
     exit 1

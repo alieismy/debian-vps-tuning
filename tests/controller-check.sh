@@ -131,7 +131,9 @@ unset PORT_SPEED_MBPS
 ACTION=''
 ACTION_FROM_MENU=0
 choose_action_interactively <<<'' >/dev/null
-[ "$ACTION" = guided ] && [ "$ACTION_FROM_MENU" -eq 1 ] || fail 'default menu action is not guided'
+if [ "$ACTION" != guided ] || [ "$ACTION_FROM_MENU" -ne 1 ]; then
+  fail 'default menu action is not guided'
+fi
 
 PORT_SPEED_MBPS_SELECTED=''
 choose_port_interactively <<<'' >/dev/null

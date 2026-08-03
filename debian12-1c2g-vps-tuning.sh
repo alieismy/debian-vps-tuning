@@ -136,14 +136,16 @@ validate_inputs() {
   [[ "$PORT_SPEED_MBPS" =~ ^[0-9]{3,4}$ ]] ||
     die "$EXIT_USAGE" 'PORT_SPEED_MBPS 必须是 100–1000 的整数。'
   PORT_SPEED_MBPS=$((10#$PORT_SPEED_MBPS))
-  [ "$PORT_SPEED_MBPS" -ge 100 ] && [ "$PORT_SPEED_MBPS" -le 1000 ] ||
+  if [ "$PORT_SPEED_MBPS" -lt 100 ] || [ "$PORT_SPEED_MBPS" -gt 1000 ]; then
     die "$EXIT_USAGE" 'PORT_SPEED_MBPS 必须在 100–1000 之间。'
+  fi
 
   [[ "$BUFFER_TARGET_RTT_MS" =~ ^[0-9]{2,3}$ ]] ||
     die "$EXIT_USAGE" 'BUFFER_TARGET_RTT_MS 必须是 20–500 的整数。'
   BUFFER_TARGET_RTT_MS=$((10#$BUFFER_TARGET_RTT_MS))
-  [ "$BUFFER_TARGET_RTT_MS" -ge 20 ] && [ "$BUFFER_TARGET_RTT_MS" -le 500 ] ||
+  if [ "$BUFFER_TARGET_RTT_MS" -lt 20 ] || [ "$BUFFER_TARGET_RTT_MS" -gt 500 ]; then
     die "$EXIT_USAGE" 'BUFFER_TARGET_RTT_MS 必须在 20–500 之间。'
+  fi
 
   BUFFER_BDP_BYTES=$((PORT_SPEED_MBPS * 125 * BUFFER_TARGET_RTT_MS))
   if [ "$BUF_MAX_INPUT" = 'auto' ]; then
@@ -166,8 +168,9 @@ validate_inputs() {
     BUF_MAX=$((10#$BUF_MAX_INPUT))
     BUF_MAX_MODE='explicit'
   fi
-  [ "$BUF_MAX" -ge "$MIN_BUF_MAX" ] && [ "$BUF_MAX" -le "$MAX_BUF_MAX" ] ||
+  if [ "$BUF_MAX" -lt "$MIN_BUF_MAX" ] || [ "$BUF_MAX" -gt "$MAX_BUF_MAX" ]; then
     die "$EXIT_USAGE" "BUF_MAX 必须在 ${MIN_BUF_MAX}–${MAX_BUF_MAX} 字节之间。"
+  fi
   BUFFER_COVERAGE_MS=$((BUF_MAX * 8 / (PORT_SPEED_MBPS * 1000)))
   if [ "$BUFFER_CLAMPED" -eq 1 ]; then
     warn "按 ${PROFILE_LABEL} 的内存预算将自动 socket 上限限制为 $((MAX_BUF_MAX / 1048576)) MiB；约覆盖 ${BUFFER_COVERAGE_MS} ms，低于目标 RTT ${BUFFER_TARGET_RTT_MS} ms。"
@@ -179,8 +182,9 @@ validate_inputs() {
   [[ "$SWAP_MB_INPUT" =~ ^[0-9]{3,4}$ ]] ||
     die "$EXIT_USAGE" "SWAP_MB 必须是 512–${SWAP_MAX_MIB} 的整数。"
   SWAP_MB=$((10#$SWAP_MB_INPUT))
-  [ "$SWAP_MB" -ge 512 ] && [ "$SWAP_MB" -le "$SWAP_MAX_MIB" ] ||
+  if [ "$SWAP_MB" -lt 512 ] || [ "$SWAP_MB" -gt "$SWAP_MAX_MIB" ]; then
     die "$EXIT_USAGE" "SWAP_MB 必须在 512–${SWAP_MAX_MIB} MiB 之间。"
+  fi
 }
 
 missing_commands() {
@@ -205,8 +209,9 @@ check_supported_os() {
   [ -r /etc/os-release ] || die "$EXIT_UNSUPPORTED" '/etc/os-release 不可读。'
   # shellcheck disable=SC1091
   . /etc/os-release
-  [ "${ID:-}" = 'debian' ] && [ "${VERSION_ID:-}" = "$TARGET_DEBIAN_VERSION" ] ||
+  if [ "${ID:-}" != 'debian' ] || [ "${VERSION_ID:-}" != "$TARGET_DEBIAN_VERSION" ]; then
     die "$EXIT_UNSUPPORTED" "本脚本仅支持 Debian ${TARGET_DEBIAN_VERSION} (${TARGET_DEBIAN_CODENAME})。"
+  fi
   case "$(uname -m)" in
     x86_64 | amd64) ;;
     *) die "$EXIT_UNSUPPORTED" '首个公开版本仅支持 x86_64/amd64。' ;;
@@ -1109,10 +1114,10 @@ qdisc_snapshot_matches_current() {
   local expected_hash actual_hash
   expected_hash="$(state_get '.qdisc.sha256')" || { QDISC_MATCH_REASON='状态中缺少 qdisc.sha256'; return 1; }
   actual_hash="$(sha256sum "$QDISC_STATE_FILE" 2>/dev/null | awk '{print $1}')"
-  [ -n "$expected_hash" ] && [ "$actual_hash" = "$expected_hash" ] || {
+  if [ -z "$expected_hash" ] || [ "$actual_hash" != "$expected_hash" ]; then
     QDISC_MATCH_REASON="快照哈希不匹配：expected=${expected_hash:-missing} actual=${actual_hash:-missing}"
     return 1
-  }
+  fi
   qdisc_snapshot_semantically_matches_current
 }
 
@@ -1139,16 +1144,18 @@ recover_empty_legacy_state() {
     die "$EXIT_CONFLICT" 'recover 只用于已确认的 rc.2 首次系统写入前空状态；确认历史证据后设置 ALLOW_EMPTY_STATE_RECOVERY=1。'
   state_exists || die "$EXIT_CONFLICT" '没有需要恢复的 state.json。'
   state_file_is_valid && die "$EXIT_CONFLICT" 'state.json 有效；请使用 rollback，不得使用 recover。'
-  [ -d "$STATE_DIR" ] && [ ! -L "$STATE_DIR" ] &&
-    [ "$(stat -c '%u' "$STATE_DIR" 2>/dev/null || true)" = '0' ] ||
+  if [ ! -d "$STATE_DIR" ] || [ -L "$STATE_DIR" ] ||
+    [ "$(stat -c '%u' "$STATE_DIR" 2>/dev/null || true)" != '0' ]; then
     die "$EXIT_CONFLICT" "状态目录所有权或类型异常：${STATE_DIR}"
+  fi
   if ! jq -e -s 'length == 0' "$STATE_FILE" >/dev/null 2>&1; then
     die "$EXIT_CONFLICT" 'state.json 不是空 JSON 流；拒绝把一般损坏状态当作 rc.2 遗留状态恢复。'
   fi
   project_managed_files_exist &&
     die "$EXIT_CONFLICT" '仍存在项目管理文件；无法证明 rc.2 在首次系统写入前失败。'
-  [ ! -e "$SWAP_FILE" ] && [ ! -L "$SWAP_FILE" ] ||
+  if [ -e "$SWAP_FILE" ] || [ -L "$SWAP_FILE" ]; then
     die "$EXIT_CONFLICT" "检测到 ${SWAP_FILE}；空状态无法证明 swap 所有权，拒绝恢复。"
+  fi
   grep -Fqx "${SWAP_FILE} none swap sw 0 0" /etc/fstab 2>/dev/null &&
     die "$EXIT_CONFLICT" "检测到 ${SWAP_FILE} 的 fstab 行；拒绝恢复。"
   if systemctl is-active --quiet "$FQ_SERVICE_NAME" 2>/dev/null; then
@@ -1269,8 +1276,9 @@ apply_settings() {
     local state saved_port saved_rtt saved_buf
     state="$(state_get '.state')"
     saved_port="$(state_get '.network.port_speed_mbps')"; saved_rtt="$(state_get '.network.target_rtt_ms')"; saved_buf="$(state_get '.network.buffer_max_bytes')"
-    [ "$saved_port" = "$PORT_SPEED_MBPS" ] && [ "$saved_rtt" = "$BUFFER_TARGET_RTT_MS" ] && [ "$saved_buf" = "$BUF_MAX" ] ||
+    if [ "$saved_port" != "$PORT_SPEED_MBPS" ] || [ "$saved_rtt" != "$BUFFER_TARGET_RTT_MS" ] || [ "$saved_buf" != "$BUF_MAX" ]; then
       die "$EXIT_CONFLICT" "已安装参数与当前参数不同：saved(port=${saved_port},rtt=${saved_rtt},buf=${saved_buf}) current(port=${PORT_SPEED_MBPS},rtt=${BUFFER_TARGET_RTT_MS},buf=${BUF_MAX})；请先 rollback。"
+    fi
     if [ "$state" = 'VERIFIED' ]; then verify_settings || die "$EXIT_VERIFY" '已安装配置验证失败。'; info '配置已存在且验证通过，无需重复写入。'; return 0; fi
     die "$EXIT_CONFLICT" "存在状态 ${state}；重新应用前请先完成 rollback，保留 swap 时需显式 purge 后再 apply。"
   fi
