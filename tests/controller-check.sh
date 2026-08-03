@@ -210,8 +210,9 @@ fi
 ACTION=''
 CLI_UPDATE_TAG=''
 parse_arguments update --target v0.1.0-rc.11
-[ "$ACTION" = update ] && [ "$CLI_UPDATE_TAG" = v0.1.0-rc.11 ] ||
+if [ "$ACTION" != update ] || [ "$CLI_UPDATE_TAG" != v0.1.0-rc.11 ]; then
   fail 'update --target parsing failed'
+fi
 
 PORT_SPEED_MBPS_SELECTED=''
 choose_port_interactively <<<'' >/dev/null

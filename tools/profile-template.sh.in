@@ -417,7 +417,7 @@ report_sysctl_conflicts() {
 }
 
 scan_sysctl_conflicts() {
-  if ! report_sysctl_conflicts "$@"; then
+  if ! report_sysctl_conflicts; then
     die "$EXIT_CONFLICT" '请先人工合并或移除上述重复 sysctl 定义。'
   fi
 }
@@ -1513,8 +1513,8 @@ show_diagnostics() {
     die "$EXIT_USAGE" 'DIAG_INCLUDE_SOCKET_DETAILS 只能为 0 或 1。'
   umask 077
   tmp_dir="$(mktemp -d)" || die "$EXIT_UNSUPPORTED" '无法创建诊断临时目录。'
-  softnet_snapshot >"${tmp_dir}/softnet.before"
-  tcp_counter_snapshot >"${tmp_dir}/tcp.before"
+  softnet_snapshot '/proc/net/softnet_stat' >"${tmp_dir}/softnet.before"
+  tcp_counter_snapshot '/proc/net/snmp' '/proc/net/netstat' >"${tmp_dir}/tcp.before"
   if [ -e "$STATE_FILE" ] || [ -L "$STATE_FILE" ]; then
     diagnostic_state="$(jq -er '.state | select(type == "string")' "$STATE_FILE" 2>/dev/null || printf 'INVALID')"
   fi
@@ -1553,8 +1553,8 @@ show_diagnostics() {
   fi
   info "开始 ${DIAG_INTERVAL_SECONDS} 秒增量采样；期间可复现实际 VLESS + REALITY + TCP 负载。"
   sleep "$DIAG_INTERVAL_SECONDS"
-  softnet_snapshot >"${tmp_dir}/softnet.after"
-  tcp_counter_snapshot >"${tmp_dir}/tcp.after"
+  softnet_snapshot '/proc/net/softnet_stat' >"${tmp_dir}/softnet.after"
+  tcp_counter_snapshot '/proc/net/snmp' '/proc/net/netstat' >"${tmp_dir}/tcp.after"
   show_counter_delta "${tmp_dir}/tcp.before" "${tmp_dir}/tcp.after" 'tcp-delta'
   show_softnet_delta "${tmp_dir}/softnet.before" "${tmp_dir}/softnet.after"
   while IFS= read -r iface; do
@@ -1579,22 +1579,28 @@ run_network_benchmark() {
   [[ "$host" =~ ^[A-Za-z0-9][A-Za-z0-9._:%-]*$ ]] ||
     die "$EXIT_USAGE" 'BENCHMARK_HOST 含不支持的字符。'
   [[ "$port" =~ ^[0-9]{1,5}$ ]] || die "$EXIT_USAGE" 'BENCHMARK_PORT 必须是 1–65535 的整数。'
-  port=$((10#$port)); [ "$port" -ge 1 ] && [ "$port" -le 65535 ] ||
+  port=$((10#$port))
+  if [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
     die "$EXIT_USAGE" 'BENCHMARK_PORT 必须在 1–65535 之间。'
+  fi
   [[ "$seconds" =~ ^[0-9]{1,3}$ ]] || die "$EXIT_USAGE" 'BENCHMARK_SECONDS 必须是 5–120 的整数。'
-  seconds=$((10#$seconds)); [ "$seconds" -ge 5 ] && [ "$seconds" -le 120 ] ||
+  seconds=$((10#$seconds))
+  if [ "$seconds" -lt 5 ] || [ "$seconds" -gt 120 ]; then
     die "$EXIT_USAGE" 'BENCHMARK_SECONDS 必须在 5–120 之间。'
+  fi
   [[ "$parallel" =~ ^[0-9]$ ]] || die "$EXIT_USAGE" 'BENCHMARK_PARALLEL 必须是 1–4 的整数。'
-  parallel=$((10#$parallel)); [ "$parallel" -ge 1 ] && [ "$parallel" -le 4 ] ||
+  parallel=$((10#$parallel))
+  if [ "$parallel" -lt 1 ] || [ "$parallel" -gt 4 ]; then
     die "$EXIT_USAGE" 'BENCHMARK_PARALLEL 必须在 1–4 之间。'
+  fi
   case "$direction" in upload | download | both) ;; *) die "$EXIT_USAGE" 'BENCHMARK_DIRECTION 只能为 upload、download 或 both。' ;; esac
 
   info 'benchmark 不修改系统配置，但会向用户指定的 iperf3 服务器产生高带宽 TCP 流量。'
   info '该测试测量 VPS 到 iperf3 服务端的直连 TCP，不等同于 VLESS + REALITY + TCP 业务链路。'
   umask 077
   tmp_dir="$(mktemp -d)" || die "$EXIT_UNSUPPORTED" '无法创建 benchmark 临时目录。'
-  softnet_snapshot >"${tmp_dir}/softnet.before"
-  tcp_counter_snapshot >"${tmp_dir}/tcp.before"
+  softnet_snapshot '/proc/net/softnet_stat' >"${tmp_dir}/softnet.before"
+  tcp_counter_snapshot '/proc/net/snmp' '/proc/net/netstat' >"${tmp_dir}/tcp.before"
   while IFS= read -r iface; do
     [ -n "$iface" ] || continue
     printf '[qdisc-before] interface=%s\n' "$iface"
@@ -1612,8 +1618,8 @@ run_network_benchmark() {
   fi
   set -e
 
-  softnet_snapshot >"${tmp_dir}/softnet.after"
-  tcp_counter_snapshot >"${tmp_dir}/tcp.after"
+  softnet_snapshot '/proc/net/softnet_stat' >"${tmp_dir}/softnet.after"
+  tcp_counter_snapshot '/proc/net/snmp' '/proc/net/netstat' >"${tmp_dir}/tcp.after"
   show_counter_delta "${tmp_dir}/tcp.before" "${tmp_dir}/tcp.after" 'benchmark-tcp-delta'
   show_softnet_delta "${tmp_dir}/softnet.before" "${tmp_dir}/softnet.after"
   while IFS= read -r iface; do

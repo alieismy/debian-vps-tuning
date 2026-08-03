@@ -30,7 +30,7 @@
     https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.10/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    'f0d5a7c04f32cc0a088dd45824e7e46bfcc1fe7fd2db1def29e0bda5ef31196c' \
+    '1eccdc938e66fbfcb27c5ae7a5187c9261c16e02768732e5256e6421941b68ce' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   bash "$dvt_tmp/debian-vps-tuning.sh"
@@ -71,7 +71,7 @@ reboot
     https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.10/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    'f0d5a7c04f32cc0a088dd45824e7e46bfcc1fe7fd2db1def29e0bda5ef31196c' \
+    '1eccdc938e66fbfcb27c5ae7a5187c9261c16e02768732e5256e6421941b68ce' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   bash "$dvt_tmp/debian-vps-tuning.sh" verify
@@ -102,7 +102,7 @@ printf 'verify_after_reboot_exit=%s\n' "$?"
     https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.10/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    'f0d5a7c04f32cc0a088dd45824e7e46bfcc1fe7fd2db1def29e0bda5ef31196c' \
+    '1eccdc938e66fbfcb27c5ae7a5187c9261c16e02768732e5256e6421941b68ce' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   env \
@@ -138,7 +138,7 @@ printf 'strict_verify_after_3xui_exit=%s\n' "$?"
     https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.10/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    'f0d5a7c04f32cc0a088dd45824e7e46bfcc1fe7fd2db1def29e0bda5ef31196c' \
+    '1eccdc938e66fbfcb27c5ae7a5187c9261c16e02768732e5256e6421941b68ce' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   bash "$dvt_tmp/debian-vps-tuning.sh" update

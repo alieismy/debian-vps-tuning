@@ -411,7 +411,9 @@ select_highest_release_tag() {
   while IFS= read -r tag; do
     parsed="$(parse_release_version "$tag")" || continue
     IFS=$'\t' read -r tag_major tag_minor _ tag_stable _ <<<"$parsed"
-    [ "$tag_major" -eq "$current_major" ] && [ "$tag_minor" -eq "$current_minor" ] || continue
+    if [ "$tag_major" -ne "$current_major" ] || [ "$tag_minor" -ne "$current_minor" ]; then
+      continue
+    fi
     [ "$current_stable" -eq 0 ] || [ "$tag_stable" -eq 1 ] || continue
     if [ -z "$best" ] || release_is_newer "$tag" "$best"; then
       best="$tag"
