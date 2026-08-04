@@ -30,7 +30,7 @@ sysctl 配置归属按规范路径去重：项目自己的 `/etc/sysctl.d/90-pro
 
 `debian-vps-tuning.sh` 是选择器和调用器，不是另一份调优实现。它只允许 Debian 12/13、amd64 下的四个资源档：1C + 384–767 MiB、1C + 768–1535 MiB、1C + 1536–3072 MiB、2C + 1536–3072 MiB。底层共有六个操作系统/内存 profile；1C2GB 和 2C2GB 共用兼容 ID `debian12-1c2g`/`debian13-1c2g`，不建立重复实现或迁移已有状态。2C512MB、2C1GB、3 vCPU 以上及边界外内存拒绝执行。存在可解析状态时，检测档位必须与 `.profile.id` 一致，否则阻断。
 
-总控入口支持交互安全引导和显式 action。带宽只为 `guided`、`preflight`、`apply` 选择，默认 200 Mbps，范围是 100–1000 的任意整数；`apply` 的选择优先级是 `--port`、`PORT_SPEED_MBPS`、已安装状态值、交互选择/默认值，因而无显式值的重复 `apply` 复用已安装带宽；`verify`、`status`、`diagnose`、`benchmark`、`update`、`rollback` 不通过 `--port` 重写现有状态。安全引导先运行 preflight，只有交互终端再次明确确认才调用 apply。`diagnose` 只读取本机状态并做 1–60 秒增量采样，不生成流量。`benchmark` 不修改系统配置，但只有用户显式给出 `BENCHMARK_HOST` 且已安装 iperf3 时才产生直连 TCP 测试流量；它不代表代理业务测试。普通菜单不提供 rc.2 专用 `recover`。
+总控入口支持交互安全引导和显式 action。带宽只为 `guided`、`preflight`、`apply` 选择，默认 200 Mbps，范围是 100–1000 的任意整数；`apply` 的选择优先级是 `--port`、`PORT_SPEED_MBPS`、已安装状态值、交互选择/默认值，因而无显式值的重复 `apply` 复用已安装带宽；`verify`、`status`、`diagnose`、`benchmark`、`update`、`rollback` 不通过 `--port` 重写现有状态。安全引导先运行 preflight，只有交互终端再次明确确认才调用 apply。`diagnose` 只读取本机状态并做 1–60 秒增量采样，覆盖 TCP、softnet、整机 CPU、接口/ethtool、qdisc 和代理进程资源，不生成流量或输出进程命令行。`benchmark` 不修改系统配置，但只有用户显式给出 `BENCHMARK_HOST` 且已安装 iperf3 时才产生直连 TCP 测试流量；它允许固定预热、IPv4/IPv6、方向和 run ID，并按方向分离内核计数，仍不代表代理业务测试。普通菜单不提供 rc.2 专用 `recover`。
 
 本地模式要求总控脚本、目标 profile 和 `SHA256SUMS` 位于同一目录、来自同一 Release，并在调用前核对唯一清单条目。不同版本必须使用不同目录；总控与同目录清单不匹配时明确提示可能混用 Release，并保持完整性失败，不自动转入远程模式。远程模式只允许 HTTPS，从总控脚本内固定的 GitHub Release tag 下载 `SHA256SUMS` 和目标 profile；HTTP 错误、重定向协议降级、超时、空文件、重复清单条目或哈希不匹配均阻断。下载失败不得回退到可变分支、latest、第三方镜像或另一个 profile。
 
@@ -40,7 +40,7 @@ sysctl 配置归属按规范路径去重：项目自己的 `/etc/sysctl.d/90-pro
 
 ## CPU 调优边界
 
-CPU 数只参与资源档位选择和底层预检，不改变 BBR、fq、TCP 缓冲、backlog、swap 或 journald 参数。首发版本不配置 RPS/RFS/XPS、IRQ affinity、CPU affinity、busy polling 或 `GOMAXPROCS`；这些行为依赖虚拟网卡队列、软中断分布和实测瓶颈，不由 2 vCPU 这一条件单独触发。`diagnose` 可以只读输出队列数量、RPS/XPS mask 和与接口匹配的中断证据，但不得写入对应 sysfs/procfs 控制项。
+CPU 数只参与资源档位选择和底层预检，不改变 BBR、fq、TCP 缓冲、backlog、swap 或 journald 参数。首发版本不配置 RPS/RFS/XPS、IRQ affinity、CPU affinity、busy polling 或 `GOMAXPROCS`；这些行为依赖虚拟网卡队列、软中断分布和实测瓶颈，不由 2 vCPU 这一条件单独触发。`diagnose` 可以只读输出 CPU user/system/softirq/steal 增量、队列数量、RPS/XPS mask 和与接口匹配的中断证据，但不得写入对应 sysfs/procfs 控制项；单个非零计数不构成根因结论。
 
 ## 资源参数边界
 

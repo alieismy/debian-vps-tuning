@@ -73,7 +73,7 @@ expected_keys=17
 for script in "${scripts[@]}"; do
   actual="$(awk '/^PROFILE_SYSCTL_KEYS=\(/,/^\)/ {if ($1 ~ /^(net\.|vm\.)/) count++} END {print count+0}' "$script")"
   [ "$actual" -eq "$expected_keys" ] || { printf 'unexpected managed-key count: %s (%s)\n' "$script" "$actual" >&2; exit 1; }
-  grep -Fq "SCRIPT_VERSION='0.1.0-rc.10'" "$script"
+  grep -Fq "SCRIPT_VERSION='0.1.0-rc.11'" "$script"
   grep -Fq "STATE_SCHEMA_VERSION=3" "$script"
   grep -Fq 'PROFILE_CPU_MIN=' "$script"
   grep -Fq 'PROFILE_CPU_MAX=' "$script"
@@ -119,7 +119,15 @@ for script in "${scripts[@]}"; do
   grep -Fq '尚未安装代理服务；x-ui.service 的 LimitNOFILE drop-in 已预置' "$script"
   grep -Fq 'show_diagnostics' "$script"
   grep -Fq '只读诊断：不会修改 sysctl、qdisc、systemd、swap 或代理服务' "$script"
+  grep -Fq 'show_cpu_delta' "$script"
+  grep -Fq 'show_proxy_process_evidence' "$script"
+  grep -Fq 'link_counter_snapshot' "$script"
   grep -Fq 'run_network_benchmark' "$script"
+  grep -Fq 'BENCHMARK_OMIT_SECONDS' "$script"
+  grep -Fq 'BENCHMARK_IP_FAMILY' "$script"
+  # shellcheck disable=SC2016  # Intentionally match literal shell source.
+  grep -Fq 'benchmark-${label}-tcp-delta' "$script"
+  grep -Fq 'tmp_dir rc=0 current_rc=0' "$script"
   grep -Fq 'tcpFastOpen=not-explicit' "$script"
   grep -Fq 'report_sysctl_conflicts' "$script"
   grep -Fq '即使值相同也属于重复配置归属' "$script"
@@ -211,8 +219,8 @@ for script in "${scripts[@]}"; do
   }
 done
 
-grep -Fq "CONTROLLER_VERSION='0.1.0-rc.10'" "$controller"
-grep -Fq "RELEASE_TAG='v0.1.0-rc.10'" "$controller"
+grep -Fq "CONTROLLER_VERSION='0.1.0-rc.11'" "$controller"
+grep -Fq "RELEASE_TAG='v0.1.0-rc.11'" "$controller"
 grep -Fq "DEFAULT_PORT_SPEED_MBPS=200" "$controller"
 grep -Fq 'verify_profile_contract' "$controller"
 grep -Fq 'debian12-1c512m-vps-tuning.sh' "$controller"
@@ -376,6 +384,9 @@ diagnostic_delta_test="$tmp_dir/diagnostic-delta-test.sh"
 {
   printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
   awk '/^softnet_snapshot\(\)/,/^}/' "${scripts[0]}"
+  awk '/^cpu_snapshot\(\)/,/^}/' "${scripts[0]}"
+  awk '/^show_cpu_delta\(\)/,/^}/' "${scripts[0]}"
+  awk '/^link_counter_snapshot\(\)/,/^}/' "${scripts[0]}"
   awk '/^tcp_counter_snapshot\(\)/,/^}/' "${scripts[0]}"
   awk '/^show_counter_delta\(\)/,/^}/' "${scripts[0]}"
   awk '/^show_softnet_delta\(\)/,/^}/' "${scripts[0]}"
@@ -383,6 +394,13 @@ diagnostic_delta_test="$tmp_dir/diagnostic-delta-test.sh"
 test_root="$(mktemp -d)"
 trap 'rm -rf -- "$test_root"' EXIT
 printf '00000064 00000002 00000003 00000000\n' >"$test_root/softnet.raw"
+printf 'cpu 100 20 30 400 5 6 7 8 0 0\n' >"$test_root/cpu.before.raw"
+printf 'cpu 120 20 40 450 7 7 12 11 0 0\n' >"$test_root/cpu.after.raw"
+printf 'eth0\n' >"$test_root/ifaces"
+mkdir -p "$test_root/sys/eth0/statistics"
+for stat in rx_bytes rx_packets rx_dropped rx_errors tx_bytes tx_packets tx_dropped tx_errors; do
+  printf '%s\n' 10 >"$test_root/sys/eth0/statistics/$stat"
+done
 cat >"$test_root/snmp.raw" <<'EOF_SNMP'
 Ip: InDiscards OutDiscards
 Ip: 7 8
@@ -394,6 +412,9 @@ TcpExt: ListenDrops TCPTimeouts TCPFastOpenPassive
 TcpExt: 10 11 12
 EOF_NETSTAT
 softnet_snapshot "$test_root/softnet.raw" >"$test_root/softnet.snapshot"
+cpu_snapshot "$test_root/cpu.before.raw" >"$test_root/cpu.before"
+cpu_snapshot "$test_root/cpu.after.raw" >"$test_root/cpu.after"
+link_counter_snapshot "$test_root/ifaces" "$test_root/sys" >"$test_root/link.snapshot"
 tcp_counter_snapshot "$test_root/snmp.raw" "$test_root/netstat.raw" >"$test_root/tcp.snapshot"
 grep -Fqx $'0\t100\t2\t3' "$test_root/softnet.snapshot"
 grep -Fqx $'IpInDiscards\t7' "$test_root/tcp.snapshot"
@@ -401,16 +422,23 @@ grep -Fqx $'TcpRetransSegs\t9' "$test_root/tcp.snapshot"
 grep -Fqx $'TcpExtListenDrops\t10' "$test_root/tcp.snapshot"
 grep -Fqx $'TcpExtTCPTimeouts\t11' "$test_root/tcp.snapshot"
 grep -Fqx $'TcpExtTCPFastOpenPassive\t12' "$test_root/tcp.snapshot"
+grep -Fqx $'user\t100' "$test_root/cpu.before"
+grep -Fqx $'steal\t8' "$test_root/cpu.before"
+grep -Fqx $'eth0.rx_dropped\t10' "$test_root/link.snapshot"
 printf 'TcpRetransSegs\t10\nTcpExtTCPTimeouts\t4\n' >"$test_root/tcp.before"
 printf 'TcpRetransSegs\t13\nTcpExtTCPTimeouts\t4\n' >"$test_root/tcp.after"
 printf '0\t100\t2\t3\n1\t200\t4\t5\n' >"$test_root/softnet.before"
 printf '0\t150\t3\t5\n1\t260\t4\t8\n' >"$test_root/softnet.after"
 show_counter_delta "$test_root/tcp.before" "$test_root/tcp.after" tcp-delta >"$test_root/tcp.out"
 show_softnet_delta "$test_root/softnet.before" "$test_root/softnet.after" >"$test_root/softnet.out"
+show_cpu_delta "$test_root/cpu.before" "$test_root/cpu.after" cpu-delta >"$test_root/cpu.out"
 grep -Fqx '[tcp-delta] TcpRetransSegs=3' "$test_root/tcp.out"
 grep -Fqx '[tcp-delta] TcpExtTCPTimeouts=0' "$test_root/tcp.out"
 grep -Fqx '[softnet-delta] cpu=0 processed=50 dropped=1 time_squeeze=2' "$test_root/softnet.out"
 grep -Fqx '[softnet-delta] cpu=1 processed=60 dropped=0 time_squeeze=3' "$test_root/softnet.out"
+grep -Fq '[cpu-delta] total_ticks=91 user_ticks=20 user_pct=21.98' "$test_root/cpu.out"
+grep -Fq 'system_ticks=10 system_pct=10.99' "$test_root/cpu.out"
+grep -Fq 'steal_ticks=3 steal_pct=3.30' "$test_root/cpu.out"
 EOF_DIAGNOSTIC_DELTA_TEST
 } >"$diagnostic_delta_test"
 bash "$diagnostic_delta_test"
@@ -439,9 +467,78 @@ set +e
 rc=$?
 set -e
 [ "$rc" -eq "$EXIT_USAGE" ] || { printf 'benchmark accepted parallel=5\n' >&2; exit 1; }
+
+set +e
+( BENCHMARK_HOST=example.com BENCHMARK_OMIT_SECONDS=11 run_network_benchmark ) >/dev/null 2>&1
+rc=$?
+set -e
+[ "$rc" -eq "$EXIT_USAGE" ] || { printf 'benchmark accepted omit=11\n' >&2; exit 1; }
+
+set +e
+( BENCHMARK_HOST=example.com BENCHMARK_IP_FAMILY=dual run_network_benchmark ) >/dev/null 2>&1
+rc=$?
+set -e
+[ "$rc" -eq "$EXIT_USAGE" ] || { printf 'benchmark accepted an invalid IP family\n' >&2; exit 1; }
+
+set +e
+( BENCHMARK_HOST=example.com BENCHMARK_RUN_ID='unsafe id' run_network_benchmark ) >/dev/null 2>&1
+rc=$?
+set -e
+[ "$rc" -eq "$EXIT_USAGE" ] || { printf 'benchmark accepted an unsafe run id\n' >&2; exit 1; }
 EOF_BENCHMARK_GUARD_TEST
 } >"$benchmark_guard_test"
 bash "$benchmark_guard_test"
+
+benchmark_phase_test="$tmp_dir/benchmark-phase-test.sh"
+{
+  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  awk '/^run_benchmark_phase\(\)/,/^}/' "${scripts[0]}"
+  cat <<'EOF_BENCHMARK_PHASE_TEST'
+test_root="$(mktemp -d)"
+trap 'rm -rf -- "$test_root"' EXIT
+printf 'eth0\n' >"$test_root/ifaces"
+capture="$test_root/iperf.args"
+EXIT_VERIFY=5
+BENCHMARK_HOST_RESOLVED='2001:db8::1'
+BENCHMARK_PORT_RESOLVED=5201
+BENCHMARK_SECONDS_RESOLVED=10
+BENCHMARK_OMIT_RESOLVED=3
+BENCHMARK_PARALLEL_RESOLVED=1
+BENCHMARK_FAMILY_ARGS=(--version6)
+softnet_snapshot() { printf '0\t1\t0\t0\n'; }
+tcp_counter_snapshot() { printf 'TcpRetransSegs\t1\n'; }
+cpu_snapshot() { printf 'user\t1\nnice\t0\nsystem\t0\nidle\t1\niowait\t0\nirq\t0\nsoftirq\t0\nsteal\t0\n'; }
+link_counter_snapshot() { printf 'eth0.rx_bytes\t1\n'; }
+show_counter_delta() { :; }
+show_softnet_delta() { :; }
+show_cpu_delta() { :; }
+tc() { :; }
+iperf3() { printf '%q ' "$@" >>"$capture"; printf '\n' >>"$capture"; return "${IPERF_RC:-0}"; }
+
+run_benchmark_phase upload 0 "$test_root" "$test_root/ifaces" >/dev/null
+run_benchmark_phase download 1 "$test_root" "$test_root/ifaces" >/dev/null
+[ "$(wc -l <"$capture")" -eq 2 ] || { printf 'benchmark did not run two isolated phases\n' >&2; exit 1; }
+sed -n '1p' "$capture" | grep -Fq -- '--omit 3 --parallel 1 --version6 --json' || {
+  printf 'upload benchmark arguments changed: %s\n' "$(sed -n '1p' "$capture")" >&2
+  exit 1
+}
+if sed -n '1p' "$capture" | grep -Fq -- '--reverse'; then
+  printf 'upload unexpectedly used reverse mode\n' >&2
+  exit 1
+fi
+sed -n '2p' "$capture" | grep -Fq -- '--version6 --reverse --json' || {
+  printf 'download benchmark arguments changed: %s\n' "$(sed -n '2p' "$capture")" >&2
+  exit 1
+}
+
+set +e
+IPERF_RC=7 run_benchmark_phase upload 0 "$test_root" "$test_root/ifaces" >/dev/null
+rc=$?
+set -e
+[ "$rc" -eq 7 ] || { printf 'benchmark phase did not preserve iperf3 failure\n' >&2; exit 1; }
+EOF_BENCHMARK_PHASE_TEST
+} >"$benchmark_phase_test"
+bash "$benchmark_phase_test"
 
 cross_version_apply_test="$tmp_dir/cross-version-apply-test.sh"
 {
@@ -449,7 +546,7 @@ cross_version_apply_test="$tmp_dir/cross-version-apply-test.sh"
   awk '/^apply_settings\(\)/,/^}/' "${scripts[0]}"
   cat <<'EOF_CROSS_VERSION_APPLY_TEST'
 EXIT_CONFLICT=4
-SCRIPT_VERSION='0.1.0-rc.10'
+SCRIPT_VERSION='0.1.0-rc.11'
 PORT_SPEED_MBPS=200
 BUFFER_TARGET_RTT_MS=200
 BUF_MAX=16777216

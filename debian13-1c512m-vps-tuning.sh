@@ -7,7 +7,7 @@ IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 
-SCRIPT_VERSION='0.1.0-rc.10'
+SCRIPT_VERSION='0.1.0-rc.11'
 STATE_SCHEMA_VERSION=3
 NAMESPACE='proxy-vps'
 MANAGED_MARKER='# Managed by debian-vps-tuning; namespace=proxy-vps'
@@ -199,7 +199,7 @@ validate_inputs() {
 
 missing_commands() {
   local cmd
-  for cmd in awk grep sed sysctl ip tc ss modprobe modinfo systemctl swapon swapoff mkswap findmnt find flock sha256sum pgrep jq stat readlink install nproc; do
+  for cmd in awk grep sed sysctl ip tc ss modprobe modinfo systemctl swapon swapoff mkswap findmnt find flock sha256sum pgrep ps jq stat readlink install nproc date; do
     command -v "$cmd" >/dev/null 2>&1 || printf '%s\n' "$cmd"
   done
 }
@@ -1402,6 +1402,66 @@ softnet_snapshot() {
   done <"$source"
 }
 
+cpu_snapshot() {
+  local source="${1:-/proc/stat}"
+  awk '$1 == "cpu" {
+    printf "user\t%s\nnice\t%s\nsystem\t%s\nidle\t%s\niowait\t%s\nirq\t%s\nsoftirq\t%s\nsteal\t%s\n", \
+      $2+0, $3+0, $4+0, $5+0, $6+0, $7+0, $8+0, $9+0
+    exit
+  }' "$source"
+}
+
+show_cpu_delta() {
+  local before="$1" after="$2" prefix="$3"
+  awk -F '\t' -v prefix="$prefix" '
+    NR == FNR {old[$1]=$2; next}
+    {
+      delta[$1]=$2-(old[$1]+0)
+      total+=delta[$1]
+    }
+    END {
+      printf "[%s] total_ticks=%d", prefix, total
+      for (i=1; i<=8; i++) {
+        key=(i==1 ? "user" : i==2 ? "nice" : i==3 ? "system" : i==4 ? "idle" : i==5 ? "iowait" : i==6 ? "irq" : i==7 ? "softirq" : "steal")
+        pct=(total > 0 ? delta[key]*100/total : 0)
+        printf " %s_ticks=%d %s_pct=%.2f", key, delta[key], key, pct
+      }
+      printf "\n"
+    }
+  ' "$before" "$after"
+}
+
+link_counter_snapshot() {
+  local ifaces_file="$1" sys_class_root="${2:-/sys/class/net}" iface stat value
+  while IFS= read -r iface; do
+    [ -n "$iface" ] || continue
+    for stat in rx_bytes rx_packets rx_dropped rx_errors tx_bytes tx_packets tx_dropped tx_errors; do
+      [ -r "${sys_class_root}/${iface}/statistics/${stat}" ] || continue
+      IFS= read -r value <"${sys_class_root}/${iface}/statistics/${stat}" || continue
+      [[ "$value" =~ ^[0-9]+$ ]] || continue
+      printf '%s.%s\t%s\n' "$iface" "$stat" "$value"
+    done
+  done <"$ifaces_file"
+}
+
+ethtool_counter_snapshot() {
+  local ifaces_file="$1" iface
+  command -v ethtool >/dev/null 2>&1 || return 0
+  while IFS= read -r iface; do
+    [ -n "$iface" ] || continue
+    ethtool -S "$iface" 2>/dev/null | awk -v iface="$iface" '
+      /^[[:space:]]*[A-Za-z0-9_.-]+:[[:space:]]*[0-9]+[[:space:]]*$/ {
+        key=$1
+        sub(/:$/, "", key)
+        lower=tolower(key)
+        if (lower ~ /(drop|discard|miss|error|timeout|no.?buffer|overrun)/) {
+          print iface "." key "\t" $2
+        }
+      }
+    '
+  done <"$ifaces_file"
+}
+
 tcp_counter_snapshot() {
   local snmp_file="${1:-/proc/net/snmp}" netstat_file="${2:-/proc/net/netstat}"
   awk '
@@ -1441,6 +1501,33 @@ show_softnet_delta() {
         $1, $2-(processed[$1]+0), $3-(dropped[$1]+0), $4-(squeezed[$1]+0)
     }
   ' "$before" "$after"
+}
+
+show_proxy_process_evidence() {
+  local phase="$1" unit active main_pid role pid fd_count row
+  local -a pids=()
+  while IFS= read -r unit; do
+    [ -n "$unit" ] || continue
+    [ "$(systemctl show -p LoadState --value "$unit" 2>/dev/null || true)" = 'loaded' ] || continue
+    active="$(systemctl show -p ActiveState --value "$unit" 2>/dev/null || true)"
+    main_pid="$(systemctl show -p MainPID --value "$unit" 2>/dev/null || true)"
+    printf '[process-%s] unit=%s active=%s main_pid=%s\n' "$phase" "$unit" "${active:-unknown}" "${main_pid:-0}"
+    [[ "$main_pid" =~ ^[1-9][0-9]*$ ]] || continue
+    for role in main child; do
+      if [ "$role" = 'main' ]; then
+        pids=("$main_pid")
+      else
+        mapfile -t pids < <(pgrep -P "$main_pid" 2>/dev/null || true)
+      fi
+      for pid in "${pids[@]}"; do
+        [ -r "/proc/${pid}/stat" ] || continue
+        fd_count="$({ find "/proc/${pid}/fd" -mindepth 1 -maxdepth 1 2>/dev/null || true; } | wc -l)"
+        row="$({ ps -p "$pid" -o pid=,ppid=,etimes=,time=,rss=,nlwp=,comm= 2>/dev/null || true; } | awk '{$1=$1; print; exit}')"
+        [ -n "$row" ] || continue
+        printf '[process-%s] unit=%s role=%s fd_count=%s ps=%s\n' "$phase" "$unit" "$role" "$fd_count" "$row"
+      done
+    done
+  done < <(profile_service_units)
 }
 
 show_queue_cpu_evidence() {
@@ -1509,8 +1596,15 @@ show_diagnostics() {
     die "$EXIT_USAGE" 'DIAG_INCLUDE_SOCKET_DETAILS 只能为 0 或 1。'
   umask 077
   tmp_dir="$(mktemp -d)" || die "$EXIT_UNSUPPORTED" '无法创建诊断临时目录。'
+  trap 'rm -rf -- "$tmp_dir"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  default_route_ifaces >"${tmp_dir}/ifaces"
   softnet_snapshot '/proc/net/softnet_stat' >"${tmp_dir}/softnet.before"
   tcp_counter_snapshot '/proc/net/snmp' '/proc/net/netstat' >"${tmp_dir}/tcp.before"
+  cpu_snapshot '/proc/stat' >"${tmp_dir}/cpu.before"
+  link_counter_snapshot "${tmp_dir}/ifaces" >"${tmp_dir}/link.before"
+  ethtool_counter_snapshot "${tmp_dir}/ifaces" >"${tmp_dir}/ethtool.before"
   if [ -e "$STATE_FILE" ] || [ -L "$STATE_FILE" ]; then
     diagnostic_state="$(jq -er '.state | select(type == "string")' "$STATE_FILE" 2>/dev/null || printf 'INVALID')"
   fi
@@ -1541,8 +1635,9 @@ show_diagnostics() {
       ethtool -S "$iface" 2>/dev/null |
         grep -Ei 'drop|discard|miss|error|timeout|no.?buffer|overrun' || true
     fi
-  done < <(default_route_ifaces)
+  done <"${tmp_dir}/ifaces"
   show_xray_socket_options
+  show_proxy_process_evidence before
   ss -s 2>/dev/null || true
   if [ "$DIAG_INCLUDE_SOCKET_DETAILS" = '1' ]; then
     ss -tinp 2>/dev/null || true
@@ -1551,22 +1646,82 @@ show_diagnostics() {
   sleep "$DIAG_INTERVAL_SECONDS"
   softnet_snapshot '/proc/net/softnet_stat' >"${tmp_dir}/softnet.after"
   tcp_counter_snapshot '/proc/net/snmp' '/proc/net/netstat' >"${tmp_dir}/tcp.after"
+  cpu_snapshot '/proc/stat' >"${tmp_dir}/cpu.after"
+  link_counter_snapshot "${tmp_dir}/ifaces" >"${tmp_dir}/link.after"
+  ethtool_counter_snapshot "${tmp_dir}/ifaces" >"${tmp_dir}/ethtool.after"
   show_counter_delta "${tmp_dir}/tcp.before" "${tmp_dir}/tcp.after" 'tcp-delta'
   show_softnet_delta "${tmp_dir}/softnet.before" "${tmp_dir}/softnet.after"
+  show_cpu_delta "${tmp_dir}/cpu.before" "${tmp_dir}/cpu.after" 'cpu-delta'
+  show_counter_delta "${tmp_dir}/link.before" "${tmp_dir}/link.after" 'link-delta'
+  show_counter_delta "${tmp_dir}/ethtool.before" "${tmp_dir}/ethtool.after" 'ethtool-delta'
+  show_proxy_process_evidence after
+  ip -4 route show default 2>/dev/null || true
+  ip -6 route show default 2>/dev/null || true
   while IFS= read -r iface; do
     [ -n "$iface" ] || continue
     printf '[qdisc-after] interface=%s\n' "$iface"
     tc -s -d qdisc show dev "$iface" 2>/dev/null || true
-  done < <(default_route_ifaces)
+  done <"${tmp_dir}/ifaces"
   swapon --show 2>/dev/null || true
   rm -rf -- "$tmp_dir"
+  trap - EXIT INT TERM
   info '诊断完成；增量计数是采样证据，不单独证明端到端业务性能。'
+}
+
+run_benchmark_phase() {
+  local label="$1" reverse="$2" tmp_dir="$3" ifaces_file="$4"
+  local current_rc=0 iface
+  softnet_snapshot '/proc/net/softnet_stat' >"${tmp_dir}/${label}.softnet.before" || return "$EXIT_VERIFY"
+  tcp_counter_snapshot '/proc/net/snmp' '/proc/net/netstat' >"${tmp_dir}/${label}.tcp.before" || return "$EXIT_VERIFY"
+  cpu_snapshot '/proc/stat' >"${tmp_dir}/${label}.cpu.before" || return "$EXIT_VERIFY"
+  link_counter_snapshot "$ifaces_file" >"${tmp_dir}/${label}.link.before" || return "$EXIT_VERIFY"
+  while IFS= read -r iface; do
+    [ -n "$iface" ] || continue
+    printf '[benchmark-%s-qdisc-before] interface=%s\n' "$label" "$iface"
+    tc -s -d qdisc show dev "$iface" 2>/dev/null || true
+  done <"$ifaces_file"
+
+  if [ "$reverse" = '1' ]; then
+    if iperf3 --client "$BENCHMARK_HOST_RESOLVED" --port "$BENCHMARK_PORT_RESOLVED" \
+      --time "$BENCHMARK_SECONDS_RESOLVED" --omit "$BENCHMARK_OMIT_RESOLVED" \
+      --parallel "$BENCHMARK_PARALLEL_RESOLVED" "${BENCHMARK_FAMILY_ARGS[@]}" --reverse --json; then
+      current_rc=0
+    else
+      current_rc=$?
+    fi
+  else
+    if iperf3 --client "$BENCHMARK_HOST_RESOLVED" --port "$BENCHMARK_PORT_RESOLVED" \
+      --time "$BENCHMARK_SECONDS_RESOLVED" --omit "$BENCHMARK_OMIT_RESOLVED" \
+      --parallel "$BENCHMARK_PARALLEL_RESOLVED" "${BENCHMARK_FAMILY_ARGS[@]}" --json; then
+      current_rc=0
+    else
+      current_rc=$?
+    fi
+  fi
+
+  softnet_snapshot '/proc/net/softnet_stat' >"${tmp_dir}/${label}.softnet.after" || current_rc="$EXIT_VERIFY"
+  tcp_counter_snapshot '/proc/net/snmp' '/proc/net/netstat' >"${tmp_dir}/${label}.tcp.after" || current_rc="$EXIT_VERIFY"
+  cpu_snapshot '/proc/stat' >"${tmp_dir}/${label}.cpu.after" || current_rc="$EXIT_VERIFY"
+  link_counter_snapshot "$ifaces_file" >"${tmp_dir}/${label}.link.after" || current_rc="$EXIT_VERIFY"
+  show_counter_delta "${tmp_dir}/${label}.tcp.before" "${tmp_dir}/${label}.tcp.after" "benchmark-${label}-tcp-delta" || current_rc="$EXIT_VERIFY"
+  show_softnet_delta "${tmp_dir}/${label}.softnet.before" "${tmp_dir}/${label}.softnet.after" |
+    sed "s/^\[softnet-delta\]/[benchmark-${label}-softnet-delta]/" || current_rc="$EXIT_VERIFY"
+  show_cpu_delta "${tmp_dir}/${label}.cpu.before" "${tmp_dir}/${label}.cpu.after" "benchmark-${label}-cpu-delta" || current_rc="$EXIT_VERIFY"
+  show_counter_delta "${tmp_dir}/${label}.link.before" "${tmp_dir}/${label}.link.after" "benchmark-${label}-link-delta" || current_rc="$EXIT_VERIFY"
+  while IFS= read -r iface; do
+    [ -n "$iface" ] || continue
+    printf '[benchmark-%s-qdisc-after] interface=%s\n' "$label" "$iface"
+    tc -s -d qdisc show dev "$iface" 2>/dev/null || true
+  done <"$ifaces_file"
+  return "$current_rc"
 }
 
 run_network_benchmark() {
   local host="${BENCHMARK_HOST:-}" port="${BENCHMARK_PORT:-5201}"
   local seconds="${BENCHMARK_SECONDS:-10}" parallel="${BENCHMARK_PARALLEL:-1}"
-  local direction="${BENCHMARK_DIRECTION:-both}" tmp_dir rc=0 current_rc iface
+  local omit="${BENCHMARK_OMIT_SECONDS:-3}" family="${BENCHMARK_IP_FAMILY:-auto}"
+  local direction="${BENCHMARK_DIRECTION:-both}" run_id="${BENCHMARK_RUN_ID:-}" tmp_dir rc=0 current_rc=0
+  local script_hash state_phase state_network iperf_version boot_id
   ensure_required_tools
   check_supported_os
   command -v iperf3 >/dev/null 2>&1 ||
@@ -1589,41 +1744,73 @@ run_network_benchmark() {
   if [ "$parallel" -lt 1 ] || [ "$parallel" -gt 4 ]; then
     die "$EXIT_USAGE" 'BENCHMARK_PARALLEL 必须在 1–4 之间。'
   fi
+  [[ "$omit" =~ ^[0-9]{1,2}$ ]] || die "$EXIT_USAGE" 'BENCHMARK_OMIT_SECONDS 必须是 0–10 的整数。'
+  omit=$((10#$omit))
+  if [ "$omit" -lt 0 ] || [ "$omit" -gt 10 ]; then
+    die "$EXIT_USAGE" 'BENCHMARK_OMIT_SECONDS 必须在 0–10 之间。'
+  fi
+  BENCHMARK_FAMILY_ARGS=()
+  case "$family" in
+    auto) ;;
+    4) BENCHMARK_FAMILY_ARGS=(--version4) ;;
+    6) BENCHMARK_FAMILY_ARGS=(--version6) ;;
+    *) die "$EXIT_USAGE" 'BENCHMARK_IP_FAMILY 只能为 auto、4 或 6。' ;;
+  esac
   case "$direction" in upload | download | both) ;; *) die "$EXIT_USAGE" 'BENCHMARK_DIRECTION 只能为 upload、download 或 both。' ;; esac
+  if [ -z "$run_id" ]; then
+    run_id="${SCRIPT_VERSION}-${PROFILE_ID}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  fi
+  [[ "$run_id" =~ ^[A-Za-z0-9._:-]{1,96}$ ]] ||
+    die "$EXIT_USAGE" 'BENCHMARK_RUN_ID 只能包含字母、数字、点、下划线、冒号和连字符，长度 1–96。'
+
+  BENCHMARK_HOST_RESOLVED="$host"
+  BENCHMARK_PORT_RESOLVED="$port"
+  BENCHMARK_SECONDS_RESOLVED="$seconds"
+  BENCHMARK_OMIT_RESOLVED="$omit"
+  BENCHMARK_PARALLEL_RESOLVED="$parallel"
 
   info 'benchmark 不修改系统配置，但会向用户指定的 iperf3 服务器产生高带宽 TCP 流量。'
   info '该测试测量 VPS 到 iperf3 服务端的直连 TCP，不等同于 VLESS + REALITY + TCP 业务链路。'
   umask 077
   tmp_dir="$(mktemp -d)" || die "$EXIT_UNSUPPORTED" '无法创建 benchmark 临时目录。'
-  softnet_snapshot '/proc/net/softnet_stat' >"${tmp_dir}/softnet.before"
-  tcp_counter_snapshot '/proc/net/snmp' '/proc/net/netstat' >"${tmp_dir}/tcp.before"
-  while IFS= read -r iface; do
-    [ -n "$iface" ] || continue
-    printf '[qdisc-before] interface=%s\n' "$iface"
-    tc -s -d qdisc show dev "$iface" 2>/dev/null || true
-  done < <(default_route_ifaces)
+  trap 'rm -rf -- "$tmp_dir"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  default_route_ifaces >"${tmp_dir}/ifaces"
+  script_hash="$(sha256sum "${BASH_SOURCE[0]}" | awk '{print $1}')"
+  iperf_version="$(iperf3 --version 2>&1 | awk 'NR == 1 {print; exit}')"
+  boot_id="$(awk 'NR == 1 {print; exit}' /proc/sys/kernel/random/boot_id 2>/dev/null || true)"
+  state_phase='UNMANAGED'
+  state_network='{}'
+  if [ -e "$STATE_FILE" ] || [ -L "$STATE_FILE" ]; then
+    if state_file_is_valid; then
+      state_phase="$(jq -r '.state' "$STATE_FILE")"
+      state_network="$(jq -c '.network' "$STATE_FILE")"
+    else
+      state_phase='INVALID'
+    fi
+  fi
+  printf '[benchmark-meta] run_id=%s utc=%s script_version=%s profile=%s script_sha256=%s boot_id=%s state=%s\n' \
+    "$run_id" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SCRIPT_VERSION" "$PROFILE_ID" "$script_hash" "${boot_id:-unknown}" "$state_phase"
+  printf '[benchmark-meta] host=%s port=%s family=%s direction=%s seconds=%s omit_seconds=%s parallel=%s iperf3=%s\n' \
+    "$host" "$port" "$family" "$direction" "$seconds" "$omit" "$parallel" "$iperf_version"
+  printf '[benchmark-meta] state_network=%s congestion_control=%s default_qdisc=%s\n' \
+    "$state_network" "$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || true)" \
+    "$(sysctl -n net.core.default_qdisc 2>/dev/null || true)"
+  ip -4 route show default 2>/dev/null || true
+  ip -6 route show default 2>/dev/null || true
 
-  set +e
   if [ "$direction" = 'upload' ] || [ "$direction" = 'both' ]; then
-    iperf3 --client "$host" --port "$port" --time "$seconds" --parallel "$parallel" --json
-    current_rc=$?; [ "$current_rc" -eq 0 ] || rc="$current_rc"
+    run_benchmark_phase upload 0 "$tmp_dir" "${tmp_dir}/ifaces" || current_rc=$?
+    [ "$current_rc" -eq 0 ] || rc="$current_rc"
+    current_rc=0
   fi
   if [ "$direction" = 'download' ] || [ "$direction" = 'both' ]; then
-    iperf3 --client "$host" --port "$port" --time "$seconds" --parallel "$parallel" --reverse --json
-    current_rc=$?; [ "$current_rc" -eq 0 ] || rc="$current_rc"
+    run_benchmark_phase download 1 "$tmp_dir" "${tmp_dir}/ifaces" || current_rc=$?
+    [ "$current_rc" -eq 0 ] || rc="$current_rc"
   fi
-  set -e
-
-  softnet_snapshot '/proc/net/softnet_stat' >"${tmp_dir}/softnet.after"
-  tcp_counter_snapshot '/proc/net/snmp' '/proc/net/netstat' >"${tmp_dir}/tcp.after"
-  show_counter_delta "${tmp_dir}/tcp.before" "${tmp_dir}/tcp.after" 'benchmark-tcp-delta'
-  show_softnet_delta "${tmp_dir}/softnet.before" "${tmp_dir}/softnet.after"
-  while IFS= read -r iface; do
-    [ -n "$iface" ] || continue
-    printf '[qdisc-after] interface=%s\n' "$iface"
-    tc -s -d qdisc show dev "$iface" 2>/dev/null || true
-  done < <(default_route_ifaces)
   rm -rf -- "$tmp_dir"
+  trap - EXIT INT TERM
   [ "$rc" -eq 0 ] || die "$EXIT_VERIFY" "iperf3 benchmark 失败，退出码：${rc}。"
   info 'benchmark 完成；请结合业务流量下的 diagnose 和客户端指标判断。'
 }
@@ -1647,8 +1834,11 @@ Environment:
   BENCHMARK_HOST=host             required by benchmark; user-authorized iperf3 server
   BENCHMARK_PORT=1..65535         default 5201
   BENCHMARK_SECONDS=5..120        default 10
+  BENCHMARK_OMIT_SECONDS=0..10    default 3; warm-up excluded from statistics
   BENCHMARK_PARALLEL=1..4         default 1
+  BENCHMARK_IP_FAMILY=auto|4|6    default auto
   BENCHMARK_DIRECTION=upload|download|both   default both
+  BENCHMARK_RUN_ID=id             optional reproducibility label; safe characters only
 EOF_USAGE
 }
 
