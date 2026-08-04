@@ -2,6 +2,34 @@
 
 本项目采用 [Semantic Versioning](https://semver.org/)。
 
+## [0.1.0-rc.11] - 2026-08-04
+
+### Added
+
+- `diagnose` 增加 `/proc/stat` CPU user/system/softirq/steal 增量、接口收发/丢包/错误增量、可识别 ethtool 错误增量，以及代理主进程和直接子进程的 CPU time、RSS、线程数和 FD 数前后证据；
+- `benchmark` 增加 `BENCHMARK_OMIT_SECONDS`、`BENCHMARK_IP_FAMILY` 和 `BENCHMARK_RUN_ID`，并输出脚本 SHA-256、boot ID、管理状态、网络参数、拥塞控制、qdisc 和 iperf3 版本等运行元数据；
+- 增加 CPU 与接口计数 fixture，以及 benchmark 预热、地址族和 run ID 的输入边界测试。
+
+### Changed
+
+- `benchmark` 的上传和下载分别采样 TCP、softnet、CPU、接口及 qdisc，避免把两个方向的异常计数合并；默认每个方向预热 3 秒并从 10 秒有效统计中排除；
+- 初始化 benchmark 阶段退出状态，避免成功的首个上传阶段因空整数比较被误判为失败；
+- `diagnose` 固定复用采样开始时识别的默认路由接口，并在采样结束后再次输出默认路由；诊断和 benchmark 在信号中断时清理 root-only 临时目录；
+- README 纳入 rc.10 第二次 TcpQuality 报告，明确同配置组内波动大于或接近 v6/rc.10 组间差异，并给出固定 commit、脚本哈希和参数的重复测试约束；
+- 总控和六份 profile 版本同步为 `0.1.0-rc.11`，固定 Release tag 改为 `v0.1.0-rc.11`；状态 schema 保持为 3。
+
+### Safety
+
+- 17 个受管 sysctl、qdisc、swap、journald 和 NOFILE 配置保持不变；不加入 `tcp_slow_start_after_idle`、第三方内核、CAKE、MTU/MSS、CPU steering 或全局 IPv6 策略；
+- 新增诊断仅输出进程名称和资源统计，不输出进程命令行；`ss -tinp` 仍只在显式设置 `DIAG_INCLUDE_SOCKET_DETAILS=1` 时输出；
+- benchmark 仍要求用户显式提供获授权的 iperf3 服务端，不自动安装软件、开放端口或选择公共服务器。
+
+### Validation
+
+- 六份 profile 已从单一模板重新生成；Bash 语法、控制器 fixture、生成一致性、CPU/接口增量、benchmark 输入边界及既有事务/qdisc 故障注入通过；
+- 已校验官方发布包 SHA-256，并使用固定 ShellCheck 0.11.0 复核总控、六份 profile、模板提取 helper 与测试脚本；
+- rc.11 尚未取得最终哈希目标 VPS 的 `diagnose`、授权 benchmark、生命周期或真实 VLESS + REALITY + TCP 性能证据。
+
 ## [0.1.0-rc.10] - 2026-08-04
 
 ### Added

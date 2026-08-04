@@ -1,10 +1,12 @@
 # Debian VPS Tuning
 
-面向 Debian 12/13 小型云 VPS 的保守型主机网络调优脚本。项目以原生 systemd 部署的 **3X-UI v3.4.2、Xray-core v26.6.27、VLESS + REALITY + TCP** 为主要验收场景，同时保留对 S-UI、sing-box 和独立 Xray 服务的只读识别能力。
+面向 Debian 12/13 小型云 VPS 的保守型主机网络调优脚本。项目以原生 systemd 部署的 **3X-UI、Xray-core、VLESS + REALITY + TCP** 为主要场景；当前目标机验收基线包含 3X-UI v3.4.2 和 Xray-core v26.6.27，但这不是对其他版本的兼容性保证。脚本同时对 S-UI、sing-box 和独立 Xray 服务提供有限的只读识别。
 
-脚本使用 BBR + fq、受控 TCP 缓冲、常规队列参数、应急 swap 和 journald 空间限制，目标是形成可预检、可验证、可重复执行、可回滚的配置。它不承诺在所有线路上提高吞吐或降低延迟。
+脚本使用 BBR + fq、受控 TCP 缓冲、常规队列参数、应急 swap 和 journald 空间限制，目标是形成可预检、可验证、可重复执行、可回滚的主机配置。它不配置代理业务、路由或防火墙，也不承诺在所有线路、虚拟化平台和负载下提高吞吐或降低延迟。
 
-> 当前预发行版本：`v0.1.0-rc.10`。下面的联网命令固定到该 Release 及其校验和资产，不跟随分支或 `latest`。正式 `v0.1.0` 仍需完成 [目标 VPS 运行验收](docs/validation.md)，不要把候选版本视为全平台、全带宽或性能验收已经完成。
+> **系统选型摘要（截至 2026-08-04）：** 新建的 1C1G、1C2G 和 2C2G VPS 默认推荐 Debian 13 minimal。Debian 13 是当前 stable；Debian 12 已转入 LTS，更适合保留既有稳定节点或满足明确的兼容约束。操作系统版本不能单独证明 BBR 可用、性能更高或空载内存更低，仍须检查虚拟化类型、运行内核和目标机资源。
+
+> 当前预发行候选版本：`v0.1.0-rc.11`。下面的联网命令固定到该候选 Release 及其校验和资产，不跟随分支或 `latest`；Release 发布并完成公开资产重下载校验前，不应执行这些联网命令。正式 `v0.1.0` 仍需完成 [目标 VPS 运行验收](docs/validation.md)，不要把候选版本视为全平台、全带宽或性能验收已经完成。
 
 ## 联网安装与验证
 
@@ -12,7 +14,7 @@
 
 ### 1. 联网安装
 
-推荐执行 rc.10 固定 Release 的总控入口。它会自动识别 Debian 12/13、amd64、CPU 和内存档位，默认先执行只读 `preflight`，只有预检通过且再次明确输入 `y` 才执行 `apply`：
+rc.11 Release 发布并通过公开资产复核后，推荐执行其固定总控入口。它会自动识别 Debian 12/13、amd64、CPU 和内存档位，默认先执行只读 `preflight`，只有预检通过且再次明确输入 `y` 才执行 `apply`：
 
 ```bash
 (
@@ -27,10 +29,10 @@
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.10/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.11/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    '1eccdc938e66fbfcb27c5ae7a5187c9261c16e02768732e5256e6421941b68ce' \
+    '24b1b9a15ad0c50834ef450f98a6a2d25b95bd93d89d22c00422f77e38b4ad96' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   bash "$dvt_tmp/debian-vps-tuning.sh"
@@ -68,10 +70,10 @@ reboot
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.10/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.11/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    '1eccdc938e66fbfcb27c5ae7a5187c9261c16e02768732e5256e6421941b68ce' \
+    '24b1b9a15ad0c50834ef450f98a6a2d25b95bd93d89d22c00422f77e38b4ad96' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   bash "$dvt_tmp/debian-vps-tuning.sh" verify
@@ -99,10 +101,10 @@ printf 'verify_after_reboot_exit=%s\n' "$?"
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.10/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.11/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    '1eccdc938e66fbfcb27c5ae7a5187c9261c16e02768732e5256e6421941b68ce' \
+    '24b1b9a15ad0c50834ef450f98a6a2d25b95bd93d89d22c00422f77e38b4ad96' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   env \
@@ -116,11 +118,11 @@ printf 'strict_verify_after_3xui_exit=%s\n' "$?"
 
 严格验证要求 `x-ui.service` 处于 active，并检查 systemd 配置、3X-UI 主进程和直接 Xray 子进程的 NOFILE soft/hard limit 均不低于 65536。安装 3X-UI 后再重启一次，并重复执行这条严格验证命令，才能证明开机启动和新进程继承仍然正确。
 
-### 4. 从 rc.9 联网升级及后续 update
+### 4. 从早期 rc 版本执行只读升级检查
 
-已经由 rc.9 管理的 VPS，第一次需要下载 rc.10 总控来获得 `update` 功能；不要替换已经发布的 rc.9 Release 资产。下面的命令会读取现有状态中的资源档和端口带宽，校验当前 profile、目标 `SHA256SUMS` 和目标总控脚本，然后执行当前版本 `verify` 与目标版本的只读 `update-preflight`，最后输出维护窗口所需的固定 URL、SHA-256 和迁移顺序。整个 `update` 过程不会执行 rollback、purge、apply 或 reboot：
+已经由 rc.9 或 rc.10 管理的 VPS，可下载 rc.11 总控执行 `update`。它会读取状态中的资源档和端口带宽，校验当前 profile、目标 `SHA256SUMS` 和目标总控脚本，依次执行当前版本 `verify` 与目标版本的只读 `update-preflight`，最后输出维护窗口所需的固定 URL、SHA-256 和迁移顺序。`update` 不执行 rollback、purge、apply 或 reboot，也不会替换已经发布的旧 Release 资产。
 
-总控、`SHA256SUMS` 和 profile 被视为一个不可拆分的 Release 包。**不同版本的资产不得放在同一目录。**例如，rc.9 总控旁边不能放 rc.10 的 `SHA256SUMS` 和 profile；否则总控会按完整性保护规则拒绝执行，也不会自动回退联网下载。下面的联网命令以及后续 rollback 示例都使用独立 `mktemp -d` 目录，避免版本碰撞。
+总控、`SHA256SUMS` 和 profile 被视为一个不可拆分的 Release 包。**不同版本的资产不得放在同一目录。**例如，rc.10 总控旁边不能放 rc.11 的 `SHA256SUMS` 和 profile；否则总控会按完整性保护规则拒绝执行，也不会自动回退联网下载。下面的联网命令以及后续 rollback 示例都使用独立 `mktemp -d` 目录，避免版本碰撞。
 
 ```bash
 (
@@ -135,10 +137,10 @@ printf 'strict_verify_after_3xui_exit=%s\n' "$?"
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.10/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.11/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    '1eccdc938e66fbfcb27c5ae7a5187c9261c16e02768732e5256e6421941b68ce' \
+    '24b1b9a15ad0c50834ef450f98a6a2d25b95bd93d89d22c00422f77e38b4ad96' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   bash "$dvt_tmp/debian-vps-tuning.sh" update
@@ -153,9 +155,9 @@ printf 'strict_verify_after_3xui_exit=%s\n' "$?"
 
 - 只支持厂商最小化 Debian 12/13、`x86_64/amd64` 和 README 列出的四个 CPU/内存资源档；其他组合会拒绝执行；
 - 端口带宽填写服务商套餐上限，不要填写虚拟网卡显示的链路速率；默认 200 Mbps，允许 100–1000 Mbps；
-- 联网入口固定到 `v0.1.0-rc.10`，不会回退到 `master`、`main`、`latest`、HTTP 或第三方镜像；
-- 上述命令在执行总控脚本前核对 rc.10 总控资产的固定 SHA-256；总控随后下载固定 Release 的 `SHA256SUMS` 和匹配 profile，并再次校验；
-- 总控、`SHA256SUMS` 和 profile 必须来自同一 Release；不同版本使用不同的临时目录，不要把 rc.9 与 rc.10 资产混放在 `/root` 或同一工作目录；
+- 联网入口固定到 `v0.1.0-rc.11`，不会回退到 `master`、`main`、`latest`、HTTP 或第三方镜像；
+- 上述命令在执行总控脚本前核对 rc.11 总控资产的固定 SHA-256；总控随后下载固定 Release 的 `SHA256SUMS` 和匹配 profile，并再次校验；
+- 总控、`SHA256SUMS` 和 profile 必须来自同一 Release；不同版本使用不同的临时目录，不要把 rc.10 与 rc.11 资产混放在 `/root` 或同一工作目录；
 - 发布后不应移动 tag 或替换同名资产，发现缺陷时应发布新版本；
 - `update` 是只读升级检查，不会自动迁移配置；检查通过后仍必须另选维护窗口完成人工 rollback/apply 和两次重启；
 - 脚本不配置或放行 UFW 端口，不要把 UFW 状态提示当成防火墙已配置；先确保 SSH 管理端口不会被锁死；
@@ -165,32 +167,36 @@ printf 'strict_verify_after_3xui_exit=%s\n' "$?"
 - `rollback` 会撤销本项目管理的调优配置，应在维护窗口测试；普通 rollback 默认保留脚本创建的 swap；
 - 不要在未阅读脚本和发布说明时使用 `curl ... | bash` 或 `bash <(curl ...)`。
 
-## rc.9 真实环境验证基线
+## 真实环境验证基线
 
-2026-08-03 已取得一台真实 VPS 的主路径证据：
+截至 2026-08-04，项目已取得以下脱敏配置类别的目标机证据。表中编号表示验证记录，不表示 VPS 数量；同一配置类别可能在同一资产的不同时期重复验证。为降低资产关联风险，公开文档不记录服务商、区域、IP、域名、主机名、面板端口、订阅地址、账号、凭据、证书标识或可反查报告 ID。
 
-| 项目 | 实测值 |
-|---|---|
-| 操作系统 | Debian GNU/Linux 13 (trixie) |
-| 内核 | `6.12.100+deb13-amd64` |
-| CPU / 内存 | 1 vCPU / 929 MiB，识别为 1C1GB |
-| 根文件系统 | ext4 |
-| 服务商端口上限 | 1000 Mbps |
-| profile | `debian13-1c1g` |
-| 总控/profile 版本 | `0.1.0-rc.9` |
-| profile SHA-256 | `9fd70c593b83d41337c6dfcada737855ce583e8bc3451ee8bb5952db850c81c6` |
-| 代理平台 | 3X-UI，systemd unit 为 `x-ui.service` |
+| 记录 | 操作系统与内核系列 | VPS 配置 | 存储/网络 | 已覆盖路径 | 证据边界 |
+|---|---|---|---|---|---|
+| C1 | Debian 13；Linux 6.12 系列 | 1 vCPU / 约 1 GiB；`debian13-1c1g` | ext4；套餐上限 1000 Mbps | 固定 rc.9 资产校验、安全引导、`preflight`、`apply`、立即/重启后 `verify`、安装 3X-UI 后严格验证；BBR、fq、swap 和 NOFILE 重启后保持 | 只证明对应 rc.9 产物和该配置类别的主路径，不继承为 rc.10/rc.11 结论 |
+| C2 | Debian 12；Linux 6.1 系列 | 1 vCPU / 约 1 GiB；`debian12-1c1g` | XFS；套餐上限 200 Mbps | 退出 rc.8 后完成 rc.10 候选 `apply`、重启后普通/严格 `verify` 和重复 `apply`；重复执行未重写配置 | 不替代最终 Release 资产复核，不证明代理吞吐或线路质量 |
+| C3 | Debian 12；Linux 6.1 系列 | 1 vCPU / 约 2 GiB；`debian12-1c2g` | XFS；套餐上限 200 Mbps | 退出 rc.8 后完成 rc.10 候选 `apply`、重启后普通/严格 `verify` 和重复 `apply`；3X-UI 主进程及 Xray 直接子进程 NOFILE 为 65536/65536 | 不覆盖 2C2G、512 MiB、其他文件系统或最终 Release 资产 |
+| C4 | Debian 13；Linux 6.12 系列 | 1 vCPU / 约 1 GiB；`debian13-1c1g` | ext4；套餐上限 1000 Mbps | 使用隔离目录完成 rc.9→rc.10 候选迁移、重启后严格 `verify` 和重复 `apply` | 这是迁移记录，配置类别可能与 C1 重合；不代表新增一台独立 VPS |
 
-已通过：
+上述记录绑定测试时的具体脚本哈希。发布前后只要脚本内容或 SHA-256 改变，就必须按 [验证矩阵](docs/validation.md) 重新建立证据，不能仅凭版本名称或配置值相同继承通过结论。rc.11 最终哈希的目标 VPS 生命周期验证仍待完成。
 
-- 固定 rc.9 Release 总控、清单和 profile 的联网下载及 SHA-256 校验；
-- 交互安全引导、1000 Mbps 选择、`preflight`、首次 `apply` 和立即验证，均为退出码 0、警告 0；
-- 安装 3X-UI 前重启，联网 `verify` 退出码 0、警告 0；
-- 重启后 `proxy-vps-fq.service` 为 loaded/active/enabled，BBR、默认 fq、`eth0` 实际根 fq 和 `/swapfile-proxy` 均保持；
-- 安装 3X-UI 后严格验证，以及再次重启后的严格验证，均为退出码 0、警告 0；
-- 重启后 `x-ui.service` 主进程和直接 Xray 子进程的 NOFILE soft/hard limit 均为 65536/65536。
+### 1C2G / 200 Mbps 性能观察案例
 
-该结果只证明 **rc.9、Debian 13、1C1G、1000 Mbps、ext4、3X-UI** 这一组合的上述主路径。rc.10 修改了自动缓冲选择和诊断能力，不能继承 rc.9 的目标机通过结论；尚未在这台机器上完成无显式端口参数的重复 `apply`、rollback/purge、VLESS + REALITY + TCP 客户端连通性和 1/3/5/10 并发性能测试，也不能替代 Debian 12、512 MiB、2G、2C2G 或其他带宽组合的目标机证据。完整状态见 [验证矩阵](docs/validation.md)。
+同一 Debian 12、1C2G 配置类别曾分别在旧 v6 配置和 rc.10 配置下运行 TcpQuality。公开 README 只保留聚合结果，不公开具有资产关联性的报告 URL、报告 ID、精确测试时间、服务商和区域；原始报告由维护者在私有证据集中保存。
+
+三次报告都显示 `bbr`、`fq`、TCP 发送 `4K/64K/16M`、TCP 接收 `4K/128K/16M`。可量化摘要如下；每格依次为“零异常 / 1–20% / >20%”，普通回程按丢包分档，大包回程按重传分档，每类共 93 个判定项：
+
+| 脱敏样本 | IPv4 回程 | IPv4 大包回程 | IPv6 回程 |
+|---|---:|---:|---:|
+| v6 基线样本 | 93 / 0 / 0 | 91 / 0 / 2 | 69 / 24 / 0 |
+| rc.10 样本 A | 92 / 1 / 0 | 84 / 7 / 2 | 67 / 23 / 3 |
+| rc.10 样本 B | 93 / 0 / 0 | 92 / 0 / 1 | 79 / 14 / 0 |
+
+同一 rc.10 配置的两个时段样本中，IPv4 大包零重传节点从 84 变为 92，IPv6 零丢包节点从 67 变为 79；组内波动已大于或接近 v6 与 rc.10 样本 A 的组间差异。因此，这三次观测不能证明 v6 或 rc.10 的内核参数更快，也不能把个别区域或运营商的集中异常唯一归因于某条路由。测试时段、运营商链路、测速节点、共享宿主机负载和工具版本都仍是候选解释。
+
+此外，v6 只有一次样本，rc.10 也只有两次样本，仍不足以估计稳定分布；TcpQuality 未指定 `-s` 时随机使用内置包长，默认 `-c` 每节点只发送 30 个包；TcpQuality 直接测试 VPS 网络栈，不经过 3X-UI、VLESS、REALITY 或客户端链路。现有证据以远程图片为主，没有足以公开复算的机器可读原始表格。
+
+因此，项目不会根据这些单次报告回退 rc.10、修改 rc.11 的 17 个受管 sysctl 或增加激进参数。性能验收必须固定 TcpQuality commit、脚本 SHA-256、节点文件和 `-c/-s/-p` 参数，覆盖低负载、白天和晚高峰并重复采样，比较中位数、P95 和异常节点复现率；同时覆盖实际 VLESS + REALITY + TCP 的 1、3、5、10 并发。完整待测项见 [验证矩阵](docs/validation.md)。
 
 ## 本地使用与命令行模式
 
@@ -236,23 +242,77 @@ bash <(curl ...)
 - 10 GB、15 GB 或更大 SSD，且有足够剩余空间；
 - IPv4 或 IPv4 + IPv6 双栈的常规默认路由；
 - 服务商端口上限 100–1000 Mbps，默认按 200 Mbps 设计；
-- 少于 10 名用户、以 TCP 为主的小型代理服务器；
+- 以 TCP 为主、连接规模经过目标机实测的小型代理服务器；项目不按“用户数”承诺容量；
 - 内核实际提供 BBR 和 fq。
 
 主要验证基线：
 
 | 系统 | 内核基线 | 资源脚本 |
 |---|---|---|
-| Debian 12 (bookworm) | `6.1.0-51-cloud-amd64` / `6.1.177-1` | 1C512MB、1C1GB、1C2GB、2C2GB |
-| Debian 13 (trixie) | `6.12.100+deb13-cloud-amd64` / `6.12.100-1` | 1C512MB、1C1GB、1C2GB、2C2GB |
+| Debian 12 (bookworm) | Linux 6.1 系列 | 1C512MB、1C1GB、1C2GB、2C2GB |
+| Debian 13 (trixie) | Linux 6.12 系列 | 1C512MB、1C1GB、1C2GB、2C2GB |
 
 这些是已知验证基线，不是 patch level 白名单。脚本严格检查 Debian 主版本和 amd64 架构，但内核小版本变化后仍以实际 BBR/fq 能力为准。
 
-## 为什么同时支持 Debian 12 和 Debian 13
+## Debian 12/13 选型
 
-Debian 12 适合已经部署、依赖既定兼容性或希望维持现有环境的 VPS。Debian 13 适合已经验证代理软件兼容性的新部署，并提供更新的系统组件和 6.12 系列内核。项目不宣称 Debian 12 天然比 Debian 13 更快或更安全，也不建议仅为了网络调优跨大版本升级。
+以下结论以 2026-08-04 为时间边界。Debian 官方当前将 Debian 13 定义为 stable，最新点版本为 13.6；Debian 12 为 oldstable，常规 Release/Security/Backports 支持已经结束，LTS 持续到 2028-06-30。Debian 13 的常规支持到 2028-08-09、LTS 到 2030-06-30。参见 [Debian Releases](https://www.debian.org/releases/) 和 [Bookworm 转入 LTS 公告](https://www.debian.org/News/2026/20260712)。
 
-六份脚本分开校验操作系统、CPU 和内存档位，避免把 Debian 12 的内核假设直接复制到 Debian 13。选择系统时应优先考虑 VPS 厂商镜像质量、应用兼容性、现有备份和个人运维能力。
+因此，新建的 1C1G、1C2G 和 2C2G VPS 默认推荐 Debian 13 minimal；Debian 12 继续用于已有稳定节点、服务商 Debian 13 镜像存在已确认缺陷、或第三方软件具有明确的 Debian 12 兼容约束。不要仅为追求未经证明的性能提升对唯一生产节点执行原地大版本升级。
+
+| 维度 | Debian 12 | Debian 13 | 项目判断 |
+|---|---|---|---|
+| 发布状态 | oldstable，处于 LTS | 当前 stable | 新部署优先 Debian 13 |
+| 支持期限 | LTS 至 2028-06-30；少数包可能不在 LTS 覆盖范围 | 常规支持至 2028-08-09，LTS 至 2030-06-30 | 公网长期节点优先更长的常规支持窗口 |
+| 典型内核系列 | Linux 6.1 LTS | Linux 6.12 LTS | 13 有更新的内核和虚拟化驱动，但不保证吞吐更高 |
+| 用户态基线 | systemd 252、OpenSSH 9.2、OpenSSL 3.0、glibc 2.36 | systemd 257、OpenSSH 10.0、OpenSSL 3.5、glibc 2.41 | 新软件兼容性更有利；旧脚本和闭源 agent 需验证 |
+| 迁移风险 | 现有部署成熟，变更较少 | 原地升级需检查网卡名、SSH、`/tmp` 和 sysctl 加载行为 | 关键节点优先新建 Debian 13 并行迁移 |
+
+Debian 13 的主要优点：
+
+- 当前 stable，常规安全维护和 LTS 生命周期更长；
+- Linux 6.12 LTS、systemd 257、OpenSSH 10.0p1 和 OpenSSL 3.5 提供更新的内核、虚拟化和系统组件；
+- Debian 官方提供 GenericCloud、NoCloud 和 OpenStack 等云镜像；
+- 3X-UI 官方安装脚本按发行版 ID `debian` 选择 APT 和 Debian systemd unit，没有发现 Debian 12-only 的版本判断；
+- Xray-core 官方 Linux 构建使用 `CGO_ENABLED=0`，通常不依赖 Debian 12/13 的特定 glibc ABI。
+
+Debian 13 的主要限制和迁移风险：
+
+- Debian 13 不保证比 Debian 12 占用更少内存，也不保证 Xray 吞吐、延迟或并发能力自动提高；
+- `/tmp` 默认使用按需分配的 tmpfs，最大值可达到内存的 50%；1C1G 节点应限制大型临时文件和日志；
+- `systemd-sysctl` 不再读取 `/etc/sysctl.conf`，本地配置应放入 `/etc/sysctl.d/*.conf`；本项目使用该规范路径，但旧调优脚本可能不兼容；
+- Debian 12 原地升级到 13 时，部分系统的可预测网卡名可能改变，硬编码接口名的网络、防火墙或 qdisc 配置必须提前检查；
+- OpenSSH、OpenSSL、Python 和 systemd 的大版本变化可能影响旧密钥、自动化脚本或服务商闭源 agent；
+- 服务商提供“Debian 13”镜像不等于运行内核一定为 6.12，也不证明 cloud-init、IPv6 和网络模板已经通过验证。
+
+相关变化见 [Debian 13 发布公告](https://www.debian.org/News/2025/20250809) 和 [Debian 13 Release Notes：已知问题](https://www.debian.org/releases/stable/release-notes/issues.en.html)。
+
+### 按 VPS 资源档选择
+
+| VPS 配置 | 推荐系统 | 适用判断 | 主要约束 |
+|---|---|---|---|
+| 1C1G | Debian 13 minimal | 新建节点的默认选择；无桌面、少量必要服务 | 1 GiB 是 Debian 13 无桌面安装的推荐内存，不代表 3X-UI/Xray 仍有固定余量；应监控 RSS、FD、CPU steal、softirq、日志和 `/tmp` |
+| 1C2G | Debian 13 | 三档中较均衡，更新和临时任务的内存余量优于 1C1G | 单核仍可能成为加密、软中断或高并发瓶颈 |
+| 2C2G | Debian 13 | 更适合多连接、多入站或较高 CPU 负载 | 2 vCPU 不保证吞吐翻倍，也不能仅凭 CPU 数启用 RPS/RFS/XPS 或 IRQ affinity |
+
+Debian 13 官方对无桌面 amd64 安装给出的最低内存为 512 MB、推荐内存为 1 GB；服务器实际需求取决于运行服务，不能据此推导“空载固定约 100 MB”或代理容量。参见 [Debian 13 amd64 安装要求](https://www.debian.org/releases/trixie/amd64/ch03s04.en.html)。
+
+### 虚拟化类型比发行版名称更接近内核事实
+
+KVM、VMware、Hyper-V 等完整虚拟机通常运行来宾系统自己的 Debian 内核；LXC、Incus 和部分 OpenVZ 类系统容器共享宿主机内核。容器内的 `/etc/os-release` 即使显示 Debian 13，也不能证明内核为 6.12、BBR 可加载或 qdisc/sysctl 具有完整权限。选择 profile 前至少检查：
+
+```bash
+cat /etc/os-release
+uname -r
+systemd-detect-virt
+systemd-detect-virt --container || true
+sysctl -n net.ipv4.tcp_available_congestion_control
+sysctl -n net.ipv4.tcp_congestion_control
+sysctl -n net.core.default_qdisc
+tc -s -d qdisc show
+```
+
+六份脚本分别校验操作系统、CPU、内存、运行内核能力和 qdisc 拓扑，避免把 Debian 12 的环境假设直接复制到 Debian 13。操作系统选择不能替代目标机 `preflight`。
 
 ## 脚本选择
 
@@ -300,7 +360,7 @@ jq '.. | objects | select(has("tcpFastOpen")) | .tcpFastOpen' \
   /usr/local/x-ui/bin/config.json
 ```
 
-rc.10 的 `verify` 和 `diagnose` 会只读报告该字段是否显式存在，但不会修改代理配置。不要直接编辑 `/usr/local/x-ui/bin/config.json`：它是 3X-UI 生成文件，面板重建配置时可能覆盖。只有在当前 3X-UI 版本明确提供对应的入站/出站 sockopt 或高级配置入口、并完成客户端兼容性测试后，才通过面板配置；配置后重新检查生成 JSON 和实际连接。TFO 主要影响握手阶段，不能替代 BBR、fq 或线路质量，也不保证跨所有中间设备都获益。
+当前 `verify` 和 `diagnose` 会只读报告该字段是否显式存在，但不会修改代理配置。不要直接编辑 `/usr/local/x-ui/bin/config.json`：它是 3X-UI 生成文件，面板重建配置时可能覆盖。只有在当前 3X-UI 版本明确提供对应的入站/出站 sockopt 或高级配置入口、并完成客户端兼容性测试后，才通过面板配置；配置后重新检查生成 JSON 和实际连接。TFO 主要影响握手阶段，不能替代 BBR、fq 或线路质量，也不保证跨所有中间设备都获益。
 
 同理，主机的 `tcp_keepalive_time/intvl/probes` 只影响已经启用 `SO_KEEPALIVE` 且没有被应用覆盖的 socket。Xray 官方文档说明：入站 Keep-Alive 默认关闭，配置 `tcpKeepAliveIdle` 或 `tcpKeepAliveInterval` 才启用；出站还有自己的默认值。因此，主机 sysctl 不能单独证明 Xray 连接正在采用这些 keepalive 值。参见 [Linux IP sysctl](https://docs.kernel.org/networking/ip-sysctl.html) 和 [Xray Sockopt](https://xtls.github.io/en/config/transports/sockopt.html)。
 
@@ -414,7 +474,7 @@ env PORT_SPEED_MBPS=200 \
 - 固定 swap 路径已被其他文件占用；
 - 磁盘空间不足。
 
-自动 swap 文件只在 `ext2`、`ext3`、`ext4` 和 `xfs` 根文件系统上启用。你的 XFS SSD 属于允许范围。Btrfs、ZFS、overlay、NFS、FUSE 以及未验证的其他文件系统会给出警告并跳过自动创建 swap，不影响其他网络配置继续应用。
+自动 swap 文件只在 `ext2`、`ext3`、`ext4` 和 `xfs` 根文件系统上启用。Btrfs、ZFS、overlay、NFS、FUSE 以及未验证的其他文件系统会给出警告并跳过自动创建 swap，不影响其他网络配置继续应用。
 
 ### 2. 应用
 
@@ -458,7 +518,7 @@ env REQUIRE_PROXY_SERVICE=1 \
 bash ./debian-vps-tuning.sh diagnose
 ```
 
-`diagnose` 默认做 5 秒前后采样，输出 TCP 重传/超时/监听溢出/TFO 计数增量、每 CPU softnet `dropped`/`time_squeeze` 增量、`tc -s -d`、网卡错误计数以及 RPS/XPS/IRQ 的只读证据。它不发起性能流量，也不修改系统；建议在这 5 秒内由客户端复现实际 VLESS + REALITY + TCP 负载：
+`diagnose` 默认做 5 秒前后采样，输出 TCP 重传/超时/监听溢出/TFO、每 CPU softnet、整机 CPU user/system/softirq/steal、接口收发/丢包/错误和可识别 ethtool 错误计数的增量，并保存 qdisc 前后状态、默认路由、RPS/XPS/IRQ 以及代理主进程/直接子进程的 CPU time、RSS、线程数和 FD 数。进程证据不输出命令行参数。它不发起性能流量，也不修改系统；建议在采样窗口内由客户端复现实际 VLESS + REALITY + TCP 负载：
 
 ```bash
 env DIAG_INTERVAL_SECONDS=15 \
@@ -474,18 +534,21 @@ env DIAG_INCLUDE_SOCKET_DETAILS=1 \
 
 ### 6. 显式 iperf3 benchmark
 
-`benchmark` 不改变系统配置，但会主动产生高带宽 TCP 流量。它要求用户自行准备并授权使用 iperf3 服务端，脚本不会安装软件包、开启端口或选择公共服务器。默认顺序执行 10 秒上传和 10 秒下载，并输出 JSON、TCP/softnet 增量及 qdisc 前后统计：
+`benchmark` 不改变系统配置，但会主动产生高带宽 TCP 流量。它要求用户自行准备并授权使用 iperf3 服务端，脚本不会安装软件包、开启端口或选择公共服务器。默认顺序执行上传和下载：每个方向先做 3 秒预热并从统计中排除，再记录 10 秒有效窗口；两个方向分别输出 iperf3 JSON、TCP/softnet/CPU/接口增量及 qdisc 前后统计。运行元数据包含 UTC 时间、run ID、脚本版本与 SHA-256、profile、boot ID、管理状态、网络参数、拥塞控制、默认 qdisc 和 iperf3 版本：
 
 ```bash
 env BENCHMARK_HOST='iperf.example.com' \
   BENCHMARK_PORT=5201 \
   BENCHMARK_SECONDS=10 \
+  BENCHMARK_OMIT_SECONDS=3 \
   BENCHMARK_PARALLEL=1 \
+  BENCHMARK_IP_FAMILY=4 \
   BENCHMARK_DIRECTION=both \
+  BENCHMARK_RUN_ID='case-1c1g-ipv4-a1' \
   bash ./debian-vps-tuning.sh benchmark
 ```
 
-该结果只测量 VPS 到 iperf3 服务端的直连 TCP，不经过 VLESS + REALITY + TCP 客户端链路；不能拿公共测试点的单次结果直接判断代理体验。`BENCHMARK_PARALLEL` 限制为 1–4，1C1G/1C2G 的基线测试先用 1。iperf3 参数语义见 [ESnet 官方文档](https://software.es.net/iperf/invoking.html)。
+`BENCHMARK_IP_FAMILY=4` 或 `6` 用于固定地址族，`auto` 继续由系统解析和连接选择；比较 IPv4/IPv6 时必须分别执行并保存默认路由。`BENCHMARK_OMIT_SECONDS=0` 可用于刻意观察包含 slow start 的短连接体验，非零值用于稳态吞吐比较，二者不得混为同一序列。该结果只测量 VPS 到 iperf3 服务端的直连 TCP，不经过 VLESS + REALITY + TCP 客户端链路；不能拿公共测试点的单次结果直接判断代理体验。`BENCHMARK_PARALLEL` 限制为 1–4，1C1G/1C2G 的基线测试先用 1。iperf3 参数语义见 [ESnet 官方文档](https://software.es.net/iperf/invoking.html)。
 
 ## 100–1000 Mbps
 
@@ -510,7 +573,7 @@ env PORT_SPEED_MBPS=1000 \
   bash ./debian13-1c2g-vps-tuning.sh apply
 ```
 
-100–1000 内的任意整数都可以使用，500 Mbps 也在总控菜单中提供。rc.10 默认目标 RTT 为 200 ms，按资源档分别采用 1×、1.25×、1.5×BDP 目标，再向上选择 16/32/64 MiB，并受 512M/1G/2G profile 的 16/32/64 MiB 上限约束：
+100–1000 内的任意整数都可以使用，500 Mbps 也在总控菜单中提供。rc.11 保持 rc.10 的网络参数：默认目标 RTT 为 200 ms，按资源档分别采用 1×、1.25×、1.5×BDP 目标，再向上选择 16/32/64 MiB，并受 512M/1G/2G profile 的 16/32/64 MiB 上限约束：
 
 | 资源档 | BDP 系数 | 100 Mbps | 200 Mbps | 500 Mbps | 1000 Mbps |
 |---|---:|---:|---:|---:|---:|
@@ -537,8 +600,11 @@ env PORT_SPEED_MBPS=1000 \
 | `BENCHMARK_HOST` | 无 | benchmark 必填，用户授权的 iperf3 服务端 |
 | `BENCHMARK_PORT` | `5201` | `1–65535` |
 | `BENCHMARK_SECONDS` | `10` | `5–120`，每个方向 |
+| `BENCHMARK_OMIT_SECONDS` | `3` | `0–10`，每个方向的预热时间，不计入 iperf3 统计 |
 | `BENCHMARK_PARALLEL` | `1` | `1–4` |
+| `BENCHMARK_IP_FAMILY` | `auto` | `auto`、`4` 或 `6` |
 | `BENCHMARK_DIRECTION` | `both` | `upload`、`download` 或 `both` |
+| `BENCHMARK_RUN_ID` | 自动生成 | 可选的 1–96 字符运行标签；仅限字母、数字、点、下划线、冒号和连字符 |
 | `UPDATE_TAG` | 自动发现 | `update` 的目标 Release；等价命令行参数为 `--target` |
 
 不支持自定义 swap 文件路径；脚本只可能创建 `/swapfile-proxy`。
@@ -554,6 +620,12 @@ env PORT_SPEED_MBPS=1000 \
 同一脚本版本、同一参数下重复执行 `apply` 时，脚本先验证当前配置；验证通过后不重复写入。通过总控脚本重复执行 `apply` 且未提供 `--port` 或 `PORT_SPEED_MBPS` 时，会复用状态中已安装的端口带宽；显式参数仍优先。状态版本与当前脚本不同、使用不同资源脚本或改变带宽/缓冲参数时，`apply` 会要求先回滚，避免把“旧配置仍可验证”误报为“新版本已经安装”。
 
 状态更新先由 `jq` 写入同目录临时文件，随后检查命令退出码、非空、仅含一个 JSON 对象及完整 schema，全部通过后才原子替换 `state.json`。空文件、空白文件、多个 JSON 文档或更新失败均不得覆盖上一个有效状态。
+
+### 从 rc.10 升级到 rc.11
+
+rc.11 不改变 rc.10 的 17 个 sysctl、qdisc、swap、journald、NOFILE 或状态 schema；主要变化是增强只读 `diagnose` 和用户授权的 `benchmark`。由于六份 profile 的脚本版本和 SHA-256 已改变，已有 rc.10 状态仍不得直接由 rc.11 重复 `apply`。先用 rc.11 总控执行 `update --target v0.1.0-rc.11` 做只读检查；通过后在维护窗口使用固定且已校验的 rc.10 Release 执行 `verify`、`PURGE_CREATED_SWAP=1 rollback` 和重启，再使用独立目录中的 rc.11 执行 `preflight`、`apply`、重启和严格 `verify`。rc.10 与 rc.11 的总控、清单和 profile 不得放在同一目录。
+
+只需要使用新增诊断或 benchmark、且不需要把管理状态迁移到 rc.11 时，可以继续由已安装的 rc.10 负责配置生命周期，并把 rc.11 profile 放在独立临时目录执行只读 `diagnose` 或显式授权的 `benchmark`；不得用 rc.11 `apply` 覆盖 rc.10 状态。
 
 ### 从 rc.8/rc.9 或旧 v5/v6 升级到 rc.10
 
@@ -645,13 +717,24 @@ rollback 在执行 qdisc 恢复命令后会重新读取实际状态；只有恢�
 - 策略路由、TProxy、网关、Docker 防火墙和复杂 qdisc 不在范围内；
 - 性能结果受 CPU、虚拟化超售、线路、跨境路由、客户端和加密开销影响。
 - 性能验收应分别覆盖 1、3、5、10 并发；脚本不会自动生成代理流量。
-- 2C2G 已纳入 rc.10 资源契约和本地 fixture，真实 VPS 生命周期结果以 [验证矩阵](docs/validation.md) 为准。
+- 2C2G 已纳入 rc.11 资源契约和本地 fixture，真实 VPS 生命周期结果以 [验证矩阵](docs/validation.md) 为准。
 
 详见 [运行验收说明](docs/validation.md)。
 
 ## 安全问题
 
-不要在公开 Issue 中提交密码、UUID、REALITY 私钥、SSH 私钥、API Token、证书私钥或未脱敏的完整代理配置。参见 [SECURITY.md](SECURITY.md)。
+公开文档和 Issue 只应保留与复现直接相关、且不足以定位具体资产的信息，例如操作系统主版本、内核系列、CPU/内存档位、文件系统类型、脱敏后的套餐带宽和验证结论。下列内容不得公开：
+
+- 服务商、机房、区域、订单号和实例 ID；
+- 公网/私网 IP、IPv6 前缀、域名、主机名、默认网关和可关联的 DNS 记录；
+- SSH、面板、订阅、API、监控和代理端口的真实组合；
+- 用户名、密码、UUID、订阅 ID、API Token、Cookie、SSH 私钥、证书私钥、REALITY 私钥和 Short ID；
+- 未脱敏的 3X-UI 数据库、Xray JSON、客户端链接、二维码、日志和截图；
+- TcpQuality 等第三方报告 URL/ID、精确测试时间、boot ID、可反查 run ID 和授权 iperf3 服务端地址。
+
+`diagnose` 可能输出接口地址、路由和中断信息；`DIAG_INCLUDE_SOCKET_DETAILS=1` 还可能输出连接对端。`benchmark` 元数据包含 boot ID、用户指定 host 和 run ID。共享日志前必须逐项脱敏，不能只替换公网 IPv4。公开 Release 的脚本 SHA-256 和项目下载 URL属于供应链校验信息，应保留，不属于 VPS 隐私数据。
+
+发现安全问题时按 [SECURITY.md](SECURITY.md) 提交，不要在公开 Issue 中附带完整资产配置。
 
 ## 许可证
 

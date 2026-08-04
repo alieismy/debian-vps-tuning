@@ -31,15 +31,16 @@
 | C12 | 菜单 `apply` | 再次确认；N/Enter 不 apply | 目标 VPS 待测 |
 | C13 | 无 TTY 且无 action | 返回 usage，不等待输入 | 目标 Linux 待测 |
 | C14 | 状态档位与检测档位不一致 | 阻断，不自动换 profile | fixture 通过；目标 VPS 待测 |
-| C15 | 固定 rc.10 Release assets | 下载清单和唯一 profile，SHA-256 通过 | 本地 fixture 通过；发布后须从公开地址重下载并复核八个资产 |
+| C15 | 固定 rc.11 Release assets | 下载清单和唯一 profile，SHA-256 通过 | 本地 fixture 通过；Release 尚未创建，发布后须从公开地址重下载并复核八个资产 |
 | C16 | 已安装状态下无 `--port`/环境变量地重复 `apply` | 复用状态中的端口带宽；显式参数仍优先；无效状态值阻断 | fixture 通过；目标 VPS 待测 |
-| C17 | `diagnose` | 默认 5 秒前后采样；TCP/softnet 为十进制增量；读取 qdisc、队列、RPS/XPS/IRQ、ethtool 和 Xray sockopt；无系统配置写入、无主动流量 | 静态检查通过；目标 VPS 待测 |
-| C18 | `benchmark` 未提供 host、无 iperf3、无效范围 | 明确拒绝；不安装软件、不改防火墙、不选择公共服务器 | 静态检查通过；目标 VPS 待测 |
-| C19 | 用户授权的 `benchmark` | 仅向指定 iperf3 服务端执行 upload/download/both；并行 1–4；输出 JSON 与计数增量；保留 iperf3 退出码语义 | 目标 VPS 待测 |
+| C17 | `diagnose` | 默认 5 秒前后采样；输出 TCP/softnet、整机 CPU、接口和可识别 ethtool 错误增量；读取 qdisc、队列、RPS/XPS/IRQ、Xray sockopt 和代理进程 CPU time/RSS/线程/FD；无系统配置写入、无主动流量、无进程命令行 | CPU/接口增量 fixture 与结构检查通过；目标 VPS 待测 |
+| C18 | `benchmark` 未提供 host、无 iperf3、无效端口/时长/预热/并行/地址族/run ID | 明确拒绝；不安装软件、不改防火墙、不选择公共服务器 | 参数 fixture 通过；目标 VPS 待测 |
+| C19 | 用户授权的 `benchmark` | 仅向指定 iperf3 服务端执行 upload/download/both；并行 1–4；可固定 IPv4/IPv6；每方向独立输出 JSON、TCP/softnet/CPU/接口/qdisc 证据和运行元数据；保留 iperf3 退出码语义 | 结构检查通过；目标 VPS 待测 |
 | C20 | `update` 自动发现/`--target` | 同一 `major.minor` 内，rc 通道可选更高 rc 或稳定版，稳定通道排除 prerelease；显式目标允许跨线或 prerelease；拒绝降级和重复升级 | 版本优先级、稳定/rc 通道、非法版本 fixture 通过；GitHub API 真实查询待测 |
 | C21 | `update` 只读升级检查 | 校验当前/目标资产，当前 verify、目标 `UPDATE_PREFLIGHT=1 preflight` 通过后输出固定 URL、哈希、端口和人工迁移顺序；不得调用 rollback/purge/apply/reboot | 调用顺序 fixture 与真实 `check_preflight_state` 状态矩阵通过；目标 VPS 只读 update 待测 |
 | C22 | 外部 sysctl 文件以相同值重复定义受管 key | `preflight`/`apply` 阻断；已安装状态的独立 `verify` 返回非零；`diagnose` 只读报告；项目自身文件及其符号链接不误报 | 同值冲突、受管文件别名和外部别名去重 fixture 通过；目标 VPS 负向注入不在生产机执行 |
 | C23 | 旧总控与新版本 `SHA256SUMS`/profile 同目录 | 返回完整性错误，提示可能混用不同 Release 并要求独立目录；不得联网回退或修改系统 | 混合版本目录 fixture 通过；Debian 13 rc.9→rc.10 实测安全拒绝并通过隔离目录恢复 |
+| C24 | `diagnose`/`benchmark` 在 `INT`/`TERM` 中断 | 返回对应信号退出码；只清理本次 root-only 临时目录，不触碰状态或系统配置 | trap 结构检查通过；目标 VPS 待测 |
 
 本地检查入口：
 
@@ -79,9 +80,9 @@ shellcheck -x \
 
 T1、T2 必须通过才能发布首个稳定版；T3、T4 是 Debian 13 稳定版门槛；T5、T6 用于确认 100–1000 Mbps 输入边界，不能用 200 Mbps 的结果代替。T7、T8 用于证明同一 `1c2g` 兼容 profile 在 2 vCPU 下的完整生命周期；T9、T10 用于证明 512 MiB 的缓冲截断、journald、swap 和 3X-UI 生命周期。本地 fixture 不能替代目标机证据。
 
-上述 rc.10 目标机结果绑定测试时日志中的具体 SHA-256。发布前最后两项 Major 仅改变冲突检测、错误说明、文档和测试，不改变写入的 sysctl/qdisc/swap/NOFILE 参数；重新生成后的最终哈希仍须执行本地定向回归。由于当前环境没有这些 VPS 的 SSH 凭据，最终哈希的目标机复核不能由本地 fixture 冒充，作为 Pre-release 的后续确认项保留。
+上述 rc.10 目标机结果绑定测试时日志中的具体 SHA-256。rc.11 不改变写入的 sysctl/qdisc/swap/journald/NOFILE 参数，但脚本版本和哈希已改变，不能继承为 rc.11 目标机通过结论。由于当前环境没有这些 VPS 的 SSH 凭据，rc.11 最终哈希的目标机复核不能由本地 fixture 冒充，作为 Pre-release 的后续确认项保留。
 
-## rc.10 自动缓冲矩阵
+## rc.11 自动缓冲矩阵
 
 该矩阵验证的是输入算法和资源上限，不是吞吐结论。目标 RTT 为 200 ms；512M/1G/2G 的自动目标分别为 1×/1.25×/1.5×BDP，再向上取 16/32/64 MiB 档。
 
@@ -92,7 +93,7 @@ T1、T2 必须通过才能发布首个稳定版；T3、T4 是 Debian 13 稳定�
 | 1C2GB/2C2GB | 16 MiB | 16 MiB | 32 MiB | 64 MiB | 200/500/1000 Mbps 通过；100 待补 |
 | 2C2GB | 16 MiB | 16 MiB | 32 MiB | 64 MiB | 与 1C2GB 共用算法；控制器 CPU fixture 通过，目标机待测 |
 
-对 500/1000 Mbps 的 2G 档，rc.10 与 rc.9 的配置可能不同，必须先通过只读 update 检查，再人工执行 rollback → reboot → preflight → apply → reboot → verify 建立新状态，不得把 rc.9 的 verify 结果记作 rc.10。200 Mbps 主力档的数值虽不变，rc.10 的诊断、TFO 可见性、benchmark 和 update 仍需独立运行验证。
+rc.11 保持 rc.10 的该矩阵。对 500/1000 Mbps 的 2G 档，rc.10/rc.11 与 rc.9 的配置可能不同，必须先通过只读 update 检查，再人工执行 rollback → reboot → preflight → apply → reboot → verify 建立新状态，不得把旧版本的 verify 结果记作 rc.11。200 Mbps 主力档的数值虽不变，rc.11 的增强 diagnose、分方向 benchmark 和迁移路径仍需独立运行验证。
 
 ## 每台目标机的生命周期矩阵
 
@@ -112,8 +113,8 @@ T1、T2 必须通过才能发布首个稳定版；T3、T4 是 Debian 13 稳定�
 | M9 | 普通 `rollback` | 恢复 qdisc/sysctl，删除 drop-in；脚本 swap 默认保留；状态可追溯 | 待执行 | rc.7 实际恢复通过；rc.8 后置验证待复测 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
 | M10 | 回滚后重启 | `status` 正确；无残留 unit/sysctl/journald/drop-in | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
 | M11 | 显式 purge | `swapoff` 成功才删除 swap/fstab 行；失败时保留证据 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
-| M12 | 业务负载期间 `diagnose` | 采样窗口内记录 TCP/softnet 增量、qdisc 前后计数、队列/IRQ 与 Xray sockopt；无配置写入 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
-| M13 | 授权 iperf3 benchmark | 单流优先；保存服务端位置、方向、吞吐、重传、CPU/softnet/qdisc 增量；确认不当作代理业务结果 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M12 | 业务负载期间 `diagnose` | 采样窗口内记录 TCP/softnet/CPU/接口/ethtool 增量、qdisc 前后计数、队列/IRQ、Xray sockopt 和代理进程资源；无配置写入 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M13 | 授权 iperf3 benchmark | 单流优先；固定服务端、地址族、有效时长、预热和 run ID；上传/下载分别保存吞吐、重传、CPU/softnet/接口/qdisc 增量；确认不当作代理业务结果 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
 
 状态初始化还必须覆盖 jq 构造器失败路径：状态 JSON 未成功提交时，不得创建 sysctl、journald、helper、unit 或 x-ui drop-in；脚本应删除本次进程创建的 qdisc 快照、JSON 临时文件和空状态目录，并明确报告“未写入系统配置”。
 
@@ -156,6 +157,18 @@ sysctl 校验应比较归一化后的字段值：内核通过 `sysctl -n` 返回
 | 10 | 设计上限 | 成功连接数、聚合吞吐、p95/p99 RTT、重传、CPU、内存、swap | 10 个连接均建立并持续传输；无 OOM、服务重启或系统失联 |
 
 四个资源档至少各取得 200 Mbps/200 ms 目标下的 1、3、5、10 并发证据。100、500、1000 Mbps 或其他自定义端口值用于带宽边界扩展；高 BDP 线路还要记录实际 RTT 和 profile 是否发生缓冲截断。不同 VPS 的吞吐绝对值不能直接互相替代。
+
+## TcpQuality 重复测试协议
+
+TcpQuality 只作为外部线路观察，不作为 sysctl、qdisc、3X-UI 或代理体验的单独验收。一次测试序列开始前必须固定并保存：
+
+- TcpQuality commit SHA、`runTcpQuality.sh` 和 `runTcpQuality-core.sh` 的 SHA-256；
+- 完整命令行以及显式 `-c`、`-s`、`-p` 和运行模式；不得依赖随机包长默认值；
+- VPS boot ID、内核、profile 脚本 SHA-256、管理状态和 `PORT_SPEED_MBPS`/RTT/BUF_MAX；
+- IPv4/IPv6 默认路由、测试开始/结束时间和 rc.11 `diagnose` 脱敏日志；
+- 报告 ID、debug bundle 和可获得的机器可读结果；只有远程图片时必须标记不可复算。
+
+同一配置至少覆盖低负载、白天和晚高峰，每个时段至少重复 5 次。比较中位数、P95 和异常节点复现率，不比较单次最佳值；工具 commit、节点文件、参数、VPS、内核、profile 或业务负载任一变化都应开始新的序列。即使固定 commit，远端测试节点和运营商路径仍可能变化，不能把时间先后直接解释为脚本因果。
 
 ## 已取得的目标机证据
 

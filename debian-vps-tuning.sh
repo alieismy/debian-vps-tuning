@@ -6,8 +6,8 @@ IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 
-CONTROLLER_VERSION='0.1.0-rc.10'
-RELEASE_TAG='v0.1.0-rc.10'
+CONTROLLER_VERSION='0.1.0-rc.11'
+RELEASE_TAG='v0.1.0-rc.11'
 REPOSITORY='alieismy/debian-vps-tuning'
 RELEASE_BASE_URL="https://github.com/${REPOSITORY}/releases/download/${RELEASE_TAG}"
 
