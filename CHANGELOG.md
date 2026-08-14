@@ -2,6 +2,41 @@
 
 本项目采用 [Semantic Versioning](https://semver.org/)。
 
+## [0.1.0-rc.12] - 2026-08-06
+
+### Added
+
+- `benchmark` 可通过 `BENCHMARK_OUTPUT_DIR` 将原始 iperf3 JSON、分方向结构化摘要、主机 TCP/接口/qdisc 计数器、运行元数据和总结果持久化到新的 root-only 证据目录，并生成可复核的 `SHA256SUMS`；
+- `benchmark` 在产生流量前按显式 `BENCHMARK_RATE_CAP_MBPS` 或合法管理状态中的端口上限估算 payload 流量预算，并把数值、来源、方向数、总时长和“不含协议开销”边界写入运行元数据；
+- 分方向摘要增加 sender 吞吐、sender retransmits、每 GiB 重传数、host-wide TCP/接口增量和 qdisc 增量；存在 `mq` 叶子时汇总 leaf，否则汇总 root，避免 root/leaf 重复计数；
+- 新增独立的 `tcpquality-evidence.sh`，只接受已审计 commit `5d1f85a6b8916b73ec0389dbc9b4ed4aa27dae01`、三个固定脚本哈希和固定 rootfs 哈希，保存三轮原始日志、CSV、节点快照、节点漂移和证据清单。
+- 新增只读 `experiments/htb-aggregate/experiment-plan.sh`，生成可冻结的 A/B/A、反向复验、冷却时间和可选低速控制点 JSON；它不执行流量或系统变更，也不授权持久化整形。
+- 新增厂商 sysctl 配置归属迁移：`preflight` 只读识别 `/etc/sysctl.conf` 中唯一且值严格为 `fq`/`bbr` 的基线，`apply` 完整备份并原子迁移，`verify` 校验双侧哈希，`rollback` 在无外部修改时恢复原文件。
+
+### Changed
+
+- 总控和六份 profile 版本同步为 `0.1.0-rc.12`，固定 Release tag 改为 `v0.1.0-rc.12`；状态 schema 升级为 4，只读 `update-preflight` 保留对合法 schema 3 状态的兼容；
+- benchmark 证据目录采用 `INCOMPLETE → COMPLETED` 终态提交；最终结果绑定核心证据清单哈希，完成标记再绑定清单与结果哈希；计数器缺失/回退、iperf3 字段缺失/类型错误或证据清单校验失败均按验证失败处理；
+- TcpQuality 证据协议从人工约定升级为可执行工具：显式检查每个关键步骤，拒绝覆盖既有目录，验证固定 12 列节点 TSV，记录实际节点 URL、CSV/节点快照哈希，并分别报告逻辑节点增删、节点 IP 变化和精确快照一致性。
+- 已安装参数与本次 `apply` 输入不一致时，明确说明该调用尚未写入，并区分“输入错误直接 verify/按原参数重试”与“确需改参时显式 purge、重启和重新 apply”；避免普通 rollback 留下 `SWAP_RETAINED` 后再二次清理。
+- `/etc/sysctl.conf` 不存在且无需迁移时，新状态中的原始 UID、GID 和 mode 记录为 `null`，不再用 `0/0/000` 表示不存在的文件；脚本仍不创建该文件。状态校验兼容修正前本地候选生成的完整 `0/0/000` 组合，以便安全执行 `verify` 或 `rollback`，但拒绝残缺组合。
+
+### Safety
+
+- 17 个受管 sysctl、BBR/fq、自动缓冲矩阵、swap、journald 和 NOFILE 均未改变；schema 4 仅增加厂商 sysctl 迁移证据和恢复状态；
+- 只有 `/etc/sysctl.conf` 中唯一、规范且相同值的 `fq`/`bbr` 定义可自动迁移；不同值、重复定义、其他受管键、其他 sysctl 文件、符号链接和非 root 所有文件继续阻断。回滚发现迁移后文件被外部修改时拒绝覆盖并保留 `DEGRADED` 状态；
+- `benchmark` 仍只连接用户明确授权的 iperf3 服务端，不安装软件、开放端口或选择公共服务器；持久化目录必须是尚不存在的绝对路径；
+- benchmark 流量估算只是按配置 cap 计算的 payload 上界，不含协议开销；没有显式 cap 或合法管理状态时不猜测数值；
+- TcpQuality 工具不执行 `apt`、`sysctl`、`tc`、systemd、swap、网络配置或第三方安装，只读取已固定依赖并产生测试流量和证据文件。
+- HTB 排程生成器与已完成 smoke/B1 验证的 qdisc 执行脚本 v0.2.1 分离；排程 JSON 不自动调用 `start`、TcpQuality 或 `stop`。
+
+### Validation
+
+- 六份 profile 已由单一模板重新生成；新增 benchmark 缺失/回退计数器、空字段 JSON、`mq` 叶子、manifest 失败终态，以及 TcpQuality pinned 校验失败、节点 schema/漂移 fixture；
+- 本地 Bash 语法、静态门禁、控制器 fixture、生成一致性、固定 ShellCheck 0.11.0 和 Release 清单校验已通过；
+- rc.11 已有 Debian 13、1C1G、200 Mbps 生命周期和固定 TcpQuality S1/S2 私有证据；这些结果用于改进 rc.12 测量方法，不等同于 rc.12 最终哈希的目标 VPS 运行验收。
+- Debian 13、1C1G、100 Mbps、10 GB ext4 的 rc.12 本地候选已完成错误参数拒绝、显式 purge、100 Mbps apply、重启 verify 和幂等门禁，并验证缺失的 `/etc/sysctl.conf` 不会被创建；后续提示与状态语义修正改变了 profile 哈希，最终候选仍须重新绑定哈希验收。
+
 ## [0.1.0-rc.11] - 2026-08-04
 
 ### Added

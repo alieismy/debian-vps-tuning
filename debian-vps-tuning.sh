@@ -6,8 +6,8 @@ IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 
-CONTROLLER_VERSION='0.1.0-rc.11'
-RELEASE_TAG='v0.1.0-rc.11'
+CONTROLLER_VERSION='0.1.0-rc.12'
+RELEASE_TAG='v0.1.0-rc.12'
 REPOSITORY='alieismy/debian-vps-tuning'
 RELEASE_BASE_URL="https://github.com/${REPOSITORY}/releases/download/${RELEASE_TAG}"
 
@@ -71,7 +71,7 @@ Usage:
 
 Options:
   --port MBPS    provider port cap for guided/preflight/apply; default 200
-  --target TAG    update target, for example v0.1.0-rc.11; default is the
+  --target TAG    update target, for example v0.1.0-rc.12; default is the
                   highest non-draft Release in the installed major.minor line;
                   stable installations ignore prereleases automatically
   -h, --help     show this help
@@ -599,6 +599,7 @@ print_execution_plan() {
 confirm_apply() {
   local answer
   is_interactive_terminal || return 1
+  printf 'apply 将写入系统配置；若 preflight 报告可迁移的厂商 fq/bbr 基线，还会先完整备份并迁移 /etc/sysctl.conf 中对应定义。\n'
   printf 'preflight 已通过。是否执行 apply？[y/N]：'
   IFS= read -r answer
   case "$answer" in y | Y | yes | YES) return 0 ;; *) return 1 ;; esac

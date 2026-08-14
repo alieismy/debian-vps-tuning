@@ -7,8 +7,9 @@ IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 
-SCRIPT_VERSION='0.1.0-rc.11'
-STATE_SCHEMA_VERSION=3
+SCRIPT_VERSION='0.1.0-rc.12'
+STATE_SCHEMA_VERSION=4
+LEGACY_STATE_SCHEMA_VERSION=3
 NAMESPACE='proxy-vps'
 MANAGED_MARKER='# Managed by debian-vps-tuning; namespace=proxy-vps'
 
@@ -84,6 +85,7 @@ EXIT_VERIFY=5
 EXIT_ROLLBACK=6
 WARNINGS=0
 APPLY_ACTIVE=0
+PROVIDER_SYSCTL_TRANSFER_REQUIRED=0
 
 PROFILE_SYSCTL_KEYS=(
   net.core.default_qdisc
@@ -199,7 +201,7 @@ validate_inputs() {
 
 missing_commands() {
   local cmd
-  for cmd in awk grep sed sysctl ip tc ss modprobe modinfo systemctl swapon swapoff mkswap findmnt find flock sha256sum pgrep ps jq stat readlink install nproc date; do
+  for cmd in awk grep sed sysctl ip tc ss modprobe modinfo systemctl swapon swapoff mkswap findmnt find flock sha256sum pgrep ps jq stat readlink install nproc date tee sort dirname; do
     command -v "$cmd" >/dev/null 2>&1 || printf '%s\n' "$cmd"
   done
 }
@@ -259,11 +261,16 @@ state_file_is_valid() {
   [ -f "$STATE_FILE" ] && [ ! -L "$STATE_FILE" ] || return 1
   [ "$(stat -c '%u' "$STATE_FILE" 2>/dev/null || true)" = '0' ] || return 1
   [ -s "$STATE_FILE" ] || return 1
-  result="$(jq -c -e -s --argjson schema "$STATE_SCHEMA_VERSION" --arg profile "$PROFILE_ID" '
+  result="$(jq -c -e -s --argjson schema "$STATE_SCHEMA_VERSION" \
+    --argjson legacy_schema "$LEGACY_STATE_SCHEMA_VERSION" --argjson update_preflight "$UPDATE_PREFLIGHT" \
+    --arg version "$SCRIPT_VERSION" --arg profile "$PROFILE_ID" \
+    --arg provider_file "${SYSCTL_SCAN_ROOT}/sysctl.conf" \
+    --arg provider_backup "${STATE_DIR}/provider-sysctl.conf.original" '
     length == 1 and
     (.[0] |
       type == "object" and
-      .schema_version == $schema and
+      ((.schema_version == $schema) or ($update_preflight == 1 and .schema_version == $legacy_schema)) and
+      (.script_version | type == "string") and
       .profile.id == $profile and
       (.state | type == "string") and
       (.network | type == "object") and
@@ -272,7 +279,45 @@ state_file_is_valid() {
       (.qdisc.sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
       (.swap | type == "object") and
       (.managed_files | type == "array") and
-      (.timestamps | type == "object"))
+      (.timestamps | type == "object") and
+      (if .schema_version == $schema then
+        .script_version == $version and
+        (.provider_sysctl_transfer | type == "object") and
+        (.provider_sysctl_transfer.required | type == "boolean") and
+        (.provider_sysctl_transfer.source_path == $provider_file) and
+        (.provider_sysctl_transfer.backup_path == $provider_backup) and
+        (.provider_sysctl_transfer.keys | type == "array") and
+        (.provider_sysctl_transfer.state | IN("NOT_REQUIRED", "DETECTED", "PLANNED", "TRANSFERRED", "RESTORED")) and
+        (if .provider_sysctl_transfer.required then
+          (.provider_sysctl_transfer.original_sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
+          (.provider_sysctl_transfer.original_uid | type == "number") and
+          (.provider_sysctl_transfer.original_gid | type == "number") and
+          (.provider_sysctl_transfer.original_mode | type == "string" and test("^[0-7]{3,4}$")) and
+          (.provider_sysctl_transfer.keys | length > 0 and length <= 2) and
+          (all(.provider_sysctl_transfer.keys[];
+            (.key == "net.core.default_qdisc" and .value == "fq") or
+            (.key == "net.ipv4.tcp_congestion_control" and .value == "bbr"))) and
+          (([.provider_sysctl_transfer.keys[].key] | unique | length) == (.provider_sysctl_transfer.keys | length)) and
+          (if .provider_sysctl_transfer.state == "PLANNED" or .provider_sysctl_transfer.state == "TRANSFERRED" then
+            (.provider_sysctl_transfer.backup_sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
+            (.provider_sysctl_transfer.transferred_sha256 | type == "string" and test("^[0-9a-f]{64}$"))
+          elif .provider_sysctl_transfer.state == "DETECTED" then
+            .provider_sysctl_transfer.backup_sha256 == null and .provider_sysctl_transfer.transferred_sha256 == null
+          else true end)
+        else
+          .provider_sysctl_transfer.state == "NOT_REQUIRED" and
+          .provider_sysctl_transfer.original_sha256 == null and
+          .provider_sysctl_transfer.backup_sha256 == null and
+          .provider_sysctl_transfer.transferred_sha256 == null and
+          ((.provider_sysctl_transfer.original_uid == null and
+            .provider_sysctl_transfer.original_gid == null and
+            .provider_sysctl_transfer.original_mode == null) or
+           (.provider_sysctl_transfer.original_uid == 0 and
+            .provider_sysctl_transfer.original_gid == 0 and
+            .provider_sysctl_transfer.original_mode == "000")) and
+          (.provider_sysctl_transfer.keys | length == 0)
+        end)
+      else true end))
   ' "$STATE_FILE" 2>/dev/null)" || return 1
   [ "$result" = 'true' ]
 }
@@ -373,7 +418,7 @@ check_preflight_state() {
   fi
   case "$phase" in
     VERIFIED | APPLIED)
-      die "$EXIT_CONFLICT" "检测到现有管理状态 ${phase}；已安装配置请执行 verify，需要更改参数时请先 rollback。"
+      die "$EXIT_CONFLICT" "检测到现有管理状态 ${phase}；已安装配置请执行 verify。确需更改参数时，请用 PURGE_CREATED_SWAP=1 执行 rollback，重启后再用新参数执行 preflight/apply。"
       ;;
     SWAP_RETAINED)
       die "$EXIT_CONFLICT" '检测到 SWAP_RETAINED；重新应用前请用 PURGE_CREATED_SWAP=1 执行 rollback。'
@@ -385,9 +430,12 @@ check_preflight_state() {
 }
 
 report_sysctl_conflicts() {
-  local key file found=0 escaped canonical managed_canonical
+  local key file found=0 escaped canonical managed_canonical provider_file expected count
   local -a files=()
   declare -A seen=()
+
+  PROVIDER_SYSCTL_TRANSFER_REQUIRED=0
+  provider_file="${SYSCTL_SCAN_ROOT}/sysctl.conf"
 
   shopt -s nullglob
   files=("${SYSCTL_SCAN_ROOT}/sysctl.conf" "${SYSCTL_SCAN_ROOT}/sysctl.d/"*.conf)
@@ -404,17 +452,33 @@ report_sysctl_conflicts() {
     for key in "${PROFILE_SYSCTL_KEYS[@]}"; do
       escaped="${key//./\\.}"
       if grep -Eq "^[[:space:]]*${escaped}[[:space:]]*=" "$file"; then
-        error "sysctl 冲突：${key} 已在 ${file} 中定义；即使值相同也属于重复配置归属。"
-        found=1
+        expected=''
+        case "$key" in
+          net.core.default_qdisc) expected='fq' ;;
+          net.ipv4.tcp_congestion_control) expected='bbr' ;;
+        esac
+        count="$(grep -Ec "^[[:space:]]*${escaped}[[:space:]]*=" "$file")"
+        if [ "$file" = "$provider_file" ] && [ -n "$expected" ] && [ "$count" -eq 1 ] &&
+          [ ! -L "$file" ] && [ "$(stat -c '%u' "$file" 2>/dev/null || true)" = '0' ] &&
+          grep -Eq "^[[:space:]]*${escaped}[[:space:]]*=[[:space:]]*${expected}[[:space:]]*$" "$file"; then
+          PROVIDER_SYSCTL_TRANSFER_REQUIRED=1
+          warn "检测到可迁移的厂商 sysctl 基线：${key} = ${expected}（${file}）。"
+        else
+          error "sysctl 冲突：${key} 已在 ${file} 中定义；仅 /etc/sysctl.conf 中唯一且值严格为 fq/bbr 的厂商基线可由 apply 事务化迁移。"
+          found=1
+        fi
       fi
     done
   done
+  if [ "$found" -eq 0 ] && [ "$PROVIDER_SYSCTL_TRANSFER_REQUIRED" -eq 1 ]; then
+    warn "preflight 保持只读；apply 将完整备份 ${provider_file}，再把上述配置归属迁移到 ${SYSCTL_FILE}。"
+  fi
   [ "$found" -eq 0 ]
 }
 
 scan_sysctl_conflicts() {
   if ! report_sysctl_conflicts; then
-    die "$EXIT_CONFLICT" '请先人工合并或移除上述重复 sysctl 定义。'
+    die "$EXIT_CONFLICT" '存在不能安全自动迁移的重复 sysctl 定义；请人工确认其归属和目标值。'
   fi
 }
 
@@ -568,7 +632,11 @@ run_preflight() {
   validate_qdisc_topology
   check_swap_preconditions
   show_environment
-  info "预检通过；警告数：${WARNINGS}。"
+  if [ "$PROVIDER_SYSCTL_TRANSFER_REQUIRED" -eq 1 ]; then
+    info "预检通过（PASS_WITH_PROVIDER_SYSCTL_TRANSFER）；apply 将在事务保护下迁移厂商 sysctl 配置归属；警告数：${WARNINGS}。"
+  else
+    info "预检通过；警告数：${WARNINGS}。"
+  fi
 }
 
 write_qdisc_snapshot() {
@@ -599,7 +667,8 @@ original_sysctls_json() {
 }
 
 write_initial_state() {
-  local original qhash now tmp
+  local original qhash now tmp provider_file provider_backup provider_hash='' provider_uid=0 provider_gid=0 provider_mode='000'
+  local provider_required=false provider_state='NOT_REQUIRED' provider_keys='[]'
   mkdir -- "$STATE_DIR" || return 1
   STATE_DIR_CREATED=1
   chmod 0700 "$STATE_DIR" || return 1
@@ -610,6 +679,24 @@ write_initial_state() {
   fi
   qhash="$(sha256sum "$QDISC_STATE_FILE" | awk '{print $1}')"
   now="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+  provider_file="${SYSCTL_SCAN_ROOT}/sysctl.conf"
+  provider_backup="${STATE_DIR}/provider-sysctl.conf.original"
+  if [ "$PROVIDER_SYSCTL_TRANSFER_REQUIRED" -eq 1 ]; then
+    [ -f "$provider_file" ] && [ ! -L "$provider_file" ] || return 1
+    provider_hash="$(sha256sum "$provider_file" | awk '{print $1}')" || return 1
+    provider_uid="$(stat -c '%u' "$provider_file")" || return 1
+    provider_gid="$(stat -c '%g' "$provider_file")" || return 1
+    provider_mode="$(stat -c '%a' "$provider_file")" || return 1
+    provider_required=true
+    provider_state='DETECTED'
+    if grep -Eq '^[[:space:]]*net\.core\.default_qdisc[[:space:]]*=[[:space:]]*fq[[:space:]]*$' "$provider_file"; then
+      provider_keys="$(jq -c '. + [{key:"net.core.default_qdisc",value:"fq"}]' <<<"$provider_keys")" || return 1
+    fi
+    if grep -Eq '^[[:space:]]*net\.ipv4\.tcp_congestion_control[[:space:]]*=[[:space:]]*bbr[[:space:]]*$' "$provider_file"; then
+      provider_keys="$(jq -c '. + [{key:"net.ipv4.tcp_congestion_control",value:"bbr"}]' <<<"$provider_keys")" || return 1
+    fi
+    [ "$(jq 'length' <<<"$provider_keys")" -gt 0 ] || return 1
+  fi
   tmp="$(mktemp "${STATE_FILE}.tmp.XXXXXX")" || return 1
   if ! jq -n \
     --argjson schema "$STATE_SCHEMA_VERSION" --arg version "$SCRIPT_VERSION" \
@@ -621,19 +708,92 @@ write_initial_state() {
     --argjson target_numerator "$BUFFER_TARGET_NUMERATOR" \
     --argjson target_denominator "$BUFFER_TARGET_DENOMINATOR" \
     --arg qfile "$QDISC_STATE_FILE" --arg qhash "$qhash" --arg now "$now" \
-    --argjson original "$original" \
+    --argjson original "$original" --argjson provider_required "$provider_required" \
+    --arg provider_file "$provider_file" --arg provider_backup "$provider_backup" \
+    --arg provider_hash "$provider_hash" --argjson provider_uid "$provider_uid" \
+    --argjson provider_gid "$provider_gid" --arg provider_mode "$provider_mode" \
+    --arg provider_state "$provider_state" --argjson provider_keys "$provider_keys" \
     '{schema_version:$schema,script_version:$version,state:"PREPARED",
       profile:{id:$profile,label:$profile_label,debian_version:$debian,architecture:$arch,kernel_release:$kernel,memory_mib:$mem},
        network:{port_speed_mbps:$port,target_rtt_ms:$rtt,buffer_target_numerator:$target_numerator,buffer_target_denominator:$target_denominator,buffer_max_bytes:$buf,buffer_mode:$mode},
-      original_sysctls:$original,qdisc:{file:$qfile,sha256:$qhash},
-      swap:{created_by_script:false,path:"/swapfile-proxy",size_mib:0,device:0,inode:0,active:false},
-      managed_files:[],timestamps:{prepared:$now,last_update:$now}}' >"$tmp" ||
+       original_sysctls:$original,qdisc:{file:$qfile,sha256:$qhash},
+       swap:{created_by_script:false,path:"/swapfile-proxy",size_mib:0,device:0,inode:0,active:false},
+       provider_sysctl_transfer:{required:$provider_required,source_path:$provider_file,backup_path:$provider_backup,
+         original_sha256:(if $provider_required then $provider_hash else null end),backup_sha256:null,transferred_sha256:null,
+          original_uid:(if $provider_required then $provider_uid else null end),
+          original_gid:(if $provider_required then $provider_gid else null end),
+          original_mode:(if $provider_required then $provider_mode else null end),
+          keys:$provider_keys,state:$provider_state},
+       managed_files:[],timestamps:{prepared:$now,last_update:$now}}' >"$tmp" ||
     ! atomic_json_commit "$STATE_FILE" "$tmp"; then
     rm -f -- "$tmp"
     error '无法创建有效的初始事务状态；未提交空状态文件。'
     return 1
   fi
   state_file_is_valid || { error '初始事务状态写入后校验失败。'; return 1; }
+}
+
+set_provider_sysctl_transfer_state() {
+  local phase="$1" backup_hash="$2" transferred_hash="$3" tmp
+  tmp="$(mktemp "${STATE_FILE}.tmp.XXXXXX")" || return 1
+  if ! jq --arg phase "$phase" --arg backup_hash "$backup_hash" --arg transferred_hash "$transferred_hash" \
+    --arg now "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" '
+      .provider_sysctl_transfer.state=$phase |
+      .provider_sysctl_transfer.backup_sha256=(if $backup_hash == "" then null else $backup_hash end) |
+      .provider_sysctl_transfer.transferred_sha256=(if $transferred_hash == "" then null else $transferred_hash end) |
+      .timestamps.last_update=$now
+    ' "$STATE_FILE" >"$tmp" || ! atomic_json_commit "$STATE_FILE" "$tmp"; then
+    rm -f -- "$tmp"
+    error "无法记录厂商 sysctl 归属迁移状态 ${phase}。"
+    return 1
+  fi
+  state_file_is_valid || { error "厂商 sysctl 归属迁移状态 ${phase} 校验失败。"; return 1; }
+}
+
+transfer_provider_sysctl_ownership() {
+  state_get '.provider_sysctl_transfer.required' | grep -qx true || return 0
+  local source backup original_hash current_hash backup_hash transferred_hash uid gid mode tmp
+  source="$(state_get '.provider_sysctl_transfer.source_path')"
+  backup="$(state_get '.provider_sysctl_transfer.backup_path')"
+  original_hash="$(state_get '.provider_sysctl_transfer.original_sha256')"
+  uid="$(state_get '.provider_sysctl_transfer.original_uid')"
+  gid="$(state_get '.provider_sysctl_transfer.original_gid')"
+  mode="$(state_get '.provider_sysctl_transfer.original_mode')"
+
+  [ -f "$source" ] && [ ! -L "$source" ] || { error "厂商 sysctl 文件类型已变化：${source}"; return 1; }
+  current_hash="$(sha256sum "$source" | awk '{print $1}')" || return 1
+  [ "$current_hash" = "$original_hash" ] || { error "${source} 在 preflight 后发生变化，拒绝迁移。"; return 1; }
+  [ ! -e "$backup" ] && [ ! -L "$backup" ] || { error "厂商 sysctl 备份路径已存在：${backup}"; return 1; }
+  install -o root -g root -m 0600 "$source" "$backup" || return 1
+  backup_hash="$(sha256sum "$backup" | awk '{print $1}')" || return 1
+  [ "$backup_hash" = "$original_hash" ] || { error '厂商 sysctl 备份哈希与原文件不一致。'; return 1; }
+
+  tmp="$(mktemp "${source}.proxy-vps.tmp.XXXXXX")" || return 1
+  if ! awk '
+    /^[[:space:]]*net\.core\.default_qdisc[[:space:]]*=[[:space:]]*fq[[:space:]]*$/ {
+      print "# proxy-vps-tuning: ownership transferred to /etc/sysctl.d/90-proxy-vps.conf"
+      print "# original: " $0
+      next
+    }
+    /^[[:space:]]*net\.ipv4\.tcp_congestion_control[[:space:]]*=[[:space:]]*bbr[[:space:]]*$/ {
+      print "# proxy-vps-tuning: ownership transferred to /etc/sysctl.d/90-proxy-vps.conf"
+      print "# original: " $0
+      next
+    }
+    { print }
+  ' "$source" >"$tmp" || ! chmod "$mode" "$tmp" || ! chown "${uid}:${gid}" "$tmp"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+  transferred_hash="$(sha256sum "$tmp" | awk '{print $1}')" || { rm -f -- "$tmp"; return 1; }
+  [ "$transferred_hash" != "$original_hash" ] || { rm -f -- "$tmp"; error '厂商 sysctl 迁移没有产生预期变更。'; return 1; }
+
+  set_provider_sysctl_transfer_state 'PLANNED' "$backup_hash" "$transferred_hash" || { rm -f -- "$tmp"; return 1; }
+  mv -f -- "$tmp" "$source" || { rm -f -- "$tmp"; return 1; }
+  current_hash="$(sha256sum "$source" | awk '{print $1}')" || return 1
+  [ "$current_hash" = "$transferred_hash" ] || { error '厂商 sysctl 迁移后哈希不匹配。'; return 1; }
+  set_provider_sysctl_transfer_state 'TRANSFERRED' "$backup_hash" "$transferred_hash" || return 1
+  info "已备份并迁移厂商 sysctl 配置归属：${source}；备份：${backup}。"
 }
 
 cleanup_uncommitted_state() {
@@ -948,12 +1108,49 @@ verify_current_qdiscs() {
   [ "$failures" -eq 0 ]
 }
 
+verify_provider_sysctl_transfer() {
+  local required phase source backup expected actual key escaped failures=0
+  required="$(state_get '.provider_sysctl_transfer.required')"
+  phase="$(state_get '.provider_sysctl_transfer.state')"
+  if [ "$required" != 'true' ]; then
+    [ "$phase" = 'NOT_REQUIRED' ] || { error "厂商 sysctl 迁移状态异常：${phase}"; return 1; }
+    return 0
+  fi
+  [ "$phase" = 'TRANSFERRED' ] || { error "厂商 sysctl 迁移尚未完成：${phase}"; return 1; }
+  source="$(state_get '.provider_sysctl_transfer.source_path')"
+  backup="$(state_get '.provider_sysctl_transfer.backup_path')"
+  [ -f "$source" ] && [ ! -L "$source" ] || { error "厂商 sysctl 文件缺失或类型异常：${source}"; failures=$((failures + 1)); }
+  [ -f "$backup" ] && [ ! -L "$backup" ] && [ "$(stat -c '%u' "$backup" 2>/dev/null || true)" = '0' ] || {
+    error "厂商 sysctl 原始备份缺失或所有权异常：${backup}"; failures=$((failures + 1)); }
+  if [ -f "$source" ] && [ ! -L "$source" ]; then
+    expected="$(state_get '.provider_sysctl_transfer.transferred_sha256')"
+    actual="$(sha256sum "$source" | awk '{print $1}')"
+    [ "$actual" = "$expected" ] || { error "厂商 sysctl 迁移后文件哈希不匹配：${source}"; failures=$((failures + 1)); }
+  fi
+  if [ -f "$backup" ] && [ ! -L "$backup" ]; then
+    expected="$(state_get '.provider_sysctl_transfer.backup_sha256')"
+    actual="$(sha256sum "$backup" | awk '{print $1}')"
+    [ "$actual" = "$expected" ] || { error "厂商 sysctl 备份哈希不匹配：${backup}"; failures=$((failures + 1)); }
+    [ "$actual" = "$(state_get '.provider_sysctl_transfer.original_sha256')" ] || {
+      error '厂商 sysctl 备份与原始哈希不一致。'; failures=$((failures + 1)); }
+  fi
+  while IFS= read -r key; do
+    escaped="${key//./\\.}"
+    if [ -f "$source" ] && grep -Eq "^[[:space:]]*${escaped}[[:space:]]*=" "$source"; then
+      error "厂商 sysctl 中仍有已迁移键的有效定义：${key}"
+      failures=$((failures + 1))
+    fi
+  done < <(jq -r '.provider_sysctl_transfer.keys[].key' "$STATE_FILE")
+  [ "$failures" -eq 0 ]
+}
+
 verify_settings() {
   local failures=0 key expected actual qhash unit_path
   state_exists || { error '当前主机尚未安装本项目配置；请先执行 preflight，确认通过后再执行 apply。'; return 1; }
   validate_state_file || return 1
   [ "$(state_get '.state')" = 'APPLIED' ] || [ "$(state_get '.state')" = 'VERIFIED' ] || {
     error "当前状态不允许 verify：$(state_get '.state')"; return 1; }
+  verify_provider_sysctl_transfer || failures=$((failures + 1))
   if ! report_sysctl_conflicts; then
     error '检测到本项目以外的重复 sysctl 配置归属；verify 拒绝通过。'
     failures=$((failures + 1))
@@ -1102,10 +1299,20 @@ sysctl_defined_elsewhere() {
   return 1
 }
 
+provider_sysctl_key_was_transferred() {
+  local key="$1"
+  jq -e --arg key "$key" '
+    .provider_sysctl_transfer.required == true and
+    any(.provider_sysctl_transfer.keys[]; .key == $key)
+  ' "$STATE_FILE" >/dev/null 2>&1
+}
+
 restore_original_sysctls() {
   local key value failures=0
   for key in "${PROFILE_SYSCTL_KEYS[@]}"; do
-    sysctl_defined_elsewhere "$key" && continue
+    if ! provider_sysctl_key_was_transferred "$key" && sysctl_defined_elsewhere "$key"; then
+      continue
+    fi
     value="$(jq -r --arg key "$key" '.original_sysctls[$key] // empty' "$STATE_FILE")"
     [ -n "$value" ] || continue
     if ! sysctl -q -w "${key}=${value}"; then
@@ -1186,10 +1393,89 @@ qdisc_snapshot_matches_current() {
   qdisc_snapshot_semantically_matches_current
 }
 
+provider_sysctl_transfer_matches_original() {
+  state_get '.provider_sysctl_transfer.required' | grep -qx true || return 0
+  local source expected actual
+  source="$(state_get '.provider_sysctl_transfer.source_path')"
+  expected="$(state_get '.provider_sysctl_transfer.original_sha256')"
+  [ -f "$source" ] && [ ! -L "$source" ] || return 1
+  actual="$(sha256sum "$source" 2>/dev/null | awk '{print $1}')"
+  [ "$actual" = "$expected" ]
+}
+
+provider_sysctl_transfer_is_restorable() {
+  state_get '.provider_sysctl_transfer.required' | grep -qx true || return 0
+  local phase source backup original_hash backup_hash transferred_hash current_hash
+  phase="$(state_get '.provider_sysctl_transfer.state')"
+  source="$(state_get '.provider_sysctl_transfer.source_path')"
+  backup="$(state_get '.provider_sysctl_transfer.backup_path')"
+  original_hash="$(state_get '.provider_sysctl_transfer.original_sha256')"
+  backup_hash="$(jq -r '.provider_sysctl_transfer.backup_sha256 // empty' "$STATE_FILE")"
+  transferred_hash="$(jq -r '.provider_sysctl_transfer.transferred_sha256 // empty' "$STATE_FILE")"
+  [ -f "$source" ] && [ ! -L "$source" ] || return 1
+  current_hash="$(sha256sum "$source" 2>/dev/null | awk '{print $1}')"
+  [ "$current_hash" = "$original_hash" ] && return 0
+  case "$phase" in PLANNED | TRANSFERRED) ;; *) return 1 ;; esac
+  [ -n "$transferred_hash" ] && [ "$current_hash" = "$transferred_hash" ] || return 1
+  [ -f "$backup" ] && [ ! -L "$backup" ] && [ "$(stat -c '%u' "$backup" 2>/dev/null || true)" = '0' ] || return 1
+  [ -n "$backup_hash" ] && [ "$backup_hash" = "$original_hash" ] || return 1
+  [ "$(sha256sum "$backup" 2>/dev/null | awk '{print $1}')" = "$original_hash" ]
+}
+
+restore_provider_sysctl_ownership() {
+  state_get '.provider_sysctl_transfer.required' | grep -qx true || return 0
+  local phase source backup original_hash backup_hash transferred_hash current_hash uid gid mode tmp
+  phase="$(state_get '.provider_sysctl_transfer.state')"
+  source="$(state_get '.provider_sysctl_transfer.source_path')"
+  backup="$(state_get '.provider_sysctl_transfer.backup_path')"
+  original_hash="$(state_get '.provider_sysctl_transfer.original_sha256')"
+  backup_hash="$(jq -r '.provider_sysctl_transfer.backup_sha256 // empty' "$STATE_FILE")"
+  transferred_hash="$(jq -r '.provider_sysctl_transfer.transferred_sha256 // empty' "$STATE_FILE")"
+  uid="$(state_get '.provider_sysctl_transfer.original_uid')"
+  gid="$(state_get '.provider_sysctl_transfer.original_gid')"
+  mode="$(state_get '.provider_sysctl_transfer.original_mode')"
+  [ -f "$source" ] && [ ! -L "$source" ] || { error "无法恢复厂商 sysctl：源文件缺失或类型异常：${source}"; return 1; }
+  current_hash="$(sha256sum "$source" | awk '{print $1}')" || return 1
+
+  if [ "$current_hash" = "$original_hash" ]; then
+    set_provider_sysctl_transfer_state 'RESTORED' "$backup_hash" "$transferred_hash"
+    return $?
+  fi
+  case "$phase" in
+    PLANNED | TRANSFERRED)
+      [ -n "$transferred_hash" ] && [ "$current_hash" = "$transferred_hash" ] || {
+        error "${source} 在 apply 后发生外部修改；为避免覆盖管理员变更，拒绝恢复。"
+        return 1
+      }
+      ;;
+    *)
+      error "厂商 sysctl 迁移状态 ${phase} 与当前文件不一致，拒绝恢复。"
+      return 1
+      ;;
+  esac
+  [ -f "$backup" ] && [ ! -L "$backup" ] && [ "$(stat -c '%u' "$backup" 2>/dev/null || true)" = '0' ] || {
+    error "厂商 sysctl 原始备份缺失或所有权异常：${backup}"; return 1; }
+  [ "$(sha256sum "$backup" | awk '{print $1}')" = "$original_hash" ] || {
+    error '厂商 sysctl 原始备份哈希不匹配。'; return 1; }
+  [ "$backup_hash" = "$original_hash" ] || { error '状态中的厂商 sysctl 备份哈希不匹配。'; return 1; }
+
+  tmp="$(mktemp "${source}.proxy-vps.restore.XXXXXX")" || return 1
+  if ! cp -- "$backup" "$tmp" || ! chmod "$mode" "$tmp" || ! chown "${uid}:${gid}" "$tmp" || ! mv -f -- "$tmp" "$source"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+  [ "$(sha256sum "$source" | awk '{print $1}')" = "$original_hash" ] || {
+    error '厂商 sysctl 恢复后哈希不匹配。'; return 1; }
+  set_provider_sysctl_transfer_state 'RESTORED' "$backup_hash" "$transferred_hash" || return 1
+  info "已恢复厂商原始 sysctl 文件：${source}。"
+}
+
 original_sysctls_match_current() {
   local key expected actual
   for key in "${PROFILE_SYSCTL_KEYS[@]}"; do
-    sysctl_defined_elsewhere "$key" && continue
+    if ! provider_sysctl_key_was_transferred "$key" && sysctl_defined_elsewhere "$key"; then
+      continue
+    fi
     expected="$(jq -r --arg key "$key" '.original_sysctls[$key] // empty' "$STATE_FILE")"
     [ -n "$expected" ] || continue
     actual="$(sysctl -n "$key" 2>/dev/null || true)"
@@ -1200,6 +1486,7 @@ original_sysctls_match_current() {
 rollback_already_restored() {
   project_managed_files_exist && return 1
   state_get '.swap.created_by_script' | grep -qx false || return 1
+  provider_sysctl_transfer_matches_original || return 1
   qdisc_snapshot_matches_current || return 1
   original_sysctls_match_current
 }
@@ -1264,6 +1551,11 @@ rollback_internal() {
     [ -e "$path" ] || continue
     assert_owned_file "$path"
   done
+  if ! provider_sysctl_transfer_is_restorable; then
+    error '回滚前检查失败：厂商 sysctl 文件或备份已变化；未停止服务、未恢复 qdisc、未删除项目配置。'
+    state_set_phase 'DEGRADED' || error '同时无法记录 DEGRADED；原状态文件已保留。'
+    return 1
+  fi
   state_set_phase 'ROLLBACK_PENDING' || return 1
   if [ -e "$FQ_SERVICE" ]; then
     if ! systemctl disable --now "$FQ_SERVICE_NAME" >/dev/null 2>&1; then
@@ -1284,6 +1576,12 @@ rollback_internal() {
     else
       info 'qdisc 已恢复并通过原始快照语义验证。'
     fi
+  fi
+  if ! restore_provider_sysctl_ownership; then
+    error '回滚步骤失败：无法安全恢复厂商 sysctl 配置归属。'
+    failures=$((failures + 1))
+    state_set_phase 'DEGRADED' || error '同时无法记录 DEGRADED；原状态文件已保留。'
+    return 1
   fi
   if ! rm -f -- "$SYSCTL_FILE" "$JOURNAL_FILE" "$FQ_HELPER" "$FQ_SERVICE" "$XUI_DROPIN"; then
     error '回滚步骤失败：无法删除一个或多个项目管理文件。'
@@ -1346,7 +1644,7 @@ apply_settings() {
     fi
     saved_port="$(state_get '.network.port_speed_mbps')"; saved_rtt="$(state_get '.network.target_rtt_ms')"; saved_buf="$(state_get '.network.buffer_max_bytes')"
     if [ "$saved_port" != "$PORT_SPEED_MBPS" ] || [ "$saved_rtt" != "$BUFFER_TARGET_RTT_MS" ] || [ "$saved_buf" != "$BUF_MAX" ]; then
-      die "$EXIT_CONFLICT" "已安装参数与当前参数不同：saved(port=${saved_port},rtt=${saved_rtt},buf=${saved_buf}) current(port=${PORT_SPEED_MBPS},rtt=${BUFFER_TARGET_RTT_MS},buf=${BUF_MAX})；请先 rollback。"
+      die "$EXIT_CONFLICT" "已安装参数与当前参数不同：saved(port=${saved_port},rtt=${saved_rtt},buf=${saved_buf}) current(port=${PORT_SPEED_MBPS},rtt=${BUFFER_TARGET_RTT_MS},buf=${BUF_MAX})。本次 apply 尚未写入配置；若只是输入错误，请按已安装参数重试或直接执行 verify。确需改参时，请用 PURGE_CREATED_SWAP=1 执行 rollback，重启后再用新参数执行 preflight/apply。"
     fi
     if [ "$state" = 'VERIFIED' ]; then verify_settings || die "$EXIT_VERIFY" '已安装配置验证失败。'; info '配置已存在且验证通过，无需重复写入。'; return 0; fi
     die "$EXIT_CONFLICT" "存在状态 ${state}；重新应用前请先完成 rollback，保留 swap 时需显式 purge 后再 apply。"
@@ -1357,6 +1655,7 @@ apply_settings() {
   trap 'exit 143' TERM
   write_initial_state || die "$EXIT_CONFLICT" '无法建立初始事务状态。'
   state_set_phase 'APPLYING' || die "$EXIT_CONFLICT" '无法记录 APPLYING。'
+  transfer_provider_sysctl_ownership || die "$EXIT_CONFLICT" '无法安全迁移厂商 sysctl 配置归属。'
   write_sysctl_profile || die "$EXIT_CONFLICT" '无法写入 sysctl 配置。'
   refresh_managed_files || die "$EXIT_CONFLICT" '无法记录 sysctl 文件所有权。'
   write_journal_profile || die "$EXIT_CONFLICT" '无法写入 journald 配置。'
@@ -1490,6 +1789,190 @@ show_counter_delta() {
     NR == FNR {old[$1]=$2; next}
     {delta=$2-(old[$1]+0); printf "[%s] %s=%d\n", prefix, $1, delta}
   ' "$before" "$after"
+}
+
+counter_delta_json() {
+  local before="$1" after="$2"
+  awk -F '\t' '
+    function valid_row(key, value) {
+      return key != "" && value ~ /^[0-9]+$/
+    }
+    FILENAME == ARGV[1] {
+      if (!valid_row($1, $2) || ($1 in old)) exit 40
+      old[$1]=$2
+      old_count++
+      next
+    }
+    {
+      if (!valid_row($1, $2) || ($1 in seen_after)) exit 41
+      if (!($1 in old)) exit 42
+      seen_after[$1]=1
+      after_count++
+      delta=$2-old[$1]
+      if (delta < 0) exit 43
+      output[after_count]=$1 "\t" delta
+    }
+    END {
+      if (old_count == 0 || after_count == 0 || old_count != after_count) exit 44
+      for (key in old) if (!(key in seen_after)) exit 45
+      for (i=1; i<=after_count; i++) print output[i]
+    }
+  ' "$before" "$after" |
+    jq -Rn '[inputs | split("\t") | {key:.[0],value:(.[1] | tonumber)}] | from_entries'
+}
+
+link_total_delta() {
+  local before="$1" after="$2" suffix="$3"
+  local delta_json
+  delta_json="$(counter_delta_json "$before" "$after")" || return "$EXIT_VERIFY"
+  jq -er --arg suffix "$suffix" '
+    [. | to_entries[] | select(.key | endswith($suffix)) | .value] |
+    if length > 0 then add else error("required link counters are missing") end
+  ' <<<"$delta_json"
+}
+
+qdisc_counter_snapshot() {
+  local ifaces_file="$1" iface
+  while IFS= read -r iface; do
+    [ -n "$iface" ] || continue
+    tc -s -d qdisc show dev "$iface" 2>/dev/null |
+      awk -v iface="$iface" '
+        /^qdisc / {
+          kind=$2
+          handle=$3
+          scope="other"
+          for (header_index=4; header_index<=NF; header_index++) {
+            if ($header_index == "root") scope="root"
+            else if ($header_index == "parent" && $(header_index+1) ~ /^:[0-9]+$/) scope="leaf"
+          }
+          key=iface "." scope "." kind "." handle
+          active=1
+          next
+        }
+        active && /^[[:space:]]*Sent / {
+          line=$0
+          gsub(/[(),]/, "", line)
+          count=split(line, field, /[[:space:]]+/)
+          bytes=packets=dropped=overlimits=requeues=""
+          for (i=1; i<=count; i++) {
+            if (field[i] == "Sent") bytes=field[i+1]
+            else if (field[i] == "bytes") packets=field[i+1]
+            else if (field[i] == "dropped") dropped=field[i+1]
+            else if (field[i] == "overlimits") overlimits=field[i+1]
+            else if (field[i] == "requeues") requeues=field[i+1]
+          }
+          if (bytes !~ /^[0-9]+$/ || packets !~ /^[0-9]+$/ || dropped !~ /^[0-9]+$/ ||
+              overlimits !~ /^[0-9]+$/ || requeues !~ /^[0-9]+$/) exit 46
+          print key ".bytes\t" bytes
+          print key ".packets\t" packets
+          print key ".dropped\t" dropped
+          print key ".overlimits\t" overlimits
+          print key ".requeues\t" requeues
+          active=0
+          emitted++
+        }
+        END {if (emitted == 0) exit 47}
+      '
+  done <"$ifaces_file"
+}
+
+build_benchmark_phase_summary() {
+  local label="$1" reverse="$2" tmp_dir="$3"
+  local iperf_json="${tmp_dir}/${label}.iperf3.json"
+  local output_tmp="${tmp_dir}/${label}.summary.json.tmp"
+  local output="${tmp_dir}/${label}.summary.json"
+  local tcp_delta link_delta qdisc_delta tx_bytes rx_bytes
+  tcp_delta="$(counter_delta_json "${tmp_dir}/${label}.tcp.before" "${tmp_dir}/${label}.tcp.after")" || return "$EXIT_VERIFY"
+  link_delta="$(counter_delta_json "${tmp_dir}/${label}.link.before" "${tmp_dir}/${label}.link.after")" || return "$EXIT_VERIFY"
+  qdisc_delta="$(counter_delta_json "${tmp_dir}/${label}.qdisc.before" "${tmp_dir}/${label}.qdisc.after")" || return "$EXIT_VERIFY"
+  tx_bytes="$(link_total_delta "${tmp_dir}/${label}.link.before" "${tmp_dir}/${label}.link.after" '.tx_bytes')" || return "$EXIT_VERIFY"
+  rx_bytes="$(link_total_delta "${tmp_dir}/${label}.link.before" "${tmp_dir}/${label}.link.after" '.rx_bytes')" || return "$EXIT_VERIFY"
+
+  jq -e --arg phase_label "$label" --argjson reverse "$reverse" \
+    --argjson tcp_delta "$tcp_delta" --argjson link_delta "$link_delta" \
+    --argjson qdisc_delta "$qdisc_delta" --argjson host_tx_bytes "$tx_bytes" \
+    --argjson host_rx_bytes "$rx_bytes" '
+      def metric_total($entries; $suffix):
+        [$entries[] | select(.key | endswith($suffix)) | .value] |
+        if length > 0 then add else error("qdisc metric is missing: " + $suffix) end;
+      def totals($entries):
+        (metric_total($entries; ".bytes")) as $bytes |
+        (metric_total($entries; ".packets")) as $packets |
+        (metric_total($entries; ".dropped")) as $dropped |
+        (metric_total($entries; ".overlimits")) as $overlimits |
+        (metric_total($entries; ".requeues")) as $requeues |
+        {
+          bytes_delta:$bytes,
+          packets_delta:$packets,
+          dropped_delta:$dropped,
+          overlimits_delta:$overlimits,
+          requeues_delta:$requeues,
+          dropped_per_gib:(if $bytes > 0 then ($dropped * 1073741824 / $bytes) else null end),
+          overlimits_per_gib:(if $bytes > 0 then ($overlimits * 1073741824 / $bytes) else null end)
+        };
+      (.end.sum_sent // null) as $sent |
+      (.end.sum_received // null) as $received |
+      ($qdisc_delta | to_entries | map(select(.key | contains(".root.")))) as $qdisc_root_entries |
+      ($qdisc_delta | to_entries | map(select(.key | contains(".leaf.")))) as $qdisc_leaf_entries |
+      ($qdisc_root_entries | length > 0) as $has_root |
+      ($qdisc_leaf_entries | length > 0) as $has_leaf |
+      ($qdisc_root_entries | any(.key | contains(".root.mq."))) as $root_is_mq |
+      if (.error? != null) then
+        error("iperf3 JSON reports an error")
+      elif ($sent | type) != "object" or ($received | type) != "object" then
+        error("iperf3 JSON lacks end.sum_sent or end.sum_received")
+      elif ($sent.bytes | type) != "number" or $sent.bytes <= 0 or
+           ($sent.bits_per_second | type) != "number" or $sent.bits_per_second < 0 or
+           ($sent.retransmits | type) != "number" or $sent.retransmits < 0 or
+           ($received.bytes | type) != "number" or $received.bytes <= 0 or
+           ($received.bits_per_second | type) != "number" or $received.bits_per_second < 0 then
+        error("iperf3 JSON contains missing, non-numeric or invalid summary fields")
+      elif ($has_root | not) then
+        error("root qdisc counters are missing")
+      elif $root_is_mq and ($has_leaf | not) then
+        error("mq root exists but managed leaf qdisc counters are missing")
+      else
+        {
+          schema_version:1,
+          direction:$phase_label,
+          reverse:($reverse == 1),
+          sender:{
+            bytes:$sent.bytes,
+            bits_per_second:$sent.bits_per_second,
+            mbps:($sent.bits_per_second/1000000),
+            retransmits:$sent.retransmits,
+            retransmits_per_gib:($sent.retransmits * 1073741824 / $sent.bytes)
+          },
+          receiver:{
+            bytes:$received.bytes,
+            bits_per_second:$received.bits_per_second,
+            mbps:($received.bits_per_second/1000000)
+          },
+          host:{tx_bytes_delta:$host_tx_bytes,rx_bytes_delta:$host_rx_bytes,tcp_delta:$tcp_delta,link_delta:$link_delta},
+          qdisc_delta:$qdisc_delta,
+          qdisc_coverage:{aggregation_source:(if $root_is_mq then "leaf" else "root" end),has_root:$has_root,has_leaf:$has_leaf,root_is_mq:$root_is_mq},
+          qdisc_root_totals:totals($qdisc_root_entries),
+          qdisc_leaf_totals:(if $has_leaf then totals($qdisc_leaf_entries) else null end),
+          qdisc_active_totals:(if $root_is_mq then totals($qdisc_leaf_entries) else totals($qdisc_root_entries) end),
+          interpretation:{
+            iperf_sender_retransmits:"sender-side iperf3 statistic for this direction",
+            host_tcp_delta:"host-wide counters; may include unrelated traffic",
+            qdisc_active_totals:"leaf counters are used when present (for example mq); otherwise root counters are used; local qdisc drops are not remote-path loss"
+          }
+        }
+      end
+    ' "$iperf_json" >"$output_tmp" || { rm -f -- "$output_tmp"; return "$EXIT_VERIFY"; }
+  chmod 0600 "$output_tmp" || { rm -f -- "$output_tmp"; return "$EXIT_VERIFY"; }
+  mv -f -- "$output_tmp" "$output" || return "$EXIT_VERIFY"
+  printf '[benchmark-%s-summary] sender_mbps=%s sender_retransmits=%s sender_retransmits_per_gib=%s host_tcp_retrans_delta=%s host_tx_bytes_delta=%s qdisc_active_drop_delta=%s qdisc_source=%s\n' \
+    "$label" \
+    "$(jq -r '.sender.mbps // "null"' "$output")" \
+    "$(jq -r '.sender.retransmits // "null"' "$output")" \
+    "$(jq -r '.sender.retransmits_per_gib // "null"' "$output")" \
+    "$(jq -r '.host.tcp_delta.TcpRetransSegs // "null"' "$output")" \
+    "$(jq -r '.host.tx_bytes_delta' "$output")" \
+    "$(jq -r '.qdisc_active_totals.dropped_delta' "$output")" \
+    "$(jq -r '.qdisc_coverage.aggregation_source' "$output")"
 }
 
 show_softnet_delta() {
@@ -1675,16 +2158,18 @@ run_benchmark_phase() {
   tcp_counter_snapshot '/proc/net/snmp' '/proc/net/netstat' >"${tmp_dir}/${label}.tcp.before" || return "$EXIT_VERIFY"
   cpu_snapshot '/proc/stat' >"${tmp_dir}/${label}.cpu.before" || return "$EXIT_VERIFY"
   link_counter_snapshot "$ifaces_file" >"${tmp_dir}/${label}.link.before" || return "$EXIT_VERIFY"
+  qdisc_counter_snapshot "$ifaces_file" >"${tmp_dir}/${label}.qdisc.before" || return "$EXIT_VERIFY"
   while IFS= read -r iface; do
     [ -n "$iface" ] || continue
     printf '[benchmark-%s-qdisc-before] interface=%s\n' "$label" "$iface"
-    tc -s -d qdisc show dev "$iface" 2>/dev/null || true
+    tc -s -d qdisc show dev "$iface" 2>/dev/null | tee -a "${tmp_dir}/${label}.qdisc.raw.before" || true
   done <"$ifaces_file"
 
   if [ "$reverse" = '1' ]; then
     if iperf3 --client "$BENCHMARK_HOST_RESOLVED" --port "$BENCHMARK_PORT_RESOLVED" \
       --time "$BENCHMARK_SECONDS_RESOLVED" --omit "$BENCHMARK_OMIT_RESOLVED" \
-      --parallel "$BENCHMARK_PARALLEL_RESOLVED" "${BENCHMARK_FAMILY_ARGS[@]}" --reverse --json; then
+      --parallel "$BENCHMARK_PARALLEL_RESOLVED" "${BENCHMARK_FAMILY_ARGS[@]}" --reverse --json \
+      >"${tmp_dir}/${label}.iperf3.json"; then
       current_rc=0
     else
       current_rc=$?
@@ -1692,17 +2177,20 @@ run_benchmark_phase() {
   else
     if iperf3 --client "$BENCHMARK_HOST_RESOLVED" --port "$BENCHMARK_PORT_RESOLVED" \
       --time "$BENCHMARK_SECONDS_RESOLVED" --omit "$BENCHMARK_OMIT_RESOLVED" \
-      --parallel "$BENCHMARK_PARALLEL_RESOLVED" "${BENCHMARK_FAMILY_ARGS[@]}" --json; then
+      --parallel "$BENCHMARK_PARALLEL_RESOLVED" "${BENCHMARK_FAMILY_ARGS[@]}" --json \
+      >"${tmp_dir}/${label}.iperf3.json"; then
       current_rc=0
     else
       current_rc=$?
     fi
   fi
+  cat "${tmp_dir}/${label}.iperf3.json" 2>/dev/null || true
 
   softnet_snapshot '/proc/net/softnet_stat' >"${tmp_dir}/${label}.softnet.after" || current_rc="$EXIT_VERIFY"
   tcp_counter_snapshot '/proc/net/snmp' '/proc/net/netstat' >"${tmp_dir}/${label}.tcp.after" || current_rc="$EXIT_VERIFY"
   cpu_snapshot '/proc/stat' >"${tmp_dir}/${label}.cpu.after" || current_rc="$EXIT_VERIFY"
   link_counter_snapshot "$ifaces_file" >"${tmp_dir}/${label}.link.after" || current_rc="$EXIT_VERIFY"
+  qdisc_counter_snapshot "$ifaces_file" >"${tmp_dir}/${label}.qdisc.after" || current_rc="$EXIT_VERIFY"
   show_counter_delta "${tmp_dir}/${label}.tcp.before" "${tmp_dir}/${label}.tcp.after" "benchmark-${label}-tcp-delta" || current_rc="$EXIT_VERIFY"
   show_softnet_delta "${tmp_dir}/${label}.softnet.before" "${tmp_dir}/${label}.softnet.after" |
     sed "s/^\[softnet-delta\]/[benchmark-${label}-softnet-delta]/" || current_rc="$EXIT_VERIFY"
@@ -1711,16 +2199,61 @@ run_benchmark_phase() {
   while IFS= read -r iface; do
     [ -n "$iface" ] || continue
     printf '[benchmark-%s-qdisc-after] interface=%s\n' "$label" "$iface"
-    tc -s -d qdisc show dev "$iface" 2>/dev/null || true
+    tc -s -d qdisc show dev "$iface" 2>/dev/null | tee -a "${tmp_dir}/${label}.qdisc.raw.after" || true
   done <"$ifaces_file"
+  if [ "$current_rc" -eq 0 ]; then
+    build_benchmark_phase_summary "$label" "$reverse" "$tmp_dir" || current_rc="$EXIT_VERIFY"
+  fi
   return "$current_rc"
+}
+
+benchmark_traffic_estimate_json() {
+  local cap_mbps="$1" cap_source="$2" seconds="$3" omit="$4" direction="$5"
+  local direction_count per_direction_seconds total_seconds upper_bound_bytes
+  case "$direction" in
+    upload | download) direction_count=1 ;;
+    both) direction_count=2 ;;
+    *) return 1 ;;
+  esac
+  per_direction_seconds=$((seconds + omit))
+  total_seconds=$((per_direction_seconds * direction_count))
+  if [ -z "$cap_mbps" ]; then
+    jq -nc \
+      --arg source unavailable \
+      --argjson direction_count "$direction_count" \
+      --argjson per_direction_seconds "$per_direction_seconds" \
+      --argjson total_seconds "$total_seconds" \
+      '{available:false,cap_mbps:null,cap_source:$source,
+        direction_count:$direction_count,per_direction_seconds:$per_direction_seconds,
+        total_seconds:$total_seconds,payload_upper_bound_bytes:null,
+        protocol_overhead_included:false}'
+    return
+  fi
+  [[ "$cap_mbps" =~ ^[0-9]+$ ]] || return 1
+  upper_bound_bytes=$((cap_mbps * 125000 * total_seconds))
+  jq -nc \
+    --argjson cap_mbps "$cap_mbps" \
+    --arg source "$cap_source" \
+    --argjson direction_count "$direction_count" \
+    --argjson per_direction_seconds "$per_direction_seconds" \
+    --argjson total_seconds "$total_seconds" \
+    --argjson upper_bound_bytes "$upper_bound_bytes" \
+    '{available:true,cap_mbps:$cap_mbps,cap_source:$source,
+      direction_count:$direction_count,per_direction_seconds:$per_direction_seconds,
+      total_seconds:$total_seconds,payload_upper_bound_bytes:$upper_bound_bytes,
+      payload_upper_bound_mib:($upper_bound_bytes/1048576),
+      payload_upper_bound_gib:($upper_bound_bytes/1073741824),
+      protocol_overhead_included:false}'
 }
 
 run_network_benchmark() {
   local host="${BENCHMARK_HOST:-}" port="${BENCHMARK_PORT:-5201}"
   local seconds="${BENCHMARK_SECONDS:-10}" parallel="${BENCHMARK_PARALLEL:-1}"
   local omit="${BENCHMARK_OMIT_SECONDS:-3}" family="${BENCHMARK_IP_FAMILY:-auto}"
-  local direction="${BENCHMARK_DIRECTION:-both}" run_id="${BENCHMARK_RUN_ID:-}" tmp_dir rc=0 current_rc=0
+  local direction="${BENCHMARK_DIRECTION:-both}" run_id="${BENCHMARK_RUN_ID:-}" output_dir="${BENCHMARK_OUTPUT_DIR:-}"
+  local cap_input="${BENCHMARK_RATE_CAP_MBPS:-}" cap_mbps='' cap_source='unavailable' traffic_estimate
+  local tmp_dir rc=0 current_rc=0 persistent_output=0 result_tmp manifest_sha result_sha trap_rc=0
+  local benchmark_failure_stage='initialization'
   local script_hash state_phase state_network iperf_version boot_id
   ensure_required_tools
   check_supported_os
@@ -1757,11 +2290,25 @@ run_network_benchmark() {
     *) die "$EXIT_USAGE" 'BENCHMARK_IP_FAMILY 只能为 auto、4 或 6。' ;;
   esac
   case "$direction" in upload | download | both) ;; *) die "$EXIT_USAGE" 'BENCHMARK_DIRECTION 只能为 upload、download 或 both。' ;; esac
+  if [ -n "$cap_input" ]; then
+    [[ "$cap_input" =~ ^[0-9]{1,6}$ ]] ||
+      die "$EXIT_USAGE" 'BENCHMARK_RATE_CAP_MBPS 必须是 1–100000 的整数。'
+    cap_mbps=$((10#$cap_input))
+    [ "$cap_mbps" -ge 1 ] && [ "$cap_mbps" -le 100000 ] ||
+      die "$EXIT_USAGE" 'BENCHMARK_RATE_CAP_MBPS 必须在 1–100000 之间。'
+    cap_source='explicit'
+  fi
   if [ -z "$run_id" ]; then
     run_id="${SCRIPT_VERSION}-${PROFILE_ID}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
   fi
   [[ "$run_id" =~ ^[A-Za-z0-9._:-]{1,96}$ ]] ||
     die "$EXIT_USAGE" 'BENCHMARK_RUN_ID 只能包含字母、数字、点、下划线、冒号和连字符，长度 1–96。'
+  if [ -n "$output_dir" ]; then
+    [[ "$output_dir" = /* ]] || die "$EXIT_USAGE" 'BENCHMARK_OUTPUT_DIR 必须是绝对路径。'
+    [ ! -e "$output_dir" ] && [ ! -L "$output_dir" ] ||
+      die "$EXIT_CONFLICT" "BENCHMARK_OUTPUT_DIR 已存在，拒绝覆盖：${output_dir}"
+    [ -d "$(dirname "$output_dir")" ] || die "$EXIT_USAGE" 'BENCHMARK_OUTPUT_DIR 的父目录不存在。'
+  fi
 
   BENCHMARK_HOST_RESOLVED="$host"
   BENCHMARK_PORT_RESOLVED="$port"
@@ -1772,10 +2319,22 @@ run_network_benchmark() {
   info 'benchmark 不修改系统配置，但会向用户指定的 iperf3 服务器产生高带宽 TCP 流量。'
   info '该测试测量 VPS 到 iperf3 服务端的直连 TCP，不等同于 VLESS + REALITY + TCP 业务链路。'
   umask 077
-  tmp_dir="$(mktemp -d)" || die "$EXIT_UNSUPPORTED" '无法创建 benchmark 临时目录。'
-  trap 'rm -rf -- "$tmp_dir"' EXIT
-  trap 'exit 130' INT
-  trap 'exit 143' TERM
+  if [ -n "$output_dir" ]; then
+    mkdir -m 0700 -- "$output_dir" || die "$EXIT_UNSUPPORTED" '无法创建 BENCHMARK_OUTPUT_DIR。'
+    tmp_dir="$output_dir"
+    persistent_output=1
+    printf 'status=INCOMPLETE\nstage=%s\nrun_id=%s\nutc=%s\n' \
+      "$benchmark_failure_stage" "$run_id" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"${tmp_dir}/INCOMPLETE"
+    trap 'trap_rc=$?; if [ -d "$tmp_dir" ] && [ ! -f "${tmp_dir}/COMPLETED" ]; then printf "status=INCOMPLETE\nstage=%s\nrun_id=%s\nexit_code=%s\nutc=%s\n" "$benchmark_failure_stage" "$run_id" "$trap_rc" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"${tmp_dir}/INCOMPLETE.tmp" 2>/dev/null && mv -f "${tmp_dir}/INCOMPLETE.tmp" "${tmp_dir}/INCOMPLETE" 2>/dev/null || true; fi; exit "$trap_rc"' EXIT
+    trap 'benchmark_failure_stage=signal-INT; exit 130' INT
+    trap 'benchmark_failure_stage=signal-TERM; exit 143' TERM
+  else
+    tmp_dir="$(mktemp -d)" || die "$EXIT_UNSUPPORTED" '无法创建 benchmark 临时目录。'
+    trap 'rm -rf -- "$tmp_dir"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+  fi
+  benchmark_failure_stage='metadata'
   default_route_ifaces >"${tmp_dir}/ifaces"
   script_hash="$(sha256sum "${BASH_SOURCE[0]}" | awk '{print $1}')"
   iperf_version="$(iperf3 --version 2>&1 | awk 'NR == 1 {print; exit}')"
@@ -1786,9 +2345,21 @@ run_network_benchmark() {
     if state_file_is_valid; then
       state_phase="$(jq -r '.state' "$STATE_FILE")"
       state_network="$(jq -c '.network' "$STATE_FILE")"
+      if [ -z "$cap_mbps" ]; then
+        cap_mbps="$(jq -r 'if (.network.port_speed_mbps | type) == "number" and (.network.port_speed_mbps | floor) == .network.port_speed_mbps and .network.port_speed_mbps >= 1 and .network.port_speed_mbps <= 100000 then .network.port_speed_mbps else empty end' "$STATE_FILE")"
+        [ -z "$cap_mbps" ] || cap_source='managed-state'
+      fi
     else
       state_phase='INVALID'
     fi
+  fi
+  traffic_estimate="$(benchmark_traffic_estimate_json "$cap_mbps" "$cap_source" "$seconds" "$omit" "$direction")" ||
+    die "$EXIT_VERIFY" '无法计算 benchmark 流量估算。'
+  if jq -e '.available == true' <<<"$traffic_estimate" >/dev/null; then
+    info "benchmark payload 估算上界：$(jq -r '.payload_upper_bound_bytes' <<<"$traffic_estimate") 字节 ($(jq -r '.payload_upper_bound_gib | tostring' <<<"$traffic_estimate") GiB)，依据 $(jq -r '.cap_mbps' <<<"$traffic_estimate") Mbps / $(jq -r '.total_seconds' <<<"$traffic_estimate") 秒 / cap_source=$(jq -r '.cap_source' <<<"$traffic_estimate")。"
+    info '该值是按配置带宽上限估算的 iperf payload，不含 TCP/IP/链路层开销；实际计费流量可能不同。'
+  else
+    warn '未提供 BENCHMARK_RATE_CAP_MBPS，且管理状态中没有可信 port_speed_mbps；本次无法量化测试流量。'
   fi
   printf '[benchmark-meta] run_id=%s utc=%s script_version=%s profile=%s script_sha256=%s boot_id=%s state=%s\n' \
     "$run_id" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SCRIPT_VERSION" "$PROFILE_ID" "$script_hash" "${boot_id:-unknown}" "$state_phase"
@@ -1799,17 +2370,97 @@ run_network_benchmark() {
     "$(sysctl -n net.core.default_qdisc 2>/dev/null || true)"
   ip -4 route show default 2>/dev/null || true
   ip -6 route show default 2>/dev/null || true
+  jq -n --arg run_id "$run_id" --arg utc "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --arg script_version "$SCRIPT_VERSION" --arg profile "$PROFILE_ID" --arg script_sha256 "$script_hash" \
+    --arg boot_id "${boot_id:-unknown}" --arg state "$state_phase" --argjson state_network "$state_network" \
+    --arg host "$host" --argjson port "$port" --arg family "$family" --arg direction "$direction" \
+    --argjson seconds "$seconds" --argjson omit_seconds "$omit" --argjson parallel "$parallel" \
+    --arg iperf3 "$iperf_version" --argjson traffic_estimate "$traffic_estimate" \
+    '{schema_version:1,run_id:$run_id,utc:$utc,script_version:$script_version,profile:$profile,script_sha256:$script_sha256,boot_id:$boot_id,state:$state,state_network:$state_network,benchmark:{host:$host,port:$port,family:$family,direction:$direction,seconds:$seconds,omit_seconds:$omit_seconds,parallel:$parallel,iperf3:$iperf3,traffic_estimate:$traffic_estimate}}' \
+    >"${tmp_dir}/benchmark-meta.json"
+  printf '%s\n' 'null' >"${tmp_dir}/upload.summary.json"
+  printf '%s\n' 'null' >"${tmp_dir}/download.summary.json"
 
+  benchmark_failure_stage='upload-phase'
   if [ "$direction" = 'upload' ] || [ "$direction" = 'both' ]; then
     run_benchmark_phase upload 0 "$tmp_dir" "${tmp_dir}/ifaces" || current_rc=$?
     [ "$current_rc" -eq 0 ] || rc="$current_rc"
     current_rc=0
   fi
+  benchmark_failure_stage='download-phase'
   if [ "$direction" = 'download' ] || [ "$direction" = 'both' ]; then
     run_benchmark_phase download 1 "$tmp_dir" "${tmp_dir}/ifaces" || current_rc=$?
     [ "$current_rc" -eq 0 ] || rc="$current_rc"
   fi
-  rm -rf -- "$tmp_dir"
+
+  if [ "$persistent_output" -eq 1 ]; then
+    benchmark_failure_stage='evidence-manifest'
+    (
+      cd "$tmp_dir" || exit "$EXIT_VERIFY"
+      : >SHA256SUMS.tmp
+      while IFS= read -r -d '' file; do
+        sha256sum "${file#./}" >>SHA256SUMS.tmp || exit "$EXIT_VERIFY"
+      done < <(find . -maxdepth 1 -type f \
+        ! -name SHA256SUMS ! -name SHA256SUMS.tmp \
+        ! -name benchmark-result.json ! -name 'benchmark-result.json.tmp' \
+        ! -name INCOMPLETE ! -name INCOMPLETE.tmp \
+        ! -name COMPLETED ! -name COMPLETED.tmp -print0 | sort -z)
+      [ -s SHA256SUMS.tmp ] || exit "$EXIT_VERIFY"
+      chmod 0600 SHA256SUMS.tmp || exit "$EXIT_VERIFY"
+      mv -f SHA256SUMS.tmp SHA256SUMS || exit "$EXIT_VERIFY"
+      sha256sum -c SHA256SUMS
+    ) || rc="$EXIT_VERIFY"
+  fi
+
+  benchmark_failure_stage='final-result'
+  manifest_sha=''
+  if [ "$persistent_output" -eq 1 ] && [ -f "${tmp_dir}/SHA256SUMS" ]; then
+    manifest_sha="$(sha256sum "${tmp_dir}/SHA256SUMS" | awk '{print $1}')" || rc="$EXIT_VERIFY"
+  fi
+  result_tmp="${tmp_dir}/benchmark-result.json.tmp"
+  jq -n --slurpfile meta "${tmp_dir}/benchmark-meta.json" \
+    --slurpfile upload "${tmp_dir}/upload.summary.json" \
+    --slurpfile download "${tmp_dir}/download.summary.json" \
+    --argjson exit_code "$rc" --arg evidence_manifest_sha256 "$manifest_sha" \
+    '{schema_version:1,metadata:$meta[0],phases:{upload:($upload[0] // null),download:($download[0] // null)},evidence_manifest_sha256:(if $evidence_manifest_sha256 == "" then null else $evidence_manifest_sha256 end),exit_code:$exit_code,status:(if $exit_code == 0 then "PASS" else "FAIL" end)}' \
+    >"$result_tmp" || rc="$EXIT_VERIFY"
+  if [ -s "$result_tmp" ] && jq -e 'type == "object" and .schema_version == 1 and (.status == "PASS" or .status == "FAIL")' "$result_tmp" >/dev/null 2>&1; then
+    chmod 0600 "$result_tmp" || rc="$EXIT_VERIFY"
+    mv -f -- "$result_tmp" "${tmp_dir}/benchmark-result.json" || rc="$EXIT_VERIFY"
+  else
+    rm -f -- "$result_tmp"
+    rc="$EXIT_VERIFY"
+  fi
+
+  if [ "$persistent_output" -eq 1 ] && [ "$rc" -eq 0 ]; then
+    benchmark_failure_stage='completion-commit'
+    result_sha="$(sha256sum "${tmp_dir}/benchmark-result.json" | awk '{print $1}')" || rc="$EXIT_VERIFY"
+    if [ "$rc" -eq 0 ]; then
+      printf 'status=COMPLETED\nrun_id=%s\nevidence_manifest_sha256=%s\nresult_sha256=%s\nutc=%s\n' \
+        "$run_id" "$manifest_sha" "$result_sha" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"${tmp_dir}/COMPLETED.tmp" || rc="$EXIT_VERIFY"
+    fi
+    if [ "$rc" -eq 0 ]; then
+      chmod 0600 "${tmp_dir}/COMPLETED.tmp" && mv -f "${tmp_dir}/COMPLETED.tmp" "${tmp_dir}/COMPLETED" && rm -f "${tmp_dir}/INCOMPLETE" || rc="$EXIT_VERIFY"
+    fi
+  fi
+
+  if [ "$rc" -ne 0 ] && [ -f "${tmp_dir}/benchmark-result.json" ]; then
+    benchmark_failure_stage='failure-result'
+    jq --argjson exit_code "$EXIT_VERIFY" '.exit_code=$exit_code | .status="FAIL"' \
+      "${tmp_dir}/benchmark-result.json" >"${tmp_dir}/benchmark-result.json.tmp" 2>/dev/null &&
+      chmod 0600 "${tmp_dir}/benchmark-result.json.tmp" &&
+      mv -f "${tmp_dir}/benchmark-result.json.tmp" "${tmp_dir}/benchmark-result.json" || true
+    rm -f -- "${tmp_dir}/COMPLETED" "${tmp_dir}/COMPLETED.tmp"
+  fi
+  if [ "$persistent_output" -eq 1 ] && [ "$rc" -ne 0 ]; then
+    printf 'status=INCOMPLETE\nstage=%s\nrun_id=%s\nexit_code=%s\nutc=%s\n' \
+      "$benchmark_failure_stage" "$run_id" "$rc" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"${tmp_dir}/INCOMPLETE.tmp" 2>/dev/null &&
+      mv -f "${tmp_dir}/INCOMPLETE.tmp" "${tmp_dir}/INCOMPLETE" 2>/dev/null || true
+  fi
+  [ -f "${tmp_dir}/benchmark-result.json" ] && cat "${tmp_dir}/benchmark-result.json"
+  if [ "$persistent_output" -eq 0 ]; then
+    rm -rf -- "$tmp_dir"
+  fi
   trap - EXIT INT TERM
   [ "$rc" -eq 0 ] || die "$EXIT_VERIFY" "iperf3 benchmark 失败，退出码：${rc}。"
   info 'benchmark 完成；请结合业务流量下的 diagnose 和客户端指标判断。'
@@ -1839,6 +2490,8 @@ Environment:
   BENCHMARK_IP_FAMILY=auto|4|6    default auto
   BENCHMARK_DIRECTION=upload|download|both   default both
   BENCHMARK_RUN_ID=id             optional reproducibility label; safe characters only
+  BENCHMARK_OUTPUT_DIR=/absolute/new/path   optional persistent JSON/evidence directory; must not exist
+  BENCHMARK_RATE_CAP_MBPS=1..100000 optional traffic-estimate cap; installed state is fallback
 EOF_USAGE
 }
 

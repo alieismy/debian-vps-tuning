@@ -1,0 +1,1095 @@
+{
+  "surface": "report",
+  "manifest": {
+    "version": 1,
+    "surface": "report",
+    "title": "VMISS Basic：S2（rc.11 后）日志与 S1b 基线对比",
+    "description": "Debian 13.6、1C1G、固定 TcpQuality 版本与参数下的顺序前后测试分析。",
+    "generatedAt": "2026-08-06T12:17:20Z",
+    "cards": [
+      {
+        "id": "runs",
+        "description": "S2 三轮 TcpQuality、运行时状态和证据门禁均通过。",
+        "dataset": "summary",
+        "sourceId": "analysis_notebook",
+        "metrics": [
+          {
+            "label": "S2 成功运行",
+            "field": "s2_successful_runs",
+            "format": "number",
+            "unit": "/3"
+          }
+        ]
+      },
+      {
+        "id": "return_speed",
+        "description": "9 个国内速度端点各自三轮中位数，再取端点中位数。",
+        "dataset": "summary",
+        "sourceId": "analysis_notebook",
+        "metrics": [
+          {
+            "label": "S2 回程速度",
+            "field": "post_return_mbps",
+            "format": "number",
+            "unit": "Mbps"
+          }
+        ]
+      },
+      {
+        "id": "forward_speed",
+        "description": "9 个国内速度端点各自三轮中位数，再取端点中位数。",
+        "dataset": "summary",
+        "sourceId": "analysis_notebook",
+        "metrics": [
+          {
+            "label": "S2 去程速度",
+            "field": "post_forward_mbps",
+            "format": "number",
+            "unit": "Mbps"
+          }
+        ]
+      },
+      {
+        "id": "latency_delta",
+        "description": "386 个匹配探测端点的阶段中位数差；负值代表 S2 更低。",
+        "dataset": "summary",
+        "sourceId": "analysis_notebook",
+        "metrics": [
+          {
+            "label": "配对延迟变化",
+            "field": "latency_delta_ms",
+            "format": "number",
+            "unit": "ms",
+            "signed": true
+          }
+        ]
+      }
+    ],
+    "charts": [
+      {
+        "id": "throughput_runs",
+        "title": "每轮国内单线程速度中位数",
+        "subtitle": "S2 的回程、去程及两向短板均整体高于 S1b，但去程仍有明显轮次波动。",
+        "type": "bar",
+        "dataset": "throughput_by_run",
+        "sourceId": "analysis_notebook",
+        "encodings": {
+          "x": {
+            "field": "run_label",
+            "type": "ordinal",
+            "label": "运行"
+          },
+          "y": {
+            "field": "mbps",
+            "type": "quantitative",
+            "label": "速度",
+            "format": "number"
+          },
+          "color": {
+            "field": "direction",
+            "type": "nominal",
+            "label": "指标"
+          }
+        },
+        "yAxisTitle": "Mbps",
+        "valueFormat": "number",
+        "layout": "full"
+      },
+      {
+        "id": "zero_loss_segments",
+        "title": "各探测分段零丢包节点占比",
+        "subtitle": "普通三网 IPv4 维持 100%；IPv6 与教育网 IPv6 的波动远大于配对延迟变化。",
+        "type": "bar",
+        "dataset": "zero_loss_segments",
+        "sourceId": "analysis_notebook",
+        "encodings": {
+          "x": {
+            "field": "segment",
+            "type": "ordinal",
+            "label": "探测分段"
+          },
+          "y": {
+            "field": "zero_loss_pct",
+            "type": "quantitative",
+            "label": "零丢包占比",
+            "format": "number"
+          },
+          "color": {
+            "field": "phase",
+            "type": "nominal",
+            "label": "阶段"
+          }
+        },
+        "yAxisTitle": "%",
+        "valueFormat": "number",
+        "layout": "full"
+      },
+      {
+        "id": "retrans_by_run",
+        "title": "每轮内核 TCP 重传密度",
+        "subtitle": "S2 三轮均高于 S1b，S2-r2 尤其突出；fq 本地队列丢弃增量均为 0。",
+        "type": "bar",
+        "dataset": "log_metrics",
+        "sourceId": "analysis_notebook",
+        "encodings": {
+          "x": {
+            "field": "run_label",
+            "type": "ordinal",
+            "label": "运行"
+          },
+          "y": {
+            "field": "tcp_retrans_per_gb",
+            "type": "quantitative",
+            "label": "重传密度",
+            "format": "number"
+          },
+          "color": {
+            "field": "phase",
+            "type": "nominal",
+            "label": "阶段"
+          }
+        },
+        "yAxisTitle": "TcpRetransSegs / GB",
+        "valueFormat": "number",
+        "layout": "full"
+      }
+    ],
+    "tables": [
+      {
+        "id": "endpoint_speed",
+        "title": "国内速度端点阶段中位数",
+        "dataset": "endpoint_speed",
+        "sourceId": "analysis_notebook",
+        "defaultSort": {
+          "field": "shortfall_delta_mbps",
+          "direction": "desc"
+        },
+        "columns": [
+          {
+            "field": "endpoint",
+            "label": "端点",
+            "type": "text"
+          },
+          {
+            "field": "return_mbps_s1",
+            "label": "S1b 回程 Mbps",
+            "format": "number"
+          },
+          {
+            "field": "return_mbps_s2",
+            "label": "S2 回程 Mbps",
+            "format": "number"
+          },
+          {
+            "field": "forward_mbps_s1",
+            "label": "S1b 去程 Mbps",
+            "format": "number"
+          },
+          {
+            "field": "forward_mbps_s2",
+            "label": "S2 去程 Mbps",
+            "format": "number"
+          },
+          {
+            "field": "shortfall_delta_mbps",
+            "label": "短板变化 Mbps",
+            "format": "number",
+            "movement": true
+          }
+        ]
+      },
+      {
+        "id": "probe_segments",
+        "title": "探测分段的三轮中位数",
+        "dataset": "probe_segments",
+        "sourceId": "analysis_notebook",
+        "defaultSort": {
+          "field": "phase_segment",
+          "direction": "asc"
+        },
+        "columns": [
+          {
+            "field": "phase_segment",
+            "label": "阶段 / 分段",
+            "type": "text"
+          },
+          {
+            "field": "nodes",
+            "label": "节点数",
+            "format": "number"
+          },
+          {
+            "field": "zero_loss_pct",
+            "label": "零丢包 %",
+            "format": "number"
+          },
+          {
+            "field": "over_20_loss_pct",
+            "label": ">20% 丢包节点 %",
+            "format": "number"
+          },
+          {
+            "field": "latency_median_ms",
+            "label": "延迟中位数 ms",
+            "format": "number"
+          },
+          {
+            "field": "latency_p95_ms",
+            "label": "延迟 P95 ms",
+            "format": "number"
+          }
+        ]
+      }
+    ],
+    "sources": [
+      {
+        "id": "analysis_notebook",
+        "label": "S1b/S2 固定版本配对分析",
+        "path": "S2-analysis.ipynb",
+        "query": {
+          "engine": "sqlite",
+          "language": "sql",
+          "sql": "SELECT dataset, row_number, payload_json FROM report_datasets ORDER BY dataset, row_number",
+          "description": "Python/pandas 完成清洗和指标计算后，将所有审阅聚合行写入 SQLite；本查询实际读取并重建报告快照。",
+          "executed_at": "2026-08-06T12:17:20Z",
+          "tables_used": [
+            "report_datasets"
+          ],
+          "filters": [
+            "TcpQuality commit 5d1f85a6b8916b73ec0389dbc9b4ed4aa27dae01",
+            "args -c 30 -s 0 -p 16 --all",
+            "probe rows exclude 三网单线程速度 and 三网单线程配置",
+            "phase summaries use median across 3 runs"
+          ],
+          "metric_definitions": {
+            "endpoint phase median": "同一逻辑端点在每阶段 3 次运行的中位数",
+            "shortfall_mbps": "同一速度端点回程与去程 Mbps 的较小值",
+            "tcp_retrans_per_gb": "运行期间 TcpRetransSegs 增量除以 fq qdisc 发送字节增量（十进制 GB）"
+          }
+        }
+      }
+    ],
+    "blocks": [
+      {
+        "id": "title",
+        "type": "markdown",
+        "body": "# VMISS Basic：S2（rc.11 后）日志与 S1b 基线对比"
+      },
+      {
+        "id": "technical_summary",
+        "type": "markdown",
+        "sourceId": "analysis_notebook",
+        "body": "## 技术摘要\n\n**S2 执行与证据门禁通过，rc.11 运行时状态稳定；单线程吞吐提升信号很强，但不能据此宣称所有网络质量指标都改善。** 国内 9 个速度端点的阶段中位数显示：回程端点中位数由 158.8 提升到 392.8 Mbps，去程由 35.8 提升到 122.7 Mbps，8/9 端点的两向短板提高。相反，386 个匹配探测端点的延迟仅下降 0.507 ms，量级很小；S2 的 TCP 重传密度明显升高，必须复验。"
+      },
+      {
+        "id": "metrics",
+        "type": "metric-strip",
+        "cardIds": [
+          "runs",
+          "return_speed",
+          "forward_speed",
+          "latency_delta"
+        ]
+      },
+      {
+        "id": "finding_throughput",
+        "type": "markdown",
+        "sourceId": "analysis_notebook",
+        "body": "## 关键发现 1：吞吐提升明显，但尚非因果证明\n\nS2 回程端点中位数较 S1b 高 147.4%，去程高 242.7%。9 个国内端点的回程均提高，去程 8 个提高。这是 rc.11 最有价值的正向信号，但测试是先 S1b、后 S2 的顺序设计，没有交替回切，因此时段、测速服务端负载和路径变化仍是混杂因素。"
+      },
+      {
+        "id": "throughput_chart",
+        "type": "chart",
+        "chartId": "throughput_runs",
+        "layout": "full"
+      },
+      {
+        "id": "endpoint_table",
+        "type": "table",
+        "tableId": "endpoint_speed",
+        "layout": "full"
+      },
+      {
+        "id": "finding_probe",
+        "type": "markdown",
+        "sourceId": "analysis_notebook",
+        "body": "## 关键发现 2：延迟和探测丢包没有同等级收益\n\n386 个匹配逻辑端点的阶段中位数配对后，延迟变化中位数为 -0.507 ms，四分位区间约 -1.220 至 +0.267 ms。这个差异远小于跨境路径的绝对延迟，也不应解释为 BBR 的核心收益。普通三网 IPv4 三轮中位零丢包率在两阶段均为 100%；IPv6、教育网 IPv6 和大包探测仍有明显轮次波动。"
+      },
+      {
+        "id": "loss_chart",
+        "type": "chart",
+        "chartId": "zero_loss_segments",
+        "layout": "full"
+      },
+      {
+        "id": "probe_table",
+        "type": "table",
+        "tableId": "probe_segments",
+        "layout": "full"
+      },
+      {
+        "id": "finding_retrans",
+        "type": "markdown",
+        "sourceId": "analysis_notebook",
+        "body": "## 关键发现 3：重传代价是当前最大风险\n\nS1b 三轮 TcpRetransSegs 增量为 147、101、59；S2 为 5,652、23,163、2,905。按 fq 发送字节增量归一后，S1b 为 28.7、19.7、13.8 次/GB，S2 为 633.6、2,469.0、283.6 次/GB。六轮 qdisc 本地丢弃增量均为 0，因此现有证据更像端到端路径或高速发送时的丢包/重传，而非本机 fq 队列溢出。该归一化仍可能包含代理后台流量，不能单独归因给 BBR。"
+      },
+      {
+        "id": "retrans_chart",
+        "type": "chart",
+        "chartId": "retrans_by_run",
+        "layout": "full"
+      },
+      {
+        "id": "scope_method",
+        "type": "markdown",
+        "sourceId": "analysis_notebook",
+        "body": "## 范围、数据与方法\n\n环境为 Debian 13.6、kernel 6.12.100+deb13-cloud-amd64、1C1G。S1b 使用 cubic + fq_codel、接收/发送上限 6/4 MiB；S2 使用 rc.11 的 bbr + fq、双向上限 16 MiB。两阶段均固定 TcpQuality commit 5d1f85a6…、rootfs SHA256 db929568…、参数 `-c 30 -s 0 -p 16 --all`，各运行 3 次。探测分析排除了 CSV 中复用字段的速度与配置行；速度分析按逻辑端点先取阶段三轮中位数；延迟与丢包按 386 个匹配逻辑端点配对。"
+      },
+      {
+        "id": "quality_limits",
+        "type": "markdown",
+        "sourceId": "analysis_notebook",
+        "body": "## 数据质量、限制与稳健性\n\nS2 SHA256 清单的 20/20 个文件在本地复核一致，三轮 exit/runtime/evidence gate 均通过。但 S2 首次 preflight 暴露 VPS 上证据目录内容缺失；随后用已知 SHA256 恢复了三份文本证据与固定 TcpQuality 资产并通过 attempt 2。这恢复了字节一致性，却不能恢复原目录连续保管链。另有 91/386 个匹配探测端点在两阶段解析到的 IP 集合不同；全节点快照每轮也有大量 IP 和少量逻辑记录变化。因此，本报告支持“观测到显著吞吐差异”，不支持“已排除路径和时段因素后证明 rc.11 导致该差异”。"
+      },
+      {
+        "id": "next_steps",
+        "type": "markdown",
+        "body": "## 下一步\n\n1. 暂时保留 rc.11，不因当前重传直接回滚；现有运行时与服务门禁均通过。\n2. 在低峰与晚高峰各做至少 3 轮同方法复测，并重点保留 `TcpRetransSegs`、qdisc 字节和速度端点重传。\n3. 若要形成因果结论，应安排维护窗口执行 A/B/A 或交替 A/B（cubic+fq_codel 与 bbr+fq），至少 10 组配对；不能仅比较连续两个时间块。\n4. 另做真实 VLESS + REALITY + TCP 的 1/3/5/10 并发端到端测试；TcpQuality 不经过 3X-UI/Xray，不能代替代理业务验证。\n5. 把 S2-r2 的高重传设为 rc.12 候选门禁：增加每 GB 重传密度、轮间离散度和异常阈值报告，而不是立刻改更多 sysctl。"
+      },
+      {
+        "id": "questions",
+        "type": "markdown",
+        "body": "## 尚待回答的问题\n\n- S2 的吞吐提升在不同日期和时段是否仍能复现？\n- S2-r2 的系统性高重传是端点负载、路径瞬时拥塞，还是 BBR 高速发送下的稳定现象？\n- 真实代理业务在并发、CPU/steal、首包时间和应用层吞吐上是否获得同方向收益？"
+      }
+    ]
+  },
+  "snapshot": {
+    "version": 1,
+    "generatedAt": "2026-08-06T12:17:20Z",
+    "status": "ready",
+    "datasets": {
+      "endpoint_speed": [
+        {
+          "endpoint": "电信上海",
+          "return_mbps_s1": 178.7,
+          "return_mbps_s2": 394.0,
+          "forward_mbps_s1": 127.4,
+          "forward_mbps_s2": 81.1,
+          "shortfall_delta_mbps": -46.3
+        },
+        {
+          "endpoint": "电信北京",
+          "return_mbps_s1": 158.8,
+          "return_mbps_s2": 355.9,
+          "forward_mbps_s1": 60.5,
+          "forward_mbps_s2": 144.9,
+          "shortfall_delta_mbps": 84.4
+        },
+        {
+          "endpoint": "电信广东",
+          "return_mbps_s1": 161.9,
+          "return_mbps_s2": 347.0,
+          "forward_mbps_s1": 18.4,
+          "forward_mbps_s2": 53.2,
+          "shortfall_delta_mbps": 34.8
+        },
+        {
+          "endpoint": "移动上海",
+          "return_mbps_s1": 181.4,
+          "return_mbps_s2": 537.8,
+          "forward_mbps_s1": 23.4,
+          "forward_mbps_s2": 25.8,
+          "shortfall_delta_mbps": 2.4
+        },
+        {
+          "endpoint": "移动北京",
+          "return_mbps_s1": 145.0,
+          "return_mbps_s2": 392.8,
+          "forward_mbps_s1": 102.0,
+          "forward_mbps_s2": 126.3,
+          "shortfall_delta_mbps": 24.3
+        },
+        {
+          "endpoint": "移动广东",
+          "return_mbps_s1": 123.6,
+          "return_mbps_s2": 480.0,
+          "forward_mbps_s1": 35.8,
+          "forward_mbps_s2": 150.0,
+          "shortfall_delta_mbps": 114.2
+        },
+        {
+          "endpoint": "联通上海",
+          "return_mbps_s1": 158.6,
+          "return_mbps_s2": 459.9,
+          "forward_mbps_s1": 24.4,
+          "forward_mbps_s2": 154.3,
+          "shortfall_delta_mbps": 129.9
+        },
+        {
+          "endpoint": "联通北京",
+          "return_mbps_s1": 162.4,
+          "return_mbps_s2": 337.9,
+          "forward_mbps_s1": 81.8,
+          "forward_mbps_s2": 122.7,
+          "shortfall_delta_mbps": 40.9
+        },
+        {
+          "endpoint": "联通广东",
+          "return_mbps_s1": 143.4,
+          "return_mbps_s2": 303.9,
+          "forward_mbps_s1": 29.8,
+          "forward_mbps_s2": 86.9,
+          "shortfall_delta_mbps": 57.1
+        }
+      ],
+      "log_metrics": [
+        {
+          "run_label": "S1-r1",
+          "phase": "S1",
+          "egress_gb": 5.116,
+          "tcp_retrans_delta": 147,
+          "tcp_retrans_per_gb": 28.7,
+          "lost_retrans_delta": 7,
+          "qdisc_drop_delta": 0,
+          "tcpquality_exit_ok": true,
+          "runtime_gate_ok": false,
+          "evidence_gate_ok": false
+        },
+        {
+          "run_label": "S1-r2",
+          "phase": "S1",
+          "egress_gb": 5.131,
+          "tcp_retrans_delta": 101,
+          "tcp_retrans_per_gb": 19.7,
+          "lost_retrans_delta": 0,
+          "qdisc_drop_delta": 0,
+          "tcpquality_exit_ok": true,
+          "runtime_gate_ok": false,
+          "evidence_gate_ok": false
+        },
+        {
+          "run_label": "S1-r3",
+          "phase": "S1",
+          "egress_gb": 4.291,
+          "tcp_retrans_delta": 59,
+          "tcp_retrans_per_gb": 13.8,
+          "lost_retrans_delta": 0,
+          "qdisc_drop_delta": 0,
+          "tcpquality_exit_ok": true,
+          "runtime_gate_ok": false,
+          "evidence_gate_ok": false
+        },
+        {
+          "run_label": "S2-r1",
+          "phase": "S2",
+          "egress_gb": 8.92,
+          "tcp_retrans_delta": 5652,
+          "tcp_retrans_per_gb": 633.6,
+          "lost_retrans_delta": 2,
+          "qdisc_drop_delta": 0,
+          "tcpquality_exit_ok": true,
+          "runtime_gate_ok": true,
+          "evidence_gate_ok": true
+        },
+        {
+          "run_label": "S2-r2",
+          "phase": "S2",
+          "egress_gb": 9.381,
+          "tcp_retrans_delta": 23163,
+          "tcp_retrans_per_gb": 2469.0,
+          "lost_retrans_delta": 52,
+          "qdisc_drop_delta": 0,
+          "tcpquality_exit_ok": true,
+          "runtime_gate_ok": true,
+          "evidence_gate_ok": true
+        },
+        {
+          "run_label": "S2-r3",
+          "phase": "S2",
+          "egress_gb": 10.244,
+          "tcp_retrans_delta": 2905,
+          "tcp_retrans_per_gb": 283.6,
+          "lost_retrans_delta": 0,
+          "qdisc_drop_delta": 0,
+          "tcpquality_exit_ok": true,
+          "runtime_gate_ok": true,
+          "evidence_gate_ok": true
+        }
+      ],
+      "manifest_metrics": [
+        {
+          "file": "S2-D13-pinned-post-rc11-launcher.txt",
+          "exists": true,
+          "sha256_ok": true
+        },
+        {
+          "file": "S2-D13-pinned-post-rc11-nodes-all-r1-after.tsv",
+          "exists": true,
+          "sha256_ok": true
+        },
+        {
+          "file": "S2-D13-pinned-post-rc11-nodes-all-r1-before.tsv",
+          "exists": true,
+          "sha256_ok": true
+        },
+        {
+          "file": "S2-D13-pinned-post-rc11-nodes-all-r2-after.tsv",
+          "exists": true,
+          "sha256_ok": true
+        },
+        {
+          "file": "S2-D13-pinned-post-rc11-nodes-all-r2-before.tsv",
+          "exists": true,
+          "sha256_ok": true
+        },
+        {
+          "file": "S2-D13-pinned-post-rc11-nodes-all-r3-after.tsv",
+          "exists": true,
+          "sha256_ok": true
+        },
+        {
+          "file": "S2-D13-pinned-post-rc11-nodes-all-r3-before.tsv",
+          "exists": true,
+          "sha256_ok": true
+        },
+        {
+          "file": "S2-D13-pinned-post-rc11-nodes-tos-r1-after.tsv",
+          "exists": true,
+          "sha256_ok": true
+        },
+        {
+          "file": "S2-D13-pinned-post-rc11-nodes-tos-r1-before.tsv",
+          "exists": true,
+          "sha256_ok": true
+        },
+        {
+          "file": "S2-D13-pinned-post-rc11-nodes-tos-r2-after.tsv",
+          "exists": true,
+          "sha256_ok": true
+        },
+        {
+          "file": "S2-D13-pinned-post-rc11-nodes-tos-r2-before.tsv",
+          "exists": true,
+          "sha256_ok": true
+        },
+        {
+          "file": "S2-D13-pinned-post-rc11-nodes-tos-r3-after.tsv",
+          "exists": true,
+          "sha256_ok": true
+        },
+        {
+          "file": "S2-D13-pinned-post-rc11-nodes-tos-r3-before.tsv",
+          "exists": true,
+          "sha256_ok": true
+        },
+        {
+          "file": "S2-D13-pinned-post-rc11-preflight-attempt2.txt",
+          "exists": true,
+          "sha256_ok": true
+        },
+        {
+          "file": "S2-D13-pinned-post-rc11-preflight.txt",
+          "exists": true,
+          "sha256_ok": true
+        },
+        {
+          "file": "S2-D13-pinned-post-rc11-tcpq-r1.txt",
+          "exists": true,
+          "sha256_ok": true
+        },
+        {
+          "file": "S2-D13-pinned-post-rc11-tcpq-r2.txt",
+          "exists": true,
+          "sha256_ok": true
+        },
+        {
+          "file": "S2-D13-pinned-post-rc11-tcpq-r3.txt",
+          "exists": true,
+          "sha256_ok": true
+        },
+        {
+          "file": "S2-D13-pinned-post-rc11-tcpq-summary.txt",
+          "exists": true,
+          "sha256_ok": true
+        },
+        {
+          "file": "run-S2-D13-pinned-post-rc11-v2.sh",
+          "exists": true,
+          "sha256_ok": true
+        }
+      ],
+      "node_metrics": [
+        {
+          "phase": "S1",
+          "scope": "all",
+          "run": 1,
+          "rows": 269,
+          "logical_left_only": 8,
+          "logical_right_only": 8,
+          "ip_changed": 122
+        },
+        {
+          "phase": "S1",
+          "scope": "all",
+          "run": 2,
+          "rows": 269,
+          "logical_left_only": 7,
+          "logical_right_only": 7,
+          "ip_changed": 105
+        },
+        {
+          "phase": "S1",
+          "scope": "all",
+          "run": 3,
+          "rows": 269,
+          "logical_left_only": 9,
+          "logical_right_only": 9,
+          "ip_changed": 35
+        },
+        {
+          "phase": "S1",
+          "scope": "tos",
+          "run": 1,
+          "rows": 21,
+          "logical_left_only": 8,
+          "logical_right_only": 8,
+          "ip_changed": 6
+        },
+        {
+          "phase": "S1",
+          "scope": "tos",
+          "run": 2,
+          "rows": 21,
+          "logical_left_only": 7,
+          "logical_right_only": 7,
+          "ip_changed": 5
+        },
+        {
+          "phase": "S1",
+          "scope": "tos",
+          "run": 3,
+          "rows": 21,
+          "logical_left_only": 9,
+          "logical_right_only": 9,
+          "ip_changed": 8
+        },
+        {
+          "phase": "S2",
+          "scope": "all",
+          "run": 1,
+          "rows": 269,
+          "logical_left_only": 6,
+          "logical_right_only": 6,
+          "ip_changed": 103
+        },
+        {
+          "phase": "S2",
+          "scope": "all",
+          "run": 2,
+          "rows": 269,
+          "logical_left_only": 5,
+          "logical_right_only": 5,
+          "ip_changed": 33
+        },
+        {
+          "phase": "S2",
+          "scope": "all",
+          "run": 3,
+          "rows": 269,
+          "logical_left_only": 6,
+          "logical_right_only": 6,
+          "ip_changed": 117
+        },
+        {
+          "phase": "S2",
+          "scope": "tos",
+          "run": 1,
+          "rows": 21,
+          "logical_left_only": 6,
+          "logical_right_only": 6,
+          "ip_changed": 4
+        },
+        {
+          "phase": "S2",
+          "scope": "tos",
+          "run": 2,
+          "rows": 21,
+          "logical_left_only": 5,
+          "logical_right_only": 5,
+          "ip_changed": 6
+        },
+        {
+          "phase": "S2",
+          "scope": "tos",
+          "run": 3,
+          "rows": 21,
+          "logical_left_only": 6,
+          "logical_right_only": 6,
+          "ip_changed": 4
+        }
+      ],
+      "probe_segments": [
+        {
+          "phase": "S1",
+          "segment": "CERNET IPv4",
+          "nodes": 31,
+          "zero_loss_pct": 93.548,
+          "over_20_loss_pct": 3.226,
+          "loss_p95_pct": 1.665,
+          "latency_median_ms": 168.593,
+          "latency_p95_ms": 240.914,
+          "phase_segment": "S1 / CERNET IPv4"
+        },
+        {
+          "phase": "S1",
+          "segment": "CERNET2 IPv6",
+          "nodes": 31,
+          "zero_loss_pct": 35.484,
+          "over_20_loss_pct": 16.129,
+          "loss_p95_pct": 66.665,
+          "latency_median_ms": 187.183,
+          "latency_p95_ms": 213.427,
+          "phase_segment": "S1 / CERNET2 IPv6"
+        },
+        {
+          "phase": "S1",
+          "segment": "IPv4大包 IPv4",
+          "nodes": 93,
+          "zero_loss_pct": 97.849,
+          "over_20_loss_pct": 0.0,
+          "loss_p95_pct": 0.0,
+          "latency_median_ms": 162.183,
+          "latency_p95_ms": 188.233,
+          "phase_segment": "S1 / IPv4大包 IPv4"
+        },
+        {
+          "phase": "S1",
+          "segment": "三网 IPv4",
+          "nodes": 93,
+          "zero_loss_pct": 100.0,
+          "over_20_loss_pct": 0.0,
+          "loss_p95_pct": 0.0,
+          "latency_median_ms": 162.177,
+          "latency_p95_ms": 184.315,
+          "phase_segment": "S1 / 三网 IPv4"
+        },
+        {
+          "phase": "S1",
+          "segment": "三网 IPv6",
+          "nodes": 93,
+          "zero_loss_pct": 69.892,
+          "over_20_loss_pct": 7.527,
+          "loss_p95_pct": 23.33,
+          "latency_median_ms": 163.53,
+          "latency_p95_ms": 180.999,
+          "phase_segment": "S1 / 三网 IPv6"
+        },
+        {
+          "phase": "S1",
+          "segment": "国际互联 IPv4",
+          "nodes": 45,
+          "zero_loss_pct": 97.778,
+          "over_20_loss_pct": 0.0,
+          "loss_p95_pct": 0.0,
+          "latency_median_ms": 2.987,
+          "latency_p95_ms": 62.904,
+          "phase_segment": "S1 / 国际互联 IPv4"
+        },
+        {
+          "phase": "S2",
+          "segment": "CERNET IPv4",
+          "nodes": 31,
+          "zero_loss_pct": 96.774,
+          "over_20_loss_pct": 3.226,
+          "loss_p95_pct": 0.0,
+          "latency_median_ms": 168.067,
+          "latency_p95_ms": 238.36,
+          "phase_segment": "S2 / CERNET IPv4"
+        },
+        {
+          "phase": "S2",
+          "segment": "CERNET2 IPv6",
+          "nodes": 31,
+          "zero_loss_pct": 35.484,
+          "over_20_loss_pct": 12.903,
+          "loss_p95_pct": 100.0,
+          "latency_median_ms": 186.332,
+          "latency_p95_ms": 212.959,
+          "phase_segment": "S2 / CERNET2 IPv6"
+        },
+        {
+          "phase": "S2",
+          "segment": "IPv4大包 IPv4",
+          "nodes": 93,
+          "zero_loss_pct": 95.699,
+          "over_20_loss_pct": 1.075,
+          "loss_p95_pct": 0.0,
+          "latency_median_ms": 162.583,
+          "latency_p95_ms": 186.033,
+          "phase_segment": "S2 / IPv4大包 IPv4"
+        },
+        {
+          "phase": "S2",
+          "segment": "三网 IPv4",
+          "nodes": 93,
+          "zero_loss_pct": 100.0,
+          "over_20_loss_pct": 0.0,
+          "loss_p95_pct": 0.0,
+          "latency_median_ms": 161.56,
+          "latency_p95_ms": 185.32,
+          "phase_segment": "S2 / 三网 IPv4"
+        },
+        {
+          "phase": "S2",
+          "segment": "三网 IPv6",
+          "nodes": 93,
+          "zero_loss_pct": 68.817,
+          "over_20_loss_pct": 1.075,
+          "loss_p95_pct": 16.67,
+          "latency_median_ms": 162.893,
+          "latency_p95_ms": 179.774,
+          "phase_segment": "S2 / 三网 IPv6"
+        },
+        {
+          "phase": "S2",
+          "segment": "国际互联 IPv4",
+          "nodes": 45,
+          "zero_loss_pct": 95.556,
+          "over_20_loss_pct": 0.0,
+          "loss_p95_pct": 0.0,
+          "latency_median_ms": 2.273,
+          "latency_p95_ms": 59.887,
+          "phase_segment": "S2 / 国际互联 IPv4"
+        }
+      ],
+      "summary": [
+        {
+          "s2_successful_runs": 3,
+          "manifest_ok": 20,
+          "manifest_total": 20,
+          "post_return_mbps": 392.8,
+          "post_forward_mbps": 122.7,
+          "latency_delta_ms": -0.5069999999999952
+        }
+      ],
+      "throughput_by_run": [
+        {
+          "phase": "S1",
+          "run": 1,
+          "run_label": "S1-r1",
+          "direction": "回程速度中位数",
+          "mbps": 155.1
+        },
+        {
+          "phase": "S1",
+          "run": 2,
+          "run_label": "S1-r2",
+          "direction": "回程速度中位数",
+          "mbps": 161.9
+        },
+        {
+          "phase": "S1",
+          "run": 3,
+          "run_label": "S1-r3",
+          "direction": "回程速度中位数",
+          "mbps": 157.9
+        },
+        {
+          "phase": "S2",
+          "run": 1,
+          "run_label": "S2-r1",
+          "direction": "回程速度中位数",
+          "mbps": 426.3
+        },
+        {
+          "phase": "S2",
+          "run": 2,
+          "run_label": "S2-r2",
+          "direction": "回程速度中位数",
+          "mbps": 355.9
+        },
+        {
+          "phase": "S2",
+          "run": 3,
+          "run_label": "S2-r3",
+          "direction": "回程速度中位数",
+          "mbps": 429.6
+        },
+        {
+          "phase": "S1",
+          "run": 1,
+          "run_label": "S1-r1",
+          "direction": "去程速度中位数",
+          "mbps": 20.3
+        },
+        {
+          "phase": "S1",
+          "run": 2,
+          "run_label": "S1-r2",
+          "direction": "去程速度中位数",
+          "mbps": 65.5
+        },
+        {
+          "phase": "S1",
+          "run": 3,
+          "run_label": "S1-r3",
+          "direction": "去程速度中位数",
+          "mbps": 76.4
+        },
+        {
+          "phase": "S2",
+          "run": 1,
+          "run_label": "S2-r1",
+          "direction": "去程速度中位数",
+          "mbps": 122.7
+        },
+        {
+          "phase": "S2",
+          "run": 2,
+          "run_label": "S2-r2",
+          "direction": "去程速度中位数",
+          "mbps": 134.3
+        },
+        {
+          "phase": "S2",
+          "run": 3,
+          "run_label": "S2-r3",
+          "direction": "去程速度中位数",
+          "mbps": 126.3
+        },
+        {
+          "phase": "S1",
+          "run": 1,
+          "run_label": "S1-r1",
+          "direction": "两向短板中位数",
+          "mbps": 20.3
+        },
+        {
+          "phase": "S1",
+          "run": 2,
+          "run_label": "S1-r2",
+          "direction": "两向短板中位数",
+          "mbps": 65.5
+        },
+        {
+          "phase": "S1",
+          "run": 3,
+          "run_label": "S1-r3",
+          "direction": "两向短板中位数",
+          "mbps": 76.4
+        },
+        {
+          "phase": "S2",
+          "run": 1,
+          "run_label": "S2-r1",
+          "direction": "两向短板中位数",
+          "mbps": 122.7
+        },
+        {
+          "phase": "S2",
+          "run": 2,
+          "run_label": "S2-r2",
+          "direction": "两向短板中位数",
+          "mbps": 134.3
+        },
+        {
+          "phase": "S2",
+          "run": 3,
+          "run_label": "S2-r3",
+          "direction": "两向短板中位数",
+          "mbps": 126.3
+        }
+      ],
+      "zero_loss_segments": [
+        {
+          "phase": "S1",
+          "segment": "CERNET IPv4",
+          "zero_loss_pct": 93.548
+        },
+        {
+          "phase": "S1",
+          "segment": "CERNET2 IPv6",
+          "zero_loss_pct": 35.484
+        },
+        {
+          "phase": "S1",
+          "segment": "IPv4大包 IPv4",
+          "zero_loss_pct": 97.849
+        },
+        {
+          "phase": "S1",
+          "segment": "三网 IPv4",
+          "zero_loss_pct": 100.0
+        },
+        {
+          "phase": "S1",
+          "segment": "三网 IPv6",
+          "zero_loss_pct": 69.892
+        },
+        {
+          "phase": "S1",
+          "segment": "国际互联 IPv4",
+          "zero_loss_pct": 97.778
+        },
+        {
+          "phase": "S2",
+          "segment": "CERNET IPv4",
+          "zero_loss_pct": 96.774
+        },
+        {
+          "phase": "S2",
+          "segment": "CERNET2 IPv6",
+          "zero_loss_pct": 35.484
+        },
+        {
+          "phase": "S2",
+          "segment": "IPv4大包 IPv4",
+          "zero_loss_pct": 95.699
+        },
+        {
+          "phase": "S2",
+          "segment": "三网 IPv4",
+          "zero_loss_pct": 100.0
+        },
+        {
+          "phase": "S2",
+          "segment": "三网 IPv6",
+          "zero_loss_pct": 68.817
+        },
+        {
+          "phase": "S2",
+          "segment": "国际互联 IPv4",
+          "zero_loss_pct": 95.556
+        }
+      ]
+    }
+  },
+  "sources": [
+    {
+      "id": "analysis_notebook",
+      "label": "S1b/S2 固定版本配对分析",
+      "path": "S2-analysis.ipynb",
+      "query": {
+        "engine": "sqlite",
+        "language": "sql",
+        "sql": "SELECT dataset, row_number, payload_json FROM report_datasets ORDER BY dataset, row_number",
+        "description": "Python/pandas 完成清洗和指标计算后，将所有审阅聚合行写入 SQLite；本查询实际读取并重建报告快照。",
+        "executed_at": "2026-08-06T12:17:20Z",
+        "tables_used": [
+          "report_datasets"
+        ],
+        "filters": [
+          "TcpQuality commit 5d1f85a6b8916b73ec0389dbc9b4ed4aa27dae01",
+          "args -c 30 -s 0 -p 16 --all",
+          "probe rows exclude 三网单线程速度 and 三网单线程配置",
+          "phase summaries use median across 3 runs"
+        ],
+        "metric_definitions": {
+          "endpoint phase median": "同一逻辑端点在每阶段 3 次运行的中位数",
+          "shortfall_mbps": "同一速度端点回程与去程 Mbps 的较小值",
+          "tcp_retrans_per_gb": "运行期间 TcpRetransSegs 增量除以 fq qdisc 发送字节增量（十进制 GB）"
+        }
+      }
+    }
+  ]
+}

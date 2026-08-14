@@ -14,7 +14,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Check generated profiles and shell structure
-        run: bash tests/static-check.sh
+        run: |
+          bash tests/static-check.sh
+          bash experiments/htb-aggregate/tests/static-check.sh
 
       - name: ShellCheck 0.11.0
         run: |
@@ -34,6 +36,8 @@ jobs:
             debian13-1c512m-vps-tuning.sh \
             debian13-1c1g-vps-tuning.sh \
             debian13-1c2g-vps-tuning.sh \
+            tcpquality-evidence.sh \
+            experiments/htb-aggregate/experiment-plan.sh \
             tests/static-check.sh \
             tests/controller-check.sh \
             .tmp/ci-helpers/*.helper
