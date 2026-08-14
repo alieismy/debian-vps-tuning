@@ -2,3 +2,5 @@
 *.bak
 .tmp/
 SHA256SUMS.local
+__pycache__/
+*.py[cod]

@@ -107,10 +107,10 @@ for invalid_port in 99 1001 20000 abc 20.0 ''; do
   fi
 done
 
-release_is_newer v0.1.0-rc.11 0.1.0-rc.10 || fail 'rc.11 was not newer than rc.10'
+release_is_newer v0.1.0-rc.12 0.1.0-rc.11 || fail 'rc.12 was not newer than rc.11'
 release_is_newer v0.1.0 0.1.0-rc.999999999 || fail 'stable release was not newer than prerelease'
 release_is_newer v0.2.0-rc.1 0.1.9 || fail 'minor release comparison failed'
-if release_is_newer v0.1.0-rc.10 0.1.0-rc.11; then
+if release_is_newer v0.1.0-rc.11 0.1.0-rc.12; then
   fail 'downgrade tag was considered newer'
 fi
 if parse_release_version latest >/dev/null 2>&1; then
@@ -209,8 +209,8 @@ fi
 
 ACTION=''
 CLI_UPDATE_TAG=''
-parse_arguments update --target v0.1.0-rc.11
-if [ "$ACTION" != update ] || [ "$CLI_UPDATE_TAG" != v0.1.0-rc.11 ]; then
+parse_arguments update --target v0.1.0-rc.12
+if [ "$ACTION" != update ] || [ "$CLI_UPDATE_TAG" != v0.1.0-rc.12 ]; then
   fail 'update --target parsing failed'
 fi
 
