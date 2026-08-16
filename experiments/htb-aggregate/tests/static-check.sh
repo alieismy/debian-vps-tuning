@@ -7,7 +7,8 @@ test_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 experiment_dir="$(cd -- "${test_dir}/.." && pwd)"
 script="${experiment_dir}/htb-aggregate-experiment.sh"
 plan_script="${experiment_dir}/experiment-plan.sh"
-doc="${experiment_dir}/../../docs/experiments/vmiss-basic-200mbps-htb-aba.md"
+legacy_doc="${experiment_dir}/../../docs/experiments/vmiss-basic-200mbps-htb-aba.md"
+doc="${experiment_dir}/../../docs/experiments/vmiss-1c2g-200mbps-htb-aba.md"
 
 bash -n "$script"
 bash -n "$plan_script"
@@ -94,6 +95,71 @@ QDISC_JSON='[{"kind":"fq","handle":"8001:","root":true}]'
 CLASS_JSON='[]'
 verify_plain_fq_topology eth0
 
+fixture_dir="$(mktemp -d)"
+trap 'rm -rf -- "$fixture_dir"' EXIT
+MANAGED_STATE_FILE="${fixture_dir}/managed-state.json"
+STATE_FILE="${fixture_dir}/active.json"
+normalized_sysctl() {
+  case "$1" in
+    net.ipv4.tcp_congestion_control) printf 'bbr\n' ;;
+    net.core.default_qdisc) printf 'fq\n' ;;
+    net.ipv4.tcp_rmem) printf '4096 131072 16777216\n' ;;
+    net.ipv4.tcp_wmem) printf '4096 65536 16777216\n' ;;
+    *) return 1 ;;
+  esac
+}
+systemctl() {
+  [ "$1" = 'is-active' ]
+}
+write_managed_fixture() {
+  local profile="$1" schema="${2:-4}" version="${3:-0.1.0-rc.12}" port="${4:-200}"
+  jq -n \
+    --arg profile "$profile" \
+    --arg version "$version" \
+    --argjson schema "$schema" \
+    --argjson port "$port" \
+    '{schema_version:$schema,script_version:$version,state:"VERIFIED",
+      profile:{id:$profile},network:{port_speed_mbps:$port}}' >"$MANAGED_STATE_FILE"
+}
+
+write_managed_fixture debian13-1c1g
+verify_managed_host_baseline
+write_managed_fixture debian13-1c2g
+verify_managed_host_baseline
+for rejected_profile in debian12-1c2g debian13-2c2g arbitrary-profile; do
+  write_managed_fixture "$rejected_profile"
+  if (verify_managed_host_baseline) >/dev/null 2>&1; then
+    printf 'managed baseline accepted unsupported profile: %s\n' "$rejected_profile" >&2
+    exit 1
+  fi
+done
+write_managed_fixture debian13-1c2g 3
+if (verify_managed_host_baseline) >/dev/null 2>&1; then
+  printf 'managed baseline accepted schema 3\n' >&2
+  exit 1
+fi
+write_managed_fixture debian13-1c2g 4 0.1.0-rc.11
+if (verify_managed_host_baseline) >/dev/null 2>&1; then
+  printf 'managed baseline accepted rc.11\n' >&2
+  exit 1
+fi
+write_managed_fixture debian13-1c2g 4 0.1.0-rc.12 500
+if (verify_managed_host_baseline) >/dev/null 2>&1; then
+  printf 'managed baseline accepted 500 Mbps\n' >&2
+  exit 1
+fi
+
+write_managed_fixture debian13-1c2g
+managed_hash="$(managed_state_sha256)"
+jq -n --arg hash "$managed_hash" \
+  '{managed_profile_id:"debian13-1c2g",managed_state_sha256:$hash}' >"$STATE_FILE"
+verify_active_managed_binding
+write_managed_fixture debian13-1c1g
+if (verify_active_managed_binding) >/dev/null 2>&1; then
+  printf 'active binding accepted managed profile/hash drift\n' >&2
+  exit 1
+fi
+
 grep -Fq 'qdisc replace dev "$iface" parent 1:10 handle 10: fq' "$script"
 if grep -Fq 'qdisc add dev ${iface} parent 1:10' "$script"; then
   printf 'legacy leaf qdisc add command is still present\n' >&2
@@ -110,9 +176,14 @@ grep -Fq '2>&1 | tee -a "$B1_AFTER_LOG"' "$doc"
 grep -Fq 'if run_smoke_gate; then' "$doc"
 grep -Fq 'SMOKE_GATE=FAIL' "$doc"
 grep -Fq 'experiment-plan.sh' "$doc"
+grep -Fq 'TOOL_VERSION='"'"'0.3.0'"'"'' "$script"
+grep -Fq 'managed_state_sha256' "$script"
+grep -Fq 'debian13-1c2g' "$script"
 grep -Fq 'A1-fq' "$plan_script"
 grep -Fq 'B2-htb-candidate' "$plan_script"
 grep -Fq 'C1-htb-control' "$plan_script"
+legacy_script_sha256='5b0bd160205f9408514d067e9faeb229f58b800f40e39412b9e221929772ca1a'
+grep -Fq "'${legacy_script_sha256}'" "$legacy_doc"
 script_sha256="$(sha256sum "$script" | awk '{print $1}')"
 grep -Fq "'${script_sha256}'" "$doc"
 
