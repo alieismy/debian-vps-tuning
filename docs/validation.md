@@ -45,6 +45,7 @@
 | C26 | 厂商 `/etc/sysctl.conf` 唯一且相同值的 `fq`/`bbr` 基线 | `preflight` 零写入并报告 `PASS_WITH_PROVIDER_SYSCTL_TRANSFER`；`apply` 提交 schema 4 状态后完整备份并原子迁移；`verify` 校验原始/迁移后哈希；`rollback` 恢复原文件和安装前运行值；外部修改时拒绝覆盖并保留 `DEGRADED` | 只读分类、迁移/恢复、外部修改拒绝和 schema 3 仅限 update-preflight fixture 通过；Debian 12/13 目标 VPS 生命周期待测 |
 | C27 | benchmark 流量预算 | 显式 `BENCHMARK_RATE_CAP_MBPS` 优先，否则只使用合法管理状态的端口上限；按 `(seconds+omit)×方向数` 计算 payload 上界并写入元数据；无可信 cap 时报告不可估算；非法 cap 阻断 | 显式 cap、无 cap、非法 cap、单/双方向公式和持久化元数据 fixture 通过；计费流量与真实吞吐不由静态检查证明 |
 | C28 | HTB 实验排程生成器 | 只输出 JSON；支持首轮 A/B/A、可选反向第二周期、至少 300 秒冷却及候选结论关闭后的低速 A/C/A；不得执行 qdisc、流量或持久化 | 两周期、单周期、180 Mbit/s 控制、非法冷却和非法控制速率 fixture 通过；目标机执行仍按独立 SOP 门禁 |
+| C29 | HTB v0.3.0 执行器基线绑定 | 只接受 rc.12 schema 4、`VERIFIED`、200 Mbps 的 Debian 13 1C1G/1C2G；活动状态保存实际 profile 和 managed-state SHA-256；profile/state 漂移、旧版本或其他端口必须拒绝继续 | 两个允许 profile 及 profile/schema/version/port/hash 负向 fixture 通过；1C2G 目标机 smoke/A/B/A 待执行 |
 
 本地检查入口：
 
@@ -60,6 +61,7 @@ shellcheck -x \
   debian13-1c1g-vps-tuning.sh \
   debian13-1c2g-vps-tuning.sh \
   tcpquality-evidence.sh \
+  experiments/htb-aggregate/htb-aggregate-experiment.sh \
   experiments/htb-aggregate/experiment-plan.sh \
   tests/static-check.sh \
   tests/controller-check.sh
@@ -77,7 +79,7 @@ bash experiments/htb-aggregate/tests/static-check.sh
 | T1 | Debian 12 | 1C1G | 10 GB / XFS | 200 Mbps | `6.1.0-51-cloud-amd64` | 主力/首要门槛 | rc.8 退出、rc.10 apply、重启严格 verify、重复 apply 通过；最终修复哈希待目标机复核 |
 | T2 | Debian 12 | 1C2G | 15 GB / XFS | 200 Mbps | `6.1.0-51-cloud-amd64` | 主力/首要门槛 | 旧状态经 rc.8 profile 退出、rc.10 apply、重启严格 verify、重复 apply 通过；最终修复哈希待目标机复核 |
 | T3 | Debian 13 | 1C1G | 约 10 GB / ext4 | 200 Mbps | `6.12.100+deb13-cloud-amd64` | 系统兼容 | rc.11 preflight/apply、立即与重启 verify、幂等门禁及固定 TcpQuality S1/S2 通过；rc.12 最终哈希待测 |
-| T4 | Debian 13 | 1C2G | 以实机为准 | 200 Mbps | `6.12.100+deb13-cloud-amd64` | 系统兼容 | 待执行 |
+| T4 | Debian 13 | 1C2G | 15 GB / ext4 | 200 Mbps | `6.12.101+deb13-cloud-amd64` | 系统兼容 | rc.12 profile 哈希绑定的 preflight/apply、立即与重启后 verify、重复 apply 通过；代理与 HTB A/B/A 待执行 |
 | T5 | Debian 12/13 | 1C1G | 10 GB / XFS 或 ext4 | 100 Mbps | 以实机为准 | 低带宽边界 | Debian 12 v5→rc.10 路径通过；Debian 13 rc.12 本地候选完成错误参数拒绝、purge、apply、重启 verify 和幂等门禁；最终修复哈希及严格代理验证待复核 |
 | T6 | Debian 13 | 1C1G | 容量未采集 / ext4 | 1000 Mbps | `6.12.100+deb13-amd64` | 高带宽边界 | rc.9 完整退出和 swap 所有权迁移、rc.10 apply、重启严格 verify、BBR/fq/swap、重复 apply 通过；最终修复哈希待目标机复核 |
 | T7 | Debian 12 | 2C2G | 以实机为准 | 200 Mbps | `6.1.x`，以实机为准 | 2C2G 资源契约 | 待执行 |
@@ -108,13 +110,13 @@ rc.12 保持 rc.11/rc.10 的该矩阵。对 500/1000 Mbps 的 2G 档，rc.10–r
 
 | 阶段 | 操作 | 关键判据 | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8 | T9 | T10 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| M0 | 基线采集 | OS、内核、CPU、内存、根文件系统、磁盘、双栈、qdisc、swap 可追溯 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 部分完成，磁盘容量与地址未采集 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M0 | 基线采集 | OS、内核、CPU、内存、根文件系统、磁盘、双栈、qdisc、swap 可追溯 | 待执行 | 待执行 | 待执行 | rc.12 通过 | 待执行 | 部分完成，磁盘容量与地址未采集 | 待执行 | 待执行 | 待执行 | 待执行 |
 | M1 | 未安装状态执行 `verify` | 退出码 5；提示先运行 `preflight`/`apply`；无系统写入 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
-| M2 | `preflight` | 退出码 0；识别资源档和文件系统；无系统写入 | 待执行 | rc.7 通过 | 待执行 | 待执行 | rc.12 修正前候选通过 | rc.9 通过 | 待执行 | 待执行 | 待执行 | 待执行 |
-| M3 | `apply` | 退出码 0；状态为 `VERIFIED`；含 NOFILE drop-in，swap/qdisc 符合预期 | 待执行 | rc.7 通过 | 待执行 | 待执行 | rc.12 修正前候选通过 | rc.9 通过 | 待执行 | 待执行 | 待执行 | 待执行 |
-| M4 | 立即 `verify` | 退出码 0；sysctl、qdisc、journald、swap、drop-in 一致 | 待执行 | rc.7 通过 | 待执行 | 待执行 | rc.12 修正前候选通过 | rc.9 通过 | 待执行 | 待执行 | 待执行 | 待执行 |
-| M5 | 重启后 `verify` | 退出码 0；BBR、fq、sysctl、swap 持久 | 待执行 | rc.7 通过 | 待执行 | 待执行 | rc.12 修正前候选通过 | rc.9 通过 | 待执行 | 待执行 | 待执行 | 待执行 |
-| M6 | 重复 `apply` | 退出码 0；报告无需重复写入；无重复 fstab/unit | 待执行 | rc.7 通过 | 待执行 | 待执行 | rc.12 修正前候选通过 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M2 | `preflight` | 退出码 0；识别资源档和文件系统；无系统写入 | 待执行 | rc.7 通过 | 待执行 | rc.12 通过（含厂商 sysctl 迁移门禁） | rc.12 修正前候选通过 | rc.9 通过 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M3 | `apply` | 退出码 0；状态为 `VERIFIED`；含 NOFILE drop-in，swap/qdisc 符合预期 | 待执行 | rc.7 通过 | 待执行 | rc.12 通过 | rc.12 修正前候选通过 | rc.9 通过 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M4 | 立即 `verify` | 退出码 0；sysctl、qdisc、journald、swap、drop-in 一致 | 待执行 | rc.7 通过 | 待执行 | rc.12 通过 | rc.12 修正前候选通过 | rc.9 通过 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M5 | 重启后 `verify` | 退出码 0；BBR、fq、sysctl、swap 持久 | 待执行 | rc.7 通过 | 待执行 | rc.12 通过 | rc.12 修正前候选通过 | rc.9 通过 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M6 | 重复 `apply` | 退出码 0；报告无需重复写入；无重复 fstab/unit | 待执行 | rc.7 通过 | 待执行 | rc.12 通过 | rc.12 修正前候选通过 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
 | M7 | 安装 3X-UI 后严格验证 | `REQUIRE_PROXY_SERVICE=1 verify` 通过；x-ui/Xray 运行时 NOFILE ≥ 65536 | 待执行 | rc.7 通过 | 待执行 | 待执行 | 待执行 | rc.9 安装后及再次重启后通过 | 待执行 | 待执行 | 待执行 | 待执行 |
 | M8 | VLESS + REALITY + TCP | IPv4/IPv6 按实际能力建立连接；连续传输无异常 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
 | M9 | 普通 `rollback` | 恢复 qdisc/sysctl，删除 drop-in；脚本 swap 默认保留；状态可追溯 | 待执行 | rc.7 实际恢复通过；rc.8 后置验证待复测 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
@@ -180,6 +182,8 @@ rc.12 的 `tcpquality-evidence.sh` 必须使用预先固定的本地目录、roo
 一次 smoke 或同日配对序列至少重复 3 次；要形成性能结论，同一配置还应覆盖低负载、白天和晚高峰，每个时段至少重复 5 次。比较中位数、P95 和异常节点复现率，不比较单次最佳值；工具 commit、节点集合、参数、VPS、内核、profile 或业务负载任一变化都应开始新的序列。即使固定 commit，远端测试节点和运营商路径仍可能变化，不能把时间先后直接解释为脚本因果。
 
 ## 已取得的目标机证据
+
+2026-08-16，一台脱敏的 Debian 13.6、1 vCPU、1974 MiB、15 GB ext4、200 Mbps、内核 `6.12.101+deb13-cloud-amd64` 目标机，使用 `debian13-1c2g` rc.12 profile（SHA-256 `4381df00360eea2c0396184c40cb4157d12bd79f204eebdaf06069df609f4f1f`）完成只读 preflight、厂商 `/etc/sysctl.conf` 中 `fq`/`bbr` 归属迁移、apply、立即 verify、重启后 boot ID/受管文件哈希复核和重复 apply 幂等门禁。终态为 schema 4 `VERIFIED`、BBR、根 `fq`、16 MiB TCP 缓冲上限、活动项目 swap 和 active `proxy-vps-fq.service`。该证据覆盖 T4 的 M0、M2–M6；未执行未安装状态 M1、代理严格验证、真实业务、benchmark 或 HTB A/B/A，不得上推为这些阶段通过。
 
 2026-08-02，Debian 12 1C1G、1000 Mbps 目标机使用 rc.6 完成受控空状态恢复，随后 `preflight` 通过。`apply` 已写入并切换到 fq，但 `verify` 把 `tcp_rmem`/`tcp_wmem` 的制表符对齐误判为值不一致，因此事务按设计自动回滚；日志确认“回滚完成，管理状态已清理”。这证明 recover 和该次失败回滚路径通过，不代表 M3 apply 通过，也不代表 rc.7 已在目标机通过。
 

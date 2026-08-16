@@ -2,6 +2,21 @@
 
 本项目采用 [Semantic Versioning](https://semver.org/)。
 
+## [Unreleased]
+
+### Added
+
+- 新增独立的 VMISS Debian 13 1C2G / 200 Mbps HTB A/B/A SOP，使用与历史 1C1G 证据隔离的目录、10 秒 smoke gate、A1/B1/A2 冷却和人工恢复边界。
+
+### Changed
+
+- 临时 HTB 执行器升级为 v0.3.0：严格限定 rc.12 schema 4、`VERIFIED`、200 Mbps 的 `debian13-1c1g`/`debian13-1c2g`，并把实际 profile 和 managed-state SHA-256 写入活动状态；实验期间发生 profile/state 漂移时拒绝继续或按旧假设 stop。
+
+### Validation
+
+- 两个允许 profile 及不支持 profile、旧 schema、旧 rc、错误端口和活动 state 哈希漂移的静态 fixture 已覆盖；Debian 13 1C2G 的 rc.12 生命周期基线已冻结，HTB smoke 与 A/B/A 仍待目标机执行。
+- 原 1C1G/v0.2.1 SOP 和运行哈希保持不变，不把历史运行证据上推为 v0.3.0 或 1C2G 通过。
+
 ## [0.1.0-rc.12] - 2026-08-06
 
 ### Added

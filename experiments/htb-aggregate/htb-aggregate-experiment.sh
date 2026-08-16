@@ -7,9 +7,11 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 
-TOOL_VERSION='0.2.1'
+TOOL_VERSION='0.3.0'
 EXPECTED_IFACE='eth0'
 EXPECTED_PORT_MBIT=200
+EXPECTED_MANAGED_STATE_SCHEMA=4
+EXPECTED_TUNING_VERSION='0.1.0-rc.12'
 DEFAULT_RATE_MBIT=190
 BURST_BYTES=262144
 CBURST_BYTES=32768
@@ -97,14 +99,28 @@ normalized_sysctl() {
   sysctl -n "$1" 2>/dev/null | awk '{$1=$1; print}'
 }
 
+managed_profile_id() {
+  jq -r '.profile.id // empty' "$MANAGED_STATE_FILE" 2>/dev/null
+}
+
+managed_state_sha256() {
+  sha256sum "$MANAGED_STATE_FILE" | awk '{print $1}'
+}
+
 verify_managed_host_baseline() {
   [ -s "$MANAGED_STATE_FILE" ] || die "缺少调优状态：${MANAGED_STATE_FILE}"
-  jq -e --argjson port "$EXPECTED_PORT_MBIT" '
+  jq -e \
+    --argjson schema "$EXPECTED_MANAGED_STATE_SCHEMA" \
+    --arg version "$EXPECTED_TUNING_VERSION" \
+    --argjson port "$EXPECTED_PORT_MBIT" '
+    (.schema_version == $schema) and
     (.state == "VERIFIED") and
-    (.profile.id == "debian13-1c1g") and
+    (.script_version == $version) and
+    ((.profile.id == "debian13-1c1g") or
+     (.profile.id == "debian13-1c2g")) and
     (.network.port_speed_mbps == $port)
   ' "$MANAGED_STATE_FILE" >/dev/null ||
-    die '调优状态不是 VERIFIED/debian13-1c1g/200-Mbps 基线。'
+    die '调优状态不是 rc.12 schema-4 VERIFIED/debian13-1c1g-or-1c2g/200-Mbps 基线。'
 
   [ "$(normalized_sysctl net.ipv4.tcp_congestion_control)" = 'bbr' ] ||
     die '当前拥塞控制不是 bbr。'
@@ -117,6 +133,27 @@ verify_managed_host_baseline() {
 
   systemctl is-active --quiet "$FQ_SERVICE" ||
     die "${FQ_SERVICE} 不是 active。"
+}
+
+verify_active_managed_binding() {
+  local expected_profile expected_hash actual_profile actual_hash
+  expected_profile="$(jq -r '.managed_profile_id // empty' "$STATE_FILE")"
+  expected_hash="$(jq -r '.managed_state_sha256 // empty' "$STATE_FILE")"
+  [ -s "$MANAGED_STATE_FILE" ] || {
+    warn '实验期间调优状态文件消失。'
+    return 1
+  }
+  actual_profile="$(managed_profile_id)"
+  actual_hash="$(managed_state_sha256)"
+  [ "$actual_profile" = "$expected_profile" ] || {
+    warn "实验期间 profile 漂移：expected=${expected_profile:-missing} actual=${actual_profile:-missing}"
+    return 1
+  }
+  [ "$actual_hash" = "$expected_hash" ] || {
+    warn '实验期间调优状态文件哈希发生变化。'
+    return 1
+  }
+  verify_managed_host_baseline
 }
 
 current_qdisc_json() {
@@ -171,7 +208,7 @@ active_state_rate() {
 }
 
 assert_active_internal() {
-  local expected_rate="$1" iface watchdog_unit actual_rate
+  local expected_rate="$1" iface watchdog_unit actual_rate profile
   validate_active_state
   [ "$(jq -r '.phase' "$STATE_FILE")" = 'ACTIVE' ] || {
     warn '实验状态不是 ACTIVE。'
@@ -183,6 +220,11 @@ assert_active_internal() {
     warn "活动速率不匹配：expected=${expected_rate} actual=${actual_rate:-missing}"
     return 1
   }
+  verify_active_managed_binding || {
+    warn '活动状态与受管调优基线的绑定验证失败。'
+    return 1
+  }
+  profile="$(jq -r '.managed_profile_id' "$STATE_FILE")"
   verify_experiment_topology "$iface" "$expected_rate" || {
     warn '运行时 HTB/class/fq 拓扑验证失败。'
     return 1
@@ -192,7 +234,7 @@ assert_active_internal() {
     warn '自动回滚 timer 不是 active。'
     return 1
   }
-  log "active-check=PASS interface=${iface} rate=${actual_rate}Mbit root=htb class=1:10 leaf=fq watchdog=active"
+  log "active-check=PASS profile=${profile} interface=${iface} rate=${actual_rate}Mbit root=htb class=1:10 leaf=fq watchdog=active"
 }
 
 write_json_atomically() {
@@ -206,12 +248,16 @@ write_json_atomically() {
 validate_active_state() {
   [ -s "$STATE_FILE" ] || die '没有活动的 HTB 实验状态。'
   jq -e '
-    (.schema_version == 1) and
+    (.schema_version == 2) and
+    (.tool_version == "0.3.0") and
     ((.phase == "PREPARED") or (.phase == "ACTIVE")) and
     (.interface | type == "string") and
     (.rate_mbit | type == "number") and
     (.boot_id | type == "string") and
     (.watchdog_unit | type == "string" and length > 0) and
+    ((.managed_profile_id == "debian13-1c1g") or
+     (.managed_profile_id == "debian13-1c2g")) and
+    (.managed_state_sha256 | test("^[0-9a-f]{64}$")) and
     (.original_qdisc_sha256 | test("^[0-9a-f]{64}$"))
   ' "$STATE_FILE" >/dev/null || die '活动状态文件无效。'
   [ "$(stat -c '%u:%g:%a' "$STATE_FILE")" = '0:0:600' ] ||
@@ -219,17 +265,19 @@ validate_active_state() {
 }
 
 preflight_internal() {
-  local iface root_hash
+  local iface root_hash profile state_hash
   [ ! -e "$STATE_FILE" ] || die '已经存在活动状态；请先执行 status 或 stop。'
   iface="$(resolve_target_iface)"
   verify_managed_host_baseline
+  profile="$(managed_profile_id)"
+  state_hash="$(managed_state_sha256)"
   verify_plain_fq_topology "$iface" ||
     die "${iface} 不是预期的单一根 fq/无 class 拓扑。"
 
   modprobe -n sch_htb >/dev/null 2>&1 ||
     warn 'modprobe -n sch_htb 未确认模块；start 将进行最终加载检查。'
   root_hash="$(current_qdisc_json "$iface" | sha256sum | awk '{print $1}')"
-  log "preflight=PASS interface=${iface} provider_port=${EXPECTED_PORT_MBIT}Mbit root=fq qdisc_sha256=${root_hash}"
+  log "preflight=PASS profile=${profile} managed_state_sha256=${state_hash} interface=${iface} provider_port=${EXPECTED_PORT_MBIT}Mbit root=fq qdisc_sha256=${root_hash}"
   log 'scope=egress IPv4+IPv6; persistence=none; sysctl/routes/firewall/proxy=unchanged'
 }
 
@@ -329,7 +377,7 @@ run_tc_stage() {
 }
 
 start_experiment() {
-  local rate="$DEFAULT_RATE_MBIT" iface boot_id qdisc_sha state_tmp watchdog_unit
+  local rate="$DEFAULT_RATE_MBIT" iface boot_id qdisc_sha state_tmp watchdog_unit profile managed_hash
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --rate)
@@ -347,6 +395,8 @@ start_experiment() {
 
   preflight_internal
   iface="$(resolve_target_iface)"
+  profile="$(managed_profile_id)"
+  managed_hash="$(managed_state_sha256)"
   : >"$START_TRACE_FILE"
   chmod 0600 "$START_TRACE_FILE"
   printf '[start] tool_version=%s utc=%s interface=%s rate_mbit=%s\n' \
@@ -370,13 +420,16 @@ start_experiment() {
     --arg started "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --arg qhash "$qdisc_sha" \
     --arg watchdog_unit "$watchdog_unit" \
+    --arg profile "$profile" \
+    --arg managed_hash "$managed_hash" \
     --argjson provider "$EXPECTED_PORT_MBIT" \
     --argjson rate "$rate" \
     --argjson burst "$BURST_BYTES" \
     --argjson cburst "$CBURST_BYTES" \
     --argjson quantum "$QUANTUM_BYTES" \
-    '{schema_version:1,tool_version:$version,phase:$phase,interface:$iface,
+    '{schema_version:2,tool_version:$version,phase:$phase,interface:$iface,
       boot_id:$boot,started_utc:$started,provider_port_mbit:$provider,
+      managed_profile_id:$profile,managed_state_sha256:$managed_hash,
       rate_mbit:$rate,burst_bytes:$burst,cburst_bytes:$cburst,
       quantum_bytes:$quantum,original_qdisc_sha256:$qhash,
       watchdog_unit:$watchdog_unit}' >"$state_tmp"
@@ -420,7 +473,7 @@ start_experiment() {
   if ! assert_active_internal "$rate"; then
     fail_started_transaction "$iface" "$watchdog_unit" active-assert 'ACTIVE 状态、拓扑或 watchdog 联合门禁失败。'
   fi
-  log "start=PASS interface=${iface} aggregate_rate=${rate}Mbit leaf=fq watchdog=${WATCHDOG_DELAY}"
+  log "start=PASS profile=${profile} interface=${iface} aggregate_rate=${rate}Mbit leaf=fq watchdog=${WATCHDOG_DELAY}"
   log "紧急回滚：tc qdisc replace dev ${iface} root fq"
   show_status
 }
@@ -523,15 +576,17 @@ show_status() {
 }
 
 stop_experiment() {
-  local from_watchdog=0 already_restored=0 iface rate boot_id expected_boot qhash actual_qhash stopped_tmp watchdog_unit
+  local from_watchdog=0 already_restored=0 iface rate profile boot_id expected_boot qhash actual_qhash stopped_tmp watchdog_unit
   if [ "${1:-}" = '--from-watchdog' ]; then
     from_watchdog=1
     shift
   fi
   [ "$#" -eq 0 ] || die "未知 stop 参数：$*"
   validate_active_state
+  verify_active_managed_binding || die '活动状态与受管调优基线的绑定验证失败；拒绝根据旧假设修改 qdisc。'
   iface="$(jq -r '.interface' "$STATE_FILE")"
   rate="$(jq -r '.rate_mbit' "$STATE_FILE")"
+  profile="$(jq -r '.managed_profile_id' "$STATE_FILE")"
   watchdog_unit="$(jq -r '.watchdog_unit // empty' "$STATE_FILE")"
   expected_boot="$(jq -r '.boot_id' "$STATE_FILE")"
   boot_id="$(awk 'NR == 1 {print; exit}' /proc/sys/kernel/random/boot_id)"
@@ -568,7 +623,7 @@ stop_experiment() {
   mv -f -- "$stopped_tmp" "$LAST_STATE_FILE"
   rm -f -- "$STATE_FILE"
   [ "$from_watchdog" -eq 1 ] || cancel_watchdog "$watchdog_unit"
-  log "stop=PASS interface=${iface} restored=root-fq watchdog=${from_watchdog}"
+  log "stop=PASS profile=${profile} interface=${iface} restored=root-fq watchdog=${from_watchdog}"
   show_status
 }
 

@@ -616,7 +616,9 @@ bash ./experiments/htb-aggregate/experiment-plan.sh \
   --control-rate none >./experiment-plan-190.json
 ```
 
-较低速率控制必须等候选结果分析关闭后另建窗口，例如 `--control-rate 180` 会附加独立的 `A-control-before → C1 → A-control-after`，不会自动执行或授权 180 Mbit/s。具体门禁、回滚和证据规则见 [VMISS Basic HTB A/B/A 实验 SOP](docs/experiments/vmiss-basic-200mbps-htb-aba.md)。
+较低速率控制必须等候选结果分析关闭后另建窗口，例如 `--control-rate 180` 会附加独立的 `A-control-before → C1 → A-control-after`，不会自动执行或授权 180 Mbit/s。
+
+现行执行器 v0.3.0 只接受 rc.12 schema 4、`VERIFIED`、200 Mbps 的 `debian13-1c1g` 或 `debian13-1c2g` 基线，并把实际 profile 与受管 state 哈希绑定到活动状态。1C2G 新实验须使用独立的 [VMISS 1C2G / 200 Mbps HTB A/B/A SOP](docs/experiments/vmiss-1c2g-200mbps-htb-aba.md)。原 [VMISS Basic HTB A/B/A 实验 SOP](docs/experiments/vmiss-basic-200mbps-htb-aba.md) 保留为 1C1G/v0.2.1 历史运行证据，不得混用工具哈希或实验目录。
 
 ## 100–1000 Mbps
 
