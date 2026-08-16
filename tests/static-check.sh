@@ -14,6 +14,7 @@ scripts=(
 )
 controller='debian-vps-tuning.sh'
 tcpquality_tool='tcpquality-evidence.sh'
+invalid_receiver_fixture='experiments/htb-aggregate/tests/fixtures/iperf3-invalid-receiver-window.json'
 
 if command -v python3 >/dev/null 2>&1; then
   python_cmd=python3
@@ -605,6 +606,7 @@ benchmark_phase_test="$tmp_dir/benchmark-phase-test.sh"
   awk '/^qdisc_counter_snapshot\(\)/,/^}/' "${scripts[0]}"
   awk '/^build_benchmark_phase_summary\(\)/,/^}/' "${scripts[0]}"
   awk '/^run_benchmark_phase\(\)/,/^}/' "${scripts[0]}"
+  printf 'INVALID_RECEIVER_FIXTURE=%q\n' "$invalid_receiver_fixture"
   cat <<'EOF_BENCHMARK_PHASE_TEST'
 test_root="$(mktemp -d)"
 trap 'rm -rf -- "$test_root"' EXIT
@@ -632,7 +634,7 @@ tc() {
 iperf3() {
   printf '%q ' "$@" >>"$capture"
   printf '\n' >>"$capture"
-  printf '%s\n' '{"end":{"sum_sent":{"bytes":1073741824,"bits_per_second":200000000,"retransmits":2},"sum_received":{"bytes":1073741824,"bits_per_second":199000000}}}'
+  printf '%s\n' '{"end":{"sum_sent":{"seconds":10,"bytes":250000000,"bits_per_second":200000000,"retransmits":2},"sum_received":{"seconds":10,"bytes":248750000,"bits_per_second":199000000}}}'
   return "${IPERF_RC:-0}"
 }
 
@@ -651,7 +653,11 @@ sed -n '2p' "$capture" | grep -Fq -- '--version6 --reverse --json' || {
   printf 'download benchmark arguments changed: %s\n' "$(sed -n '2p' "$capture")" >&2
   exit 1
 }
-jq -e '.direction == "upload" and .sender.mbps == 200 and .sender.retransmits == 2 and .sender.retransmits_per_gib == 2' \
+jq -e '.schema_version == 2 and .direction == "upload" and
+  .measurement_window.status == "VALID" and .measurement_window.valid == true and
+  .sender.seconds == 10 and .receiver.seconds == 10 and
+  .sender.mbps == 200 and .sender.retransmits == 2 and
+  .sender.retransmits_per_gib > 8.5 and .sender.retransmits_per_gib < 8.7' \
   "$test_root/upload.summary.json" >/dev/null
 jq -e '.qdisc_root_totals.dropped_delta == 0 and .qdisc_root_totals.dropped_per_gib == null' \
   "$test_root/upload.summary.json" >/dev/null
@@ -701,6 +707,21 @@ if build_benchmark_phase_summary partial 0 "$test_root" >/dev/null 2>&1; then
   printf 'partial iperf3 summary was accepted\n' >&2
   exit 1
 fi
+
+for suffix in tcp.before tcp.after link.before link.after qdisc.before qdisc.after; do
+  cp "$test_root/upload.${suffix}" "$test_root/invalid-window.${suffix}"
+done
+cp "$INVALID_RECEIVER_FIXTURE" "$test_root/invalid-window.iperf3.json"
+build_benchmark_phase_summary invalid-window 0 "$test_root" >/dev/null
+jq -e '
+  .schema_version == 2 and
+  .measurement_window.status == "INVALID_MEASUREMENT_WINDOW" and
+  .measurement_window.valid == false and
+  (.measurement_window.issues | index("receiver-duration-mismatch") != null) and
+  (.measurement_window.issues | index("sender-receiver-window-mismatch") != null) and
+  (.measurement_window.issues | index("receiver-bytes-exceed-sender-tolerance") != null) and
+  .sender.retransmits == 0
+' "$test_root/invalid-window.summary.json" >/dev/null
 
 cat >"$test_root/mq.tc" <<'EOF_MQ_TC'
 qdisc mq 0: root
