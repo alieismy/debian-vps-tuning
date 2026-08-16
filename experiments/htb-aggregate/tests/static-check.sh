@@ -599,7 +599,11 @@ fi
 grep -Fq 'plan.json 不符合 HTB reference/candidate schema' <<<"$invalid_plan_output"
 mv "${sweep_fixture}/plan.json.valid" "${sweep_fixture}/plan.json"
 
-if command -v shellcheck >/dev/null 2>&1; then
+if [ "${RUN_LOCAL_SHELLCHECK:-0}" = 1 ]; then
+  command -v shellcheck >/dev/null 2>&1 || {
+    printf 'RUN_LOCAL_SHELLCHECK=1 but shellcheck was not found\n' >&2
+    exit 1
+  }
   shellcheck -x "$script" "$plan_script" "$rate_sweep_plan_script" \
     "$rate_sweep_runner" "$rate_sweep_analyzer" "$0"
 fi
