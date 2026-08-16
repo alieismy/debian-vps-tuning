@@ -1866,7 +1866,11 @@ for script in "${scripts[@]}"; do
   fi
 done
 
-if command -v shellcheck >/dev/null 2>&1; then
+if [ "${RUN_LOCAL_SHELLCHECK:-0}" = 1 ]; then
+  command -v shellcheck >/dev/null 2>&1 || {
+    printf 'RUN_LOCAL_SHELLCHECK=1 but shellcheck was not found\n' >&2
+    exit 1
+  }
   shellcheck -x "${scripts[@]}" "$controller" "$tcpquality_tool" "$installer" "$probe_tool" "$htb_wrapper" \
     experiments/htb-aggregate/experiment-plan.sh \
     experiments/htb-aggregate/htb-aggregate-experiment.sh \
@@ -1876,7 +1880,7 @@ if command -v shellcheck >/dev/null 2>&1; then
     tests/static-check.sh tests/controller-check.sh tests/installer-check.sh
   for helper in "$tmp_dir"/*.helper; do shellcheck -x "$helper"; done
 else
-  printf '[WARN] shellcheck not found; syntax and structural checks only\n' >&2
+  printf '[INFO] deterministic syntax/fixture checks complete; pinned ShellCheck runs in its dedicated CI step\n' >&2
 fi
 
 printf 'static checks passed for %s scripts\n' "${#scripts[@]}"
