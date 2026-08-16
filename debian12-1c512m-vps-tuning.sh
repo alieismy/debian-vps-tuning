@@ -2355,17 +2355,17 @@ run_network_benchmark() {
     BENCHMARK_RATE_ARGS=(--bitrate "$rate_cap_per_stream_bps")
     rate_cap_enforced=true
   fi
-  if [ -z "$run_id" ]; then
-    run_id="${SCRIPT_VERSION}-${PROFILE_ID}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
-  fi
-  [[ "$run_id" =~ ^[A-Za-z0-9._:-]{1,96}$ ]] ||
-    die "$EXIT_USAGE" 'BENCHMARK_RUN_ID 只能包含字母、数字、点、下划线、冒号和连字符，长度 1–96。'
   if [ -n "$output_dir" ]; then
     [[ "$output_dir" = /* ]] || die "$EXIT_USAGE" 'BENCHMARK_OUTPUT_DIR 必须是绝对路径。'
     [ ! -e "$output_dir" ] && [ ! -L "$output_dir" ] ||
       die "$EXIT_CONFLICT" "BENCHMARK_OUTPUT_DIR 已存在，拒绝覆盖：${output_dir}"
     [ -d "$(dirname "$output_dir")" ] || die "$EXIT_USAGE" 'BENCHMARK_OUTPUT_DIR 的父目录不存在。'
   fi
+  if [ -z "$run_id" ]; then
+    run_id="${SCRIPT_VERSION}-${PROFILE_ID}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  fi
+  [[ "$run_id" =~ ^[A-Za-z0-9._:-]{1,96}$ ]] ||
+    die "$EXIT_USAGE" 'BENCHMARK_RUN_ID 只能包含字母、数字、点、下划线、冒号和连字符，长度 1–96。'
 
   BENCHMARK_HOST_RESOLVED="$host"
   BENCHMARK_PORT_RESOLVED="$port"
