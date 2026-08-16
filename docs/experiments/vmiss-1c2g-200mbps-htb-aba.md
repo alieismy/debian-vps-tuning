@@ -1,9 +1,15 @@
 # VMISS 1C2G / 200 Mbps 临时 HTB A/B/A 实验 SOP
 
 状态：待目标机执行  
-适用版本：`debian-vps-tuning 0.1.0-rc.12`、HTB 执行器 `0.3.0`  
+适用版本：`debian-vps-tuning 0.1.0-rc.12`、HTB 执行器 `0.4.0`
+
 目标：比较根 `fq` 基线（A）与 `HTB 190 Mbit/s + fq` 聚合整形（B）对吞吐、重传和时延的影响。  
 边界：只改变 `eth0` 出站 qdisc；不改 sysctl、路由、防火墙、代理服务或持久化配置。
+
+前置门禁：本 SOP **不是实验入口**。必须先完成
+[HTB200 参考筛查与候选聚合速率发现](htb-candidate-rate-sweep.md)，取得全部测量窗口有效、
+reference 可比较且经人工复核的候选速率。本文件当前固定候选为 190 Mbit/s；若 shortlist
+为空或最终候选不是 190，不得原样执行本文，应停止并按实际候选重新评审 A/B/A 计划。
 
 ## 1. 已冻结基线与证据边界
 
@@ -35,7 +41,7 @@
 
 `stop` 会验证活动状态与受管 state 的 profile/hash 绑定。若绑定漂移，它会拒绝按旧状态自动覆盖 qdisc；此时保留现场，并从服务商控制台按第 8 节执行人工恢复。
 
-## 3. 安装并校验 v0.3.0 执行器
+## 3. 安装并校验 v0.4.0 执行器
 
 不要在已有活动实验状态时替换执行器。将仓库中的文件上传到 `/root/htb-aggregate-experiment.sh` 后执行：
 
@@ -45,7 +51,7 @@ install -o root -g root -m 0755 \
   /root/htb-aggregate-experiment.sh \
   /usr/local/sbin/htb-aggregate-experiment
 
-EXPECTED_HTB_SHA256='12a6552558fcf742b2250402845731d0dfc200f135bc686b0c45d7d032d9ffec'
+EXPECTED_HTB_SHA256='6caf53b98913f150c1e2bd42373812ef844757fa6fe8036f83ecb068fc2dba07'
 printf '%s  %s\n' "$EXPECTED_HTB_SHA256" \
   /usr/local/sbin/htb-aggregate-experiment | sha256sum -c -
 

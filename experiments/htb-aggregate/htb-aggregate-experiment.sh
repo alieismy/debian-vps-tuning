@@ -7,7 +7,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 
-TOOL_VERSION='0.3.0'
+TOOL_VERSION='0.4.0'
 EXPECTED_IFACE='eth0'
 EXPECTED_PORT_MBIT=200
 EXPECTED_MANAGED_STATE_SCHEMA=4
@@ -249,7 +249,7 @@ validate_active_state() {
   [ -s "$STATE_FILE" ] || die '没有活动的 HTB 实验状态。'
   jq -e '
     (.schema_version == 2) and
-    (.tool_version == "0.3.0") and
+    (.tool_version == "0.4.0") and
     ((.phase == "PREPARED") or (.phase == "ACTIVE")) and
     (.interface | type == "string") and
     (.rate_mbit | type == "number") and
@@ -388,10 +388,10 @@ start_experiment() {
       *) die "未知 start 参数：$1" ;;
     esac
   done
-  [[ "$rate" =~ ^[0-9]{3}$ ]] || die 'rate 必须是 100–199 的整数。'
+  [[ "$rate" =~ ^[0-9]{3}$ ]] || die 'rate 必须是 100–200 的整数。'
   rate=$((10#$rate))
-  [ "$rate" -ge 100 ] && [ "$rate" -le 199 ] ||
-    die 'rate 必须在 100–199 Mbit/s 之间。'
+  [ "$rate" -ge 100 ] && [ "$rate" -le "$EXPECTED_PORT_MBIT" ] ||
+    die 'rate 必须在 100–200 Mbit/s 之间。'
 
   preflight_internal
   iface="$(resolve_target_iface)"
@@ -490,10 +490,10 @@ assert_active_command() {
       *) die "未知 assert-active 参数：$1" ;;
     esac
   done
-  [[ "$rate" =~ ^[0-9]{3}$ ]] || die 'rate 必须是 100–199 的整数。'
+  [[ "$rate" =~ ^[0-9]{3}$ ]] || die 'rate 必须是 100–200 的整数。'
   rate=$((10#$rate))
-  [ "$rate" -ge 100 ] && [ "$rate" -le 199 ] ||
-    die 'rate 必须在 100–199 Mbit/s 之间。'
+  [ "$rate" -ge 100 ] && [ "$rate" -le "$EXPECTED_PORT_MBIT" ] ||
+    die 'rate 必须在 100–200 Mbit/s 之间。'
   assert_active_internal "$rate" || die 'ACTIVE 联合门禁失败。'
 }
 
@@ -514,10 +514,10 @@ smoke_test() {
       *) die "未知 smoke-test 参数：$1" ;;
     esac
   done
-  [[ "$rate" =~ ^[0-9]{3}$ ]] || die 'rate 必须是 100–199 的整数。'
+  [[ "$rate" =~ ^[0-9]{3}$ ]] || die 'rate 必须是 100–200 的整数。'
   rate=$((10#$rate))
-  [ "$rate" -ge 100 ] && [ "$rate" -le 199 ] ||
-    die 'rate 必须在 100–199 Mbit/s 之间。'
+  [ "$rate" -ge 100 ] && [ "$rate" -le "$EXPECTED_PORT_MBIT" ] ||
+    die 'rate 必须在 100–200 Mbit/s 之间。'
   [[ "$hold_seconds" =~ ^[0-9]+$ ]] || die 'hold-seconds 必须是 5–30 的整数。'
   hold_seconds=$((10#$hold_seconds))
   [ "$hold_seconds" -ge 5 ] && [ "$hold_seconds" -le 30 ] ||

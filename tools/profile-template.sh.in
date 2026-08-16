@@ -1889,6 +1889,7 @@ build_benchmark_phase_summary() {
   rx_bytes="$(link_total_delta "${tmp_dir}/${label}.link.before" "${tmp_dir}/${label}.link.after" '.rx_bytes')" || return "$EXIT_VERIFY"
 
   jq -e --arg phase_label "$label" --argjson reverse "$reverse" \
+    --argjson expected_seconds "$BENCHMARK_SECONDS_RESOLVED" \
     --argjson tcp_delta "$tcp_delta" --argjson link_delta "$link_delta" \
     --argjson qdisc_delta "$qdisc_delta" --argjson host_tx_bytes "$tx_bytes" \
     --argjson host_rx_bytes "$rx_bytes" '
@@ -1910,6 +1911,10 @@ build_benchmark_phase_summary() {
           dropped_per_gib:(if $bytes > 0 then ($dropped * 1073741824 / $bytes) else null end),
           overlimits_per_gib:(if $bytes > 0 then ($overlimits * 1073741824 / $bytes) else null end)
         };
+      def absolute: if . < 0 then -. else . end;
+      def relative_error($reported; $computed):
+        (($reported - $computed) | absolute) /
+        ([$reported, $computed] | map(absolute) | max);
       (.end.sum_sent // null) as $sent |
       (.end.sum_received // null) as $received |
       ($qdisc_delta | to_entries | map(select(.key | contains(".root.")))) as $qdisc_root_entries |
@@ -1924,28 +1929,63 @@ build_benchmark_phase_summary() {
       elif ($sent.bytes | type) != "number" or $sent.bytes <= 0 or
            ($sent.bits_per_second | type) != "number" or $sent.bits_per_second < 0 or
            ($sent.retransmits | type) != "number" or $sent.retransmits < 0 or
+           ($sent.seconds | type) != "number" or $sent.seconds <= 0 or
            ($received.bytes | type) != "number" or $received.bytes <= 0 or
-           ($received.bits_per_second | type) != "number" or $received.bits_per_second < 0 then
+           ($received.bits_per_second | type) != "number" or $received.bits_per_second < 0 or
+           ($received.seconds | type) != "number" or $received.seconds <= 0 then
         error("iperf3 JSON contains missing, non-numeric or invalid summary fields")
       elif ($has_root | not) then
         error("root qdisc counters are missing")
       elif $root_is_mq and ($has_leaf | not) then
         error("mq root exists but managed leaf qdisc counters are missing")
       else
+        ($sent.bytes * 8 / $sent.seconds) as $sent_computed_bps |
+        ($received.bytes * 8 / $received.seconds) as $received_computed_bps |
+        (relative_error($sent.bits_per_second; $sent_computed_bps)) as $sent_bps_error |
+        (relative_error($received.bits_per_second; $received_computed_bps)) as $received_bps_error |
+        ([0.25, ($expected_seconds * 0.05)] | max) as $duration_tolerance |
+        ([1048576, ($sent.bytes * 0.01)] | max) as $receiver_bytes_tolerance |
+        ([
+          if (($sent.seconds - $expected_seconds) | absolute) > $duration_tolerance
+          then "sender-duration-mismatch" else empty end,
+          if (($received.seconds - $expected_seconds) | absolute) > $duration_tolerance
+          then "receiver-duration-mismatch" else empty end,
+          if (($sent.seconds - $received.seconds) | absolute) > $duration_tolerance
+          then "sender-receiver-window-mismatch" else empty end,
+          if $sent_bps_error > 0.01 then "sender-bps-arithmetic-mismatch" else empty end,
+          if $received_bps_error > 0.01 then "receiver-bps-arithmetic-mismatch" else empty end,
+          if $received.bytes > ($sent.bytes + $receiver_bytes_tolerance)
+          then "receiver-bytes-exceed-sender-tolerance" else empty end
+        ]) as $measurement_issues |
         {
-          schema_version:1,
+          schema_version:2,
           direction:$phase_label,
           reverse:($reverse == 1),
+          measurement_window:{
+            status:(if ($measurement_issues | length) == 0 then "VALID" else "INVALID_MEASUREMENT_WINDOW" end),
+            valid:(($measurement_issues | length) == 0),
+            expected_seconds:$expected_seconds,
+            duration_tolerance_seconds:$duration_tolerance,
+            bitrate_relative_error_tolerance:0.01,
+            receiver_bytes_tolerance:$receiver_bytes_tolerance,
+            issues:$measurement_issues
+          },
           sender:{
             bytes:$sent.bytes,
+            seconds:$sent.seconds,
             bits_per_second:$sent.bits_per_second,
+            computed_bits_per_second:$sent_computed_bps,
+            bits_per_second_relative_error:$sent_bps_error,
             mbps:($sent.bits_per_second/1000000),
             retransmits:$sent.retransmits,
             retransmits_per_gib:($sent.retransmits * 1073741824 / $sent.bytes)
           },
           receiver:{
             bytes:$received.bytes,
+            seconds:$received.seconds,
             bits_per_second:$received.bits_per_second,
+            computed_bits_per_second:$received_computed_bps,
+            bits_per_second_relative_error:$received_bps_error,
             mbps:($received.bits_per_second/1000000)
           },
           host:{tx_bytes_delta:$host_tx_bytes,rx_bytes_delta:$host_rx_bytes,tcp_delta:$tcp_delta,link_delta:$link_delta},

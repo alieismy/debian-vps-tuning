@@ -7,7 +7,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 
-RUNNER_VERSION='0.1.0'
+RUNNER_VERSION='0.2.0'
 RUNTIME_STATE_DIR='/run/htb-aggregate-experiment'
 RUNTIME_STATE_FILE="${RUNTIME_STATE_DIR}/active.json"
 RUNNER_LOCK='/run/lock/htb-rate-sweep.lock'
@@ -39,7 +39,7 @@ Usage:
                     --host AUTHORIZED_IPERF3_HOST [--port 5201]
 
 The runner is non-persistent but it does produce high-bandwidth upload traffic
-and temporarily replaces root fq with HTB for candidate stages. It never
+and temporarily replaces root fq with HTB for every reference/candidate stage. It never
 installs packages, chooses a public server, changes sysctl/routing/firewall, or
 creates persistent shaping. Every shaped stage is guarded by HTB preflight,
 ACTIVE checks, normal stop, and root-fq postflight. The first failed stage stops
@@ -68,9 +68,10 @@ validate_root_owned_file() {
 
 validate_plan() {
   jq -e --argjson cooldown "$(jq -r '.controls.minimum_cooldown_seconds' "$plan_file")" '
-    type == "object" and .schema_version == 1 and
-    .mode == "candidate-rate-discovery-plan" and
+    type == "object" and .schema_version == 2 and
+    ((.mode == "reference-screen") or (.mode == "candidate-sweep")) and
     .scope.provider_port_mbit == 200 and
+    .reference_rate_mbit == 200 and
     .scope.direction == "upload" and
     .scope.persistent_shaping_authorized == false and
     (.plan_tool_sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
@@ -82,34 +83,49 @@ validate_plan() {
     (.controls.minimum_cooldown_seconds | type == "number" and floor == . and . >= 300 and . <= 3600) and
     (.controls.samples_per_state | type == "number" and floor == . and . >= 2 and . <= 5) and
     .controls.automatic_candidate_persistence == false and
-    (.rates_mbit | type == "array" and length >= 3 and length <= 8) and
+    (.rates_mbit | type == "array") and
     ((.rates_mbit | length) == (.rates_mbit | unique | length)) and
-    all(.rates_mbit[]; type == "number" and floor == . and . >= 100 and . <= 199) and
-    (.stages | type == "array" and length >= 10 and length <= 50) and
-    ((.stages | length) == (.controls.samples_per_state * ((.rates_mbit | length) + 2))) and
+    (if .mode == "reference-screen" then
+       (.rates_mbit | length) == 0
+     else
+       (.rates_mbit | length) >= 3 and (.rates_mbit | length) <= 8 and
+       all(.rates_mbit[]; type == "number" and floor == . and . >= 100 and . <= 199)
+     end) and
+    (.stages | type == "array" and length >= 2 and length <= 50) and
+    (if .mode == "reference-screen" then
+       (.stages | length) == .controls.samples_per_state
+     else
+       (.stages | length) == (.controls.samples_per_state * ((.rates_mbit | length) + 2))
+     end) and
     ([.stages[].sequence] == [range(1; (.stages|length) + 1)]) and
     (([.stages[].label] | length) == ([.stages[].label] | unique | length)) and
     all(.stages[];
       (.label | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9-]{0,63}$")) and
       (.minimum_cooldown_before_seconds | type == "number" and floor == . and . >= 0 and . <= 3600) and
       (.measurements_per_stage == 1) and
-      (if .condition == "baseline-fq" then
-         (.rate_mbit == null and .rate_cap_mbit == 200 and
-          ((.phase == "baseline-start") or (.phase == "baseline-end")))
+      .traffic_cap_enforced_by == "htb-class-rate-and-ceil" and
+      .rate_cap_mbit == .rate_mbit and
+      (if .condition == "reference-htb" then
+         (.rate_mbit == 200 and
+          ((.phase == "reference-screen") or (.phase == "reference-start") or (.phase == "reference-end")))
        elif .condition == "candidate-htb" then
-         (.phase == "sweep" and (.rate_mbit | type == "number" and floor == . and . >= 100 and . <= 199) and
-          .rate_cap_mbit == .rate_mbit)
+         (.phase == "candidate-sweep" and (.rate_mbit | type == "number" and floor == . and . >= 100 and . <= 199))
        else false end)) and
     .stages[0].minimum_cooldown_before_seconds == 0 and
     all(.stages[1:][]; .minimum_cooldown_before_seconds == $cooldown) and
-    ([.stages[] | select(.phase == "baseline-start")] | length) == .controls.samples_per_state and
-    ([.stages[] | select(.phase == "baseline-end")] | length) == .controls.samples_per_state and
-    ([.rates_mbit[] as $rate |
-      (([.stages[] | select(.condition == "candidate-htb" and .rate_mbit == $rate)] | length) ==
-       .controls.samples_per_state)] | all) and
+    (if .mode == "reference-screen" then
+       all(.stages[]; .condition == "reference-htb" and .phase == "reference-screen")
+     else
+       ([.stages[] | select(.phase == "reference-start")] | length) == .controls.samples_per_state and
+       ([.stages[] | select(.phase == "reference-end")] | length) == .controls.samples_per_state and
+       ([.rates_mbit[] as $rate |
+         (([.stages[] | select(.condition == "candidate-htb" and .rate_mbit == $rate)] | length) ==
+          .controls.samples_per_state)] | all)
+     end) and
+    .traffic_budget.enforced_by == "htb-class-rate-and-ceil" and
     .traffic_budget.stage_count == (.stages | length) and
     .traffic_budget.payload_upper_bound_bytes ==
-      (([.stages[].rate_cap_mbit] | add) * 125000 *
+      (([.stages[].rate_mbit] | add) * 125000 *
        (.benchmark.seconds + .benchmark.omit_seconds))
   ' "$plan_file" >/dev/null || die '候选扫描计划 schema、范围或阶段约束无效。'
 }
@@ -176,9 +192,11 @@ write_stage_result() {
   jq -n --argjson plan_stage "$stage_json" \
     --arg started_utc "$started_utc" --arg completed_utc "$completed_utc" \
     --arg benchmark_result_sha256 "$benchmark_sha" \
-    '{schema_version:1,status:"PASS",plan_stage:$plan_stage,
+    '{schema_version:2,status:"PASS",plan_stage:$plan_stage,
       started_utc:$started_utc,completed_utc:$completed_utc,
       benchmark_result_sha256:$benchmark_result_sha256,
+      qdisc_rate_mbit:$plan_stage.rate_mbit,
+      traffic_cap_enforced_by_htb:true,
       qdisc_restored_to_root_fq:true,persistent_shaping_created:false}' \
     >"${stage_dir}/stage-result.json"
   chmod 0600 "${stage_dir}/stage-result.json"
@@ -250,12 +268,10 @@ run_stage() {
   log "${current_stage}: condition=${condition} rate=${rate:-none}。"
 
   "$htb_tool" preflight >"${stage_dir}/htb-preflight-before.log" 2>&1
-  if [ "$condition" = 'candidate-htb' ]; then
-    htb_started=1
-    "$htb_tool" start --rate "$rate" >"${stage_dir}/htb-start.log" 2>&1
-    "$htb_tool" assert-active --rate "$rate" >"${stage_dir}/htb-active-before.log" 2>&1
-    capture_htb_runtime "${stage_dir}/htb-runtime"
-  fi
+  htb_started=1
+  "$htb_tool" start --rate "$rate" >"${stage_dir}/htb-start.log" 2>&1
+  "$htb_tool" assert-active --rate "$rate" >"${stage_dir}/htb-active-before.log" 2>&1
+  capture_htb_runtime "${stage_dir}/htb-runtime"
 
   socket_sample_seconds=$((
     $(jq -r '.benchmark.seconds' "$plan_file") +
@@ -283,14 +299,12 @@ run_stage() {
   wait "$socket_sampler_pid" || benchmark_rc=1
   socket_sampler_pid=''
 
-  if [ "$condition" = 'candidate-htb' ]; then
-    "$htb_tool" assert-active --rate "$rate" >"${stage_dir}/htb-active-after.log" 2>&1 || benchmark_rc=1
-    capture_htb_runtime "${stage_dir}/htb-runtime-after"
-    if "$htb_tool" stop >"${stage_dir}/htb-stop.log" 2>&1; then
-      htb_started=0
-    else
-      benchmark_rc=1
-    fi
+  "$htb_tool" assert-active --rate "$rate" >"${stage_dir}/htb-active-after.log" 2>&1 || benchmark_rc=1
+  capture_htb_runtime "${stage_dir}/htb-runtime-after"
+  if "$htb_tool" stop >"${stage_dir}/htb-stop.log" 2>&1; then
+    htb_started=0
+  else
+    benchmark_rc=1
   fi
   "$htb_tool" preflight >"${stage_dir}/htb-preflight-after.log" 2>&1 || benchmark_rc=1
   [ "$benchmark_rc" -eq 0 ] || die "${current_stage} benchmark、ACTIVE gate 或恢复失败；退出码 ${benchmark_rc}。"
@@ -398,7 +412,9 @@ main() {
 
   current_stage='analysis'
   "$analyzer" "$output_dir" >"${output_dir}/sweep-analysis.json.tmp"
-  jq -e '.schema_version == 1 and .status == "REVIEW_REQUIRED" and .persistence_authorized == false' \
+  jq -e '.schema_version == 2 and
+    ((.status == "REVIEW_REQUIRED") or (.status == "REVIEW_BLOCKED")) and
+    .persistence_authorized == false' \
     "${output_dir}/sweep-analysis.json.tmp" >/dev/null || die '候选扫描分析输出无效。'
   chmod 0600 "${output_dir}/sweep-analysis.json.tmp"
   mv -f -- "${output_dir}/sweep-analysis.json.tmp" "${output_dir}/sweep-analysis.json"

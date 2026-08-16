@@ -558,7 +558,9 @@ env BENCHMARK_HOST='iperf.example.com' \
   bash ./debian-vps-tuning.sh benchmark
 ```
 
-`upload.summary.json` 和 `download.summary.json` 中，`sender.retransmits` 是对应方向的 iperf3 sender 统计，`host.tcp_delta` 是测试窗口内的整机全局计数，`qdisc_delta` 是本地 qdisc 统计。三者不可互换：背景连接会计入整机统计，本地 qdisc drop 也不等于远端路径丢包。
+`upload.summary.json` 和 `download.summary.json` 使用 schema 2。`measurement_window` 会核对 sender/receiver 的实际秒数、`bytes × 8 ÷ seconds` 与报告 bitrate 的一致性，以及 receiver bytes 不得在容差外超过 sender bytes。任一检查失败时，原始 JSON 和报告值仍保留，但摘要标记为 `INVALID_MEASUREMENT_WINDOW`；该样本不得用于吞吐或重传对比。benchmark 的 `PASS` 只表示采集和哈希链完整，不等于测量窗口可用于分析。
+
+摘要中的 `sender.retransmits` 是对应方向的 iperf3 sender 统计，`host.tcp_delta` 是测试窗口内的整机全局计数，`qdisc_delta` 是本地 qdisc 统计。三者不可互换：背景连接会计入整机统计，本地 qdisc drop 也不等于远端路径丢包。
 
 开始产生测试流量前，脚本会按 `带宽上限 × (有效时间 + omit) × 方向数` 计算 iperf payload 估算上界。`BENCHMARK_RATE_CAP_MBPS` 显式值优先；未提供时只接受合法管理状态中的 `network.port_speed_mbps`，否则明确报告无法量化，不使用 profile 默认值猜测。估算及其 `explicit`/`managed-state` 来源写入 `benchmark-meta.json`。该值不含 TCP/IP 和链路层开销，不等同于服务商最终计费流量，也不保证实际吞吐达到该上限。
 
@@ -573,6 +575,9 @@ env BENCHMARK_HOST='iperf.example.com' \
 3. 存在 `COMPLETED`；
 4. 不存在 `INCOMPLETE`；
 5. 两条哈希链均可重新计算并匹配。
+
+以上条件只证明证据完整。若要把某一方向纳入性能比较，还必须满足对应摘要
+`.measurement_window.valid == true`；否则保留现场并重测，不得从 `PASS` 推导吞吐或重传结论。
 
 `BENCHMARK_IP_FAMILY=4` 或 `6` 用于固定地址族；`auto` 由系统解析和连接过程选择。比较 IPv4 与 IPv6 时，应分别运行并保存各自的默认路由。`BENCHMARK_OMIT_SECONDS=0` 用于观察包含 slow start 的短连接；非零值用于比较稳态吞吐，两类结果不能混入同一序列。
 
@@ -606,9 +611,9 @@ env \
 
 ### 8. HTB 候选速率发现与 A/B/A
 
-`experiments/htb-aggregate/rate-sweep-plan.sh`、`rate-sweep-run.sh` 和 `rate-sweep-analyze.sh` 把候选发现分成只读计划、显式流量/临时 qdisc 执行和只读分析三层。当前边界只接受 rc.12 schema 4、`VERIFIED`、200 Mbps 的 Debian 13 1C1G/1C2G 基线；只测上传，因为本地 egress HTB 不能用于归因下载方向的远端 sender 重传。默认计划在首尾重复根 `fq` 基线，并以正序/反序轮次重复 150/170/180/190/195 Mbit/s 候选；每阶段至少冷却 300 秒。
+`experiments/htb-aggregate/rate-sweep-plan.sh`、`rate-sweep-run.sh` 和 `rate-sweep-analyze.sh` 把候选发现分成只读计划、显式流量/临时 qdisc 执行和只读分析三层。当前边界只接受 rc.12 schema 4、`VERIFIED`、200 Mbps 的 Debian 13 1C1G/1C2G 基线；只测上传，因为本地 egress HTB 不能用于归因下载方向的远端 sender 重传。默认 `reference-screen` 只重复 3 次 `HTB rate=ceil=200 Mbit/s + fq`，先判断端口额定速率下的重传和测量窗口是否稳定。只有人工认为有必要继续时，才显式生成独立 `candidate-sweep`，以相同 HTB+fq 拓扑在首尾重复 HTB200 reference，并以正序/反序轮次扫描 180/190/195 Mbit/s；每阶段至少冷却 300 秒。这样比较时只改变 class rate/ceil，不再把无限速根 `fq` 与 HTB 候选混为同一基线。
 
-分析使用 iperf3 精确 sender bytes 归一化的 `retransmits_per_gib` 和 receiver goodput，不假设固定 MSS、不推算 packet loss percentage、不使用固定全局重传阈值。runner 还按秒保存只含 TCP_INFO 白名单 token、不含 endpoint/PID/进程名的 `socket-metrics.txt`，用于辅助检查 RTT、cwnd、重排、重传和收发缓冲受限；它可能混入同机背景 TCP，不能替代流级指标。输出只能是人工复核 shortlist；扫描完成、shortlist 非空和 HTB `overlimits` 都不授权持久化。完整命令、流量预算、停止条件和恢复边界见 [HTB 候选聚合速率发现 SOP](docs/experiments/htb-candidate-rate-sweep.md)。
+分析以通过窗口校验的 iperf3 sender Mbit/s 作为主吞吐指标，并使用精确 sender bytes 归一化的 `retransmits_per_gib`；receiver goodput 只作交叉核对。任一样本的 sender/receiver 时长或算术关系无效时，分析状态为 `REVIEW_BLOCKED` 且 shortlist 为空，不允许用异常 receiver 数值排名。分析不假设固定 MSS、不推算 packet loss percentage、不使用固定全局重传阈值。runner 还按秒保存只含 TCP_INFO 白名单 token、不含 endpoint/PID/进程名的 `socket-metrics.txt`，用于辅助检查 RTT、cwnd、重排、重传和收发缓冲受限；它可能混入同机背景 TCP，不能替代流级指标。输出只能是人工复核 shortlist；扫描完成、shortlist 非空和 HTB `overlimits` 都不授权持久化。完整命令、流量预算、停止条件和恢复边界见 [HTB200 参考筛查与候选聚合速率发现 SOP](docs/experiments/htb-candidate-rate-sweep.md)。
 
 候选经人工复核后，`experiments/htb-aggregate/experiment-plan.sh` 才用于生成机器可读的正式 A/B/A 计划；它本身不检查或修改目标机，也不自动执行流量。默认计划为首个窗口 `A1 → B1 → A2` 和另一个可比窗口中的反向顺序 `B2 → A3 → B3`，stage 之间至少冷却 300 秒：
 
@@ -622,7 +627,7 @@ bash ./experiments/htb-aggregate/experiment-plan.sh \
 
 较低速率控制必须等候选结果分析关闭后另建窗口，例如 `--control-rate 180` 会附加独立的 `A-control-before → C1 → A-control-after`，不会自动执行或授权 180 Mbit/s。候选扫描不能替代该 A/B/A 和反序复验。
 
-现行执行器 v0.3.0 只接受 rc.12 schema 4、`VERIFIED`、200 Mbps 的 `debian13-1c1g` 或 `debian13-1c2g` 基线，并把实际 profile 与受管 state 哈希绑定到活动状态。1C2G 新实验须使用独立的 [VMISS 1C2G / 200 Mbps HTB A/B/A SOP](docs/experiments/vmiss-1c2g-200mbps-htb-aba.md)。原 [VMISS Basic HTB A/B/A 实验 SOP](docs/experiments/vmiss-basic-200mbps-htb-aba.md) 保留为 1C1G/v0.2.1 历史运行证据，不得混用工具哈希或实验目录。
+现行执行器 v0.4.0 只接受 rc.12 schema 4、`VERIFIED`、200 Mbps 的 `debian13-1c1g` 或 `debian13-1c2g` 基线，并把实际 profile 与受管 state 哈希绑定到活动状态；临时速率范围扩展为 100–200 Mbit/s，其中 200 仅用于同拓扑 reference，不授权超过端口上限。1C2G 新实验须使用独立的 [VMISS 1C2G / 200 Mbps HTB A/B/A SOP](docs/experiments/vmiss-1c2g-200mbps-htb-aba.md)。原 [VMISS Basic HTB A/B/A 实验 SOP](docs/experiments/vmiss-basic-200mbps-htb-aba.md) 保留为 1C1G/v0.2.1 历史运行证据，不得混用工具哈希或实验目录。
 
 ## 100–1000 Mbps
 
