@@ -7,6 +7,7 @@
 ### Added
 
 - 新增独立的 VMISS Debian 13 1C2G / 200 Mbps HTB A/B/A SOP，使用与历史 1C1G 证据隔离的目录、10 秒 smoke gate、A1/B1/A2 冷却和人工恢复边界。
+- 新增实验性 HTB 候选速率发现工具链：只读计划生成器按首尾根 `fq` 基线和正序/反序轮次输出 JSON 与 payload 预算；显式 runner 复用 v0.3.0 HTB 状态/恢复门禁和 rc.12 benchmark，并按秒保存不含 endpoint/PID/进程名的 TCP_INFO 白名单指标；只读分析器用 receiver goodput 与 sender retransmits/GiB 的 median/MAD 形成 `REVIEW_REQUIRED` shortlist。
 
 ### Changed
 
@@ -16,6 +17,11 @@
 
 - 两个允许 profile 及不支持 profile、旧 schema、旧 rc、错误端口和活动 state 哈希漂移的静态 fixture 已覆盖；Debian 13 1C2G 的 rc.12 生命周期基线已冻结，HTB smoke 与 A/B/A 仍待目标机执行。
 - 原 1C1G/v0.2.1 SOP 和运行哈希保持不变，不把历史运行证据上推为 v0.3.0 或 1C2G 通过。
+- 候选扫描默认/自定义计划、流量预算、非法速率/冷却、runner 计划 schema、mock preflight/start/双 ACTIVE/benchmark/stop/postflight、socket 隐私、合成 shortlist、benchmark manifest/hash 和缺失 `COMPLETED` 负向 fixture 已覆盖；真实 iperf3、目标 VPS qdisc、信号中断和跨窗口统计仍待验证。
+
+### Safety
+
+- 候选扫描只测试本机 egress 上传，不把下载方向远端 sender 重传归因给本地 HTB；不假设固定 MSS、不计算 packet loss percentage、不使用固定全局重传阈值，也不创建或授权持久化整形。
 
 ## [0.1.0-rc.12] - 2026-08-06
 

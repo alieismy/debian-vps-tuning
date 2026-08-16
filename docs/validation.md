@@ -46,6 +46,9 @@
 | C27 | benchmark 流量预算 | 显式 `BENCHMARK_RATE_CAP_MBPS` 优先，否则只使用合法管理状态的端口上限；按 `(seconds+omit)×方向数` 计算 payload 上界并写入元数据；无可信 cap 时报告不可估算；非法 cap 阻断 | 显式 cap、无 cap、非法 cap、单/双方向公式和持久化元数据 fixture 通过；计费流量与真实吞吐不由静态检查证明 |
 | C28 | HTB 实验排程生成器 | 只输出 JSON；支持首轮 A/B/A、可选反向第二周期、至少 300 秒冷却及候选结论关闭后的低速 A/C/A；不得执行 qdisc、流量或持久化 | 两周期、单周期、180 Mbit/s 控制、非法冷却和非法控制速率 fixture 通过；目标机执行仍按独立 SOP 门禁 |
 | C29 | HTB v0.3.0 执行器基线绑定 | 只接受 rc.12 schema 4、`VERIFIED`、200 Mbps 的 Debian 13 1C1G/1C2G；活动状态保存实际 profile 和 managed-state SHA-256；profile/state 漂移、旧版本或其他端口必须拒绝继续 | 两个允许 profile 及 profile/schema/version/port/hash 负向 fixture 通过；1C2G 目标机 smoke/A/B/A 待执行 |
+| C30 | HTB 候选速率只读计划 | 只接受 200 Mbps、3–8 个唯一 100–199 Mbit/s 候选、2–5 个样本和至少 300 秒冷却；生成首尾重复根 fq 基线、候选正序/反序轮次、逐阶段 rate cap 及总 payload 预算；不读取主机、不执行流量 | 默认/自定义计划、预算公式及端口/重复/越界速率/样本/冷却负向 fixture 通过 |
+| C31 | HTB 候选速率 runner | 要求 root 所有且 group/world 不可写的固定计划、profile、HTB 工具和分析器；只对显式 endpoint 执行 upload；每个候选阶段执行 preflight→start→ACTIVE→benchmark→ACTIVE→stop→postflight，失败即停并尝试受管恢复；按秒保存只含 TCP_INFO 白名单 token 的 socket 指标，不输出 endpoint/PID/进程名；不安装软件、不持久化 | Bash/计划 schema、mock preflight/start/双 ACTIVE/benchmark/stop/postflight、子证据 hash、socket 隐私负向 fixture 和文档门禁通过；真实 iperf3、信号中断、watchdog 和目标 VPS qdisc 恢复待测 |
+| C32 | HTB 候选速率分析 | 校验每阶段 COMPLETED、benchmark manifest 和结果 hash；按 median/MAD 汇总 receiver goodput、sender retransmits/GiB、host TCP 和 qdisc；不假设 MSS、不计算丢包率、不使用固定全局重传阈值；只输出 `REVIEW_REQUIRED` shortlist | 合成正向 shortlist、缺失 COMPLETED 负向 fixture 通过；真实样本统计解释和跨窗口复验待测 |
 
 本地检查入口：
 
@@ -63,6 +66,9 @@ shellcheck -x \
   tcpquality-evidence.sh \
   experiments/htb-aggregate/htb-aggregate-experiment.sh \
   experiments/htb-aggregate/experiment-plan.sh \
+  experiments/htb-aggregate/rate-sweep-plan.sh \
+  experiments/htb-aggregate/rate-sweep-run.sh \
+  experiments/htb-aggregate/rate-sweep-analyze.sh \
   tests/static-check.sh \
   tests/controller-check.sh
 bash experiments/htb-aggregate/tests/static-check.sh

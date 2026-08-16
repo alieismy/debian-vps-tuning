@@ -604,9 +604,13 @@ env \
 
 节点变化不会自动使整组测试失效，但比较时必须剔除或单独标注不一致节点。包装脚本不调用主机包管理器或系统配置命令；固定上游的 `--all` 仍会访问节点、报告和测速端点，并产生显著的主动网络流量。
 
-### 8. HTB A/B/A 只读排程
+### 8. HTB 候选速率发现与 A/B/A
 
-`experiments/htb-aggregate/experiment-plan.sh` 只生成机器可读 JSON，不检查或修改目标机，也不自动执行流量。默认计划为首个窗口 `A1 → B1 → A2` 和另一个可比窗口中的反向顺序 `B2 → A3 → B3`，stage 之间至少冷却 300 秒：
+`experiments/htb-aggregate/rate-sweep-plan.sh`、`rate-sweep-run.sh` 和 `rate-sweep-analyze.sh` 把候选发现分成只读计划、显式流量/临时 qdisc 执行和只读分析三层。当前边界只接受 rc.12 schema 4、`VERIFIED`、200 Mbps 的 Debian 13 1C1G/1C2G 基线；只测上传，因为本地 egress HTB 不能用于归因下载方向的远端 sender 重传。默认计划在首尾重复根 `fq` 基线，并以正序/反序轮次重复 150/170/180/190/195 Mbit/s 候选；每阶段至少冷却 300 秒。
+
+分析使用 iperf3 精确 sender bytes 归一化的 `retransmits_per_gib` 和 receiver goodput，不假设固定 MSS、不推算 packet loss percentage、不使用固定全局重传阈值。runner 还按秒保存只含 TCP_INFO 白名单 token、不含 endpoint/PID/进程名的 `socket-metrics.txt`，用于辅助检查 RTT、cwnd、重排、重传和收发缓冲受限；它可能混入同机背景 TCP，不能替代流级指标。输出只能是人工复核 shortlist；扫描完成、shortlist 非空和 HTB `overlimits` 都不授权持久化。完整命令、流量预算、停止条件和恢复边界见 [HTB 候选聚合速率发现 SOP](docs/experiments/htb-candidate-rate-sweep.md)。
+
+候选经人工复核后，`experiments/htb-aggregate/experiment-plan.sh` 才用于生成机器可读的正式 A/B/A 计划；它本身不检查或修改目标机，也不自动执行流量。默认计划为首个窗口 `A1 → B1 → A2` 和另一个可比窗口中的反向顺序 `B2 → A3 → B3`，stage 之间至少冷却 300 秒：
 
 ```bash
 bash ./experiments/htb-aggregate/experiment-plan.sh \
@@ -616,7 +620,7 @@ bash ./experiments/htb-aggregate/experiment-plan.sh \
   --control-rate none >./experiment-plan-190.json
 ```
 
-较低速率控制必须等候选结果分析关闭后另建窗口，例如 `--control-rate 180` 会附加独立的 `A-control-before → C1 → A-control-after`，不会自动执行或授权 180 Mbit/s。
+较低速率控制必须等候选结果分析关闭后另建窗口，例如 `--control-rate 180` 会附加独立的 `A-control-before → C1 → A-control-after`，不会自动执行或授权 180 Mbit/s。候选扫描不能替代该 A/B/A 和反序复验。
 
 现行执行器 v0.3.0 只接受 rc.12 schema 4、`VERIFIED`、200 Mbps 的 `debian13-1c1g` 或 `debian13-1c2g` 基线，并把实际 profile 与受管 state 哈希绑定到活动状态。1C2G 新实验须使用独立的 [VMISS 1C2G / 200 Mbps HTB A/B/A SOP](docs/experiments/vmiss-1c2g-200mbps-htb-aba.md)。原 [VMISS Basic HTB A/B/A 实验 SOP](docs/experiments/vmiss-basic-200mbps-htb-aba.md) 保留为 1C1G/v0.2.1 历史运行证据，不得混用工具哈希或实验目录。
 
