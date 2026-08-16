@@ -2194,6 +2194,10 @@ show_diagnostics() {
 run_benchmark_phase() {
   local label="$1" reverse="$2" tmp_dir="$3" ifaces_file="$4"
   local current_rc=0 iface
+  local -a rate_args=()
+  if declare -p BENCHMARK_RATE_ARGS >/dev/null 2>&1; then
+    rate_args=("${BENCHMARK_RATE_ARGS[@]}")
+  fi
   softnet_snapshot '/proc/net/softnet_stat' >"${tmp_dir}/${label}.softnet.before" || return "$EXIT_VERIFY"
   tcp_counter_snapshot '/proc/net/snmp' '/proc/net/netstat' >"${tmp_dir}/${label}.tcp.before" || return "$EXIT_VERIFY"
   cpu_snapshot '/proc/stat' >"${tmp_dir}/${label}.cpu.before" || return "$EXIT_VERIFY"
@@ -2208,7 +2212,8 @@ run_benchmark_phase() {
   if [ "$reverse" = '1' ]; then
     if iperf3 --client "$BENCHMARK_HOST_RESOLVED" --port "$BENCHMARK_PORT_RESOLVED" \
       --time "$BENCHMARK_SECONDS_RESOLVED" --omit "$BENCHMARK_OMIT_RESOLVED" \
-      --parallel "$BENCHMARK_PARALLEL_RESOLVED" "${BENCHMARK_FAMILY_ARGS[@]}" --reverse --json \
+      --parallel "$BENCHMARK_PARALLEL_RESOLVED" "${BENCHMARK_FAMILY_ARGS[@]}" \
+      "${rate_args[@]}" --reverse --json \
       >"${tmp_dir}/${label}.iperf3.json"; then
       current_rc=0
     else
@@ -2217,7 +2222,8 @@ run_benchmark_phase() {
   else
     if iperf3 --client "$BENCHMARK_HOST_RESOLVED" --port "$BENCHMARK_PORT_RESOLVED" \
       --time "$BENCHMARK_SECONDS_RESOLVED" --omit "$BENCHMARK_OMIT_RESOLVED" \
-      --parallel "$BENCHMARK_PARALLEL_RESOLVED" "${BENCHMARK_FAMILY_ARGS[@]}" --json \
+      --parallel "$BENCHMARK_PARALLEL_RESOLVED" "${BENCHMARK_FAMILY_ARGS[@]}" \
+      "${rate_args[@]}" --json \
       >"${tmp_dir}/${label}.iperf3.json"; then
       current_rc=0
     else
@@ -2292,6 +2298,7 @@ run_network_benchmark() {
   local omit="${BENCHMARK_OMIT_SECONDS:-3}" family="${BENCHMARK_IP_FAMILY:-auto}"
   local direction="${BENCHMARK_DIRECTION:-both}" run_id="${BENCHMARK_RUN_ID:-}" output_dir="${BENCHMARK_OUTPUT_DIR:-}"
   local cap_input="${BENCHMARK_RATE_CAP_MBPS:-}" cap_mbps='' cap_source='unavailable' traffic_estimate
+  local enforce_rate_cap="${BENCHMARK_ENFORCE_RATE_CAP:-0}" rate_cap_enforced=false rate_cap_per_stream_bps=0
   local tmp_dir rc=0 current_rc=0 persistent_output=0 result_tmp manifest_sha result_sha trap_rc=0
   local benchmark_failure_stage='initialization'
   local script_hash state_phase state_network iperf_version boot_id
@@ -2330,6 +2337,8 @@ run_network_benchmark() {
     *) die "$EXIT_USAGE" 'BENCHMARK_IP_FAMILY 只能为 auto、4 或 6。' ;;
   esac
   case "$direction" in upload | download | both) ;; *) die "$EXIT_USAGE" 'BENCHMARK_DIRECTION 只能为 upload、download 或 both。' ;; esac
+  is_bool "$enforce_rate_cap" ||
+    die "$EXIT_USAGE" 'BENCHMARK_ENFORCE_RATE_CAP 只能为 0 或 1。'
   if [ -n "$cap_input" ]; then
     [[ "$cap_input" =~ ^[0-9]{1,6}$ ]] ||
       die "$EXIT_USAGE" 'BENCHMARK_RATE_CAP_MBPS 必须是 1–100000 的整数。'
@@ -2337,6 +2346,14 @@ run_network_benchmark() {
     [ "$cap_mbps" -ge 1 ] && [ "$cap_mbps" -le 100000 ] ||
       die "$EXIT_USAGE" 'BENCHMARK_RATE_CAP_MBPS 必须在 1–100000 之间。'
     cap_source='explicit'
+  fi
+  BENCHMARK_RATE_ARGS=()
+  if [ "$enforce_rate_cap" = '1' ]; then
+    [ -n "$cap_mbps" ] ||
+      die "$EXIT_USAGE" '启用 BENCHMARK_ENFORCE_RATE_CAP 时必须显式设置 BENCHMARK_RATE_CAP_MBPS。'
+    rate_cap_per_stream_bps=$((cap_mbps * 1000000 / parallel))
+    BENCHMARK_RATE_ARGS=(--bitrate "$rate_cap_per_stream_bps")
+    rate_cap_enforced=true
   fi
   if [ -z "$run_id" ]; then
     run_id="${SCRIPT_VERSION}-${PROFILE_ID}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
@@ -2416,7 +2433,8 @@ run_network_benchmark() {
     --arg host "$host" --argjson port "$port" --arg family "$family" --arg direction "$direction" \
     --argjson seconds "$seconds" --argjson omit_seconds "$omit" --argjson parallel "$parallel" \
     --arg iperf3 "$iperf_version" --argjson traffic_estimate "$traffic_estimate" \
-    '{schema_version:1,run_id:$run_id,utc:$utc,script_version:$script_version,profile:$profile,script_sha256:$script_sha256,boot_id:$boot_id,state:$state,state_network:$state_network,benchmark:{host:$host,port:$port,family:$family,direction:$direction,seconds:$seconds,omit_seconds:$omit_seconds,parallel:$parallel,iperf3:$iperf3,traffic_estimate:$traffic_estimate}}' \
+    --argjson rate_cap_enforced "$rate_cap_enforced" --argjson rate_cap_per_stream_bps "$rate_cap_per_stream_bps" \
+    '{schema_version:1,run_id:$run_id,utc:$utc,script_version:$script_version,profile:$profile,script_sha256:$script_sha256,boot_id:$boot_id,state:$state,state_network:$state_network,benchmark:{host:$host,port:$port,family:$family,direction:$direction,seconds:$seconds,omit_seconds:$omit_seconds,parallel:$parallel,iperf3:$iperf3,traffic_estimate:$traffic_estimate,rate_cap_enforced:$rate_cap_enforced,rate_cap_method:(if $rate_cap_enforced then "iperf3-bitrate" else null end),rate_cap_scope:(if $rate_cap_enforced then "aggregate-target-divided-across-streams" else null end),rate_cap_per_stream_bps:(if $rate_cap_enforced then $rate_cap_per_stream_bps else null end)}}' \
     >"${tmp_dir}/benchmark-meta.json"
   printf '%s\n' 'null' >"${tmp_dir}/upload.summary.json"
   printf '%s\n' 'null' >"${tmp_dir}/download.summary.json"
@@ -2532,6 +2550,7 @@ Environment:
   BENCHMARK_RUN_ID=id             optional reproducibility label; safe characters only
   BENCHMARK_OUTPUT_DIR=/absolute/new/path   optional persistent JSON/evidence directory; must not exist
   BENCHMARK_RATE_CAP_MBPS=1..100000 optional traffic-estimate cap; installed state is fallback
+  BENCHMARK_ENFORCE_RATE_CAP=0|1 default 0; 1 requires explicit rate cap and passes iperf3 --bitrate
 EOF_USAGE
 }
 

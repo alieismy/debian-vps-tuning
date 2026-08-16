@@ -6,11 +6,16 @@
 
 ### Added
 
+- 新增固定 Release 的 `install.sh`：外层 installer SHA-256、内置发布清单摘要和逐资产摘要形成两层门禁；安装到版本化 root-owned 目录并提供 `/usr/local/bin/dvt`，安装过程不自动 apply 或发流量。
+- 新增 advisory-only `dvt probe`：必须指定获授权 iperf3 endpoint，按显式/已验证端口上限强制单流 `iperf3 --bitrate`，在预算内重复采样并聚合有效窗口、吞吐中位数和精确 bytes 归一化重传。
+- 新增 `dvt htb` 受限 wrapper：简化 preflight、10 秒 smoke、status/stop 和 reference/sweep；候选扫描必须先验证 reference 完成状态、清单、有效窗口并显式确认人工复核。
 - 新增独立的 VMISS Debian 13 1C2G / 200 Mbps HTB A/B/A SOP，使用与历史 1C1G 证据隔离的目录、10 秒 smoke gate、A1/B1/A2 冷却和人工恢复边界。
 - 新增实验性 HTB 候选速率发现工具链：只读计划生成器按首尾根 `fq` 基线和正序/反序轮次输出 JSON 与 payload 预算；显式 runner 复用 v0.3.0 HTB 状态/恢复门禁和 rc.12 benchmark，并按秒保存不含 endpoint/PID/进程名的 TCP_INFO 白名单指标；只读分析器用 receiver goodput 与 sender retransmits/GiB 的 median/MAD 形成 `REVIEW_REQUIRED` shortlist。
 
 ### Changed
 
+- `benchmark` 新增 opt-in `BENCHMARK_ENFORCE_RATE_CAP=1`；与显式 `BENCHMARK_RATE_CAP_MBPS` 同时使用时向 iperf3 传递 `--bitrate`。旧 benchmark 默认行为保持不变。
+- 总控菜单和命令行增加 `probe`/`htb`，并只调用同一 `SHA256SUMS` 已校验的 companion 资产；Release 清单扩展到安装后运行所需的全部脚本。
 - 临时 HTB 执行器升级为 v0.3.0：严格限定 rc.12 schema 4、`VERIFIED`、200 Mbps 的 `debian13-1c1g`/`debian13-1c2g`，并把实际 profile 和 managed-state SHA-256 写入活动状态；实验期间发生 profile/state 漂移时拒绝继续或按旧假设 stop。
 
 ### Validation
@@ -21,6 +26,7 @@
 
 ### Safety
 
+- installer 固定 tag 且禁止回退到可变分支/`latest`；同版本目录内容不一致时拒绝覆盖。probe 不反写探测值、不修改 qdisc/sysctl、不授权持久化 HTB；公共测速点可达不等于获得批量测试授权。
 - 候选扫描只测试本机 egress 上传，不把下载方向远端 sender 重传归因给本地 HTB；不假设固定 MSS、不计算 packet loss percentage、不使用固定全局重传阈值，也不创建或授权持久化整形。
 
 ## [0.1.0-rc.12] - 2026-08-06

@@ -14,32 +14,26 @@ Debian VPS Tuning 用于配置 Debian 12/13 小型云 VPS 的主机网络。主�
 
 ### 1. 联网安装
 
-rc.12 Release 发布并通过公开资产复核后，使用以下固定总控入口。总控自动识别 Debian 12/13、amd64、CPU 和内存档位，先执行只读 `preflight`；预检通过后，只有明确输入 `y` 才执行 `apply`：
+rc.12 Release 发布并通过公开资产复核后，推荐安装固定版本的 `dvt` 短命令。下面是“一条可粘贴命令”，但仍保留“先完整下载、再核对固定 SHA-256、最后执行”三个门禁；它不会从 `main`/`master`/`latest` 下载，也不会在安装过程中自动执行调优或产生测试流量：
 
 ```bash
-(
-  set -e
-
-  dvt_tmp="$(mktemp -d)"
-  trap 'rm -rf -- "$dvt_tmp"' EXIT
-
-  curl --fail --show-error --silent --location \
-    --proto '=https' \
-    --proto-redir '=https' \
-    --connect-timeout 15 \
-    --max-time 120 \
-    -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.12/debian-vps-tuning.sh
-
-  printf '%s  %s\n' \
-    '1f72c8ce8c727577086b133e39cf6410899b0d6589278fdce145f42dcaf0322a' \
-    "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
-
-  bash "$dvt_tmp/debian-vps-tuning.sh"
-)
+(set -Eeuo pipefail; dvt_i="$(mktemp)"; trap 'rm -f -- "$dvt_i"' EXIT; curl --fail --show-error --silent --location --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 120 -o "$dvt_i" https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.12/install.sh; printf '%s  %s\n' '8adb2f473e56a20e3e53f6531d5351f6e9e982419acd10d4c1df63c272d55ee8' "$dvt_i" | sha256sum -c -; bash "$dvt_i")
 ```
 
-总控入口依次执行：
+安装器先核对内置固定的 `SHA256SUMS` 摘要，再逐一核对总控、六份 profile、证据工具和 HTB 实验工具；通过后安装到 `/usr/local/lib/debian-vps-tuning/0.1.0-rc.12`，原子更新 `/usr/local/lib/debian-vps-tuning/current`，并创建 `/usr/local/bin/dvt`。已有同版本目录只有在全部文件重新校验通过时才复用，内容不一致时拒绝覆盖。交互终端随后打开菜单；也可加 `--no-launch` 只安装。
+
+安装后常用命令：
+
+```bash
+dvt                         # 交互菜单
+dvt preflight --port 200    # 只读预检
+dvt apply --port 200        # 明确执行配置变更
+dvt verify                  # 重启后验证
+dvt status
+dvt diagnose
+```
+
+菜单中的安全引导依次执行：
 
 1. 显示检测到的系统、CPU、内存和档位；
 2. 选择服务商端口带宽；直接按 Enter 使用 200 Mbps；
@@ -73,7 +67,7 @@ reboot
     https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.12/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    '1f72c8ce8c727577086b133e39cf6410899b0d6589278fdce145f42dcaf0322a' \
+    'db2b94dbed9564cdc35786166b7000378b6c88876158d82d07e3e38639fa9309' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   bash "$dvt_tmp/debian-vps-tuning.sh" verify
@@ -104,7 +98,7 @@ printf 'verify_after_reboot_exit=%s\n' "$?"
     https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.12/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    '1f72c8ce8c727577086b133e39cf6410899b0d6589278fdce145f42dcaf0322a' \
+    'db2b94dbed9564cdc35786166b7000378b6c88876158d82d07e3e38639fa9309' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   env \
@@ -140,7 +134,7 @@ printf 'strict_verify_after_3xui_exit=%s\n' "$?"
     https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.12/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    '1f72c8ce8c727577086b133e39cf6410899b0d6589278fdce145f42dcaf0322a' \
+    'db2b94dbed9564cdc35786166b7000378b6c88876158d82d07e3e38639fa9309' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   bash "$dvt_tmp/debian-vps-tuning.sh" update
@@ -538,7 +532,34 @@ env DIAG_INCLUDE_SOCKET_DETAILS=1 \
   bash ./debian-vps-tuning.sh diagnose
 ```
 
-### 6. 显式 iperf3 benchmark
+### 6. Advisory-only `dvt probe`
+
+`dvt probe` 是推荐的日常主动测量入口。它要求显式提供你控制或明确获准使用的 iperf3 服务端；默认从 `VERIFIED` 管理状态读取 100–1000 Mbps 套餐端口上限，也可用 `--rate-cap` 明确指定。每个方向固定单流，并把该值通过 `iperf3 --bitrate` 实际应用到测试流量，而不只是写入估算。先查看流量预算且不产生流量：
+
+```bash
+dvt probe --host iperf.example.com --server-port 5201 --plan-only
+```
+
+确认 endpoint 授权和预算后，执行三个重复样本：
+
+```bash
+dvt probe \
+  --host iperf.example.com \
+  --server-port 5201 \
+  --rate-cap 200 \
+  --samples 3 \
+  --seconds 5 \
+  --omit 2 \
+  --direction both \
+  --family 4 \
+  --budget-mib 2048 \
+  --output-dir /root/dvt-probe-200m-a1 \
+  --yes
+```
+
+每个样本继续复用 profile 已有的 JSON 窗口校验、精确 sender bytes、重传/GiB、主机 TCP 与 qdisc 增量、`INCOMPLETE → COMPLETED` 和 SHA-256 证据链；顶层结果只给出中位数和 `REVIEW_REQUIRED`/`REVIEW_BLOCKED`。它不探测或改写服务商套餐上限，不修改 sysctl/qdisc，不给出持久化 HTB 速率，也不经过 3X-UI、Xray、订阅客户端或 TUN 链路。公共测速站“可以连通”不等于已获长期或批量测试授权，授权与使用条款必须由执行者另行确认。
+
+### 6A. 高级显式 iperf3 benchmark
 
 `benchmark` 不修改系统配置，但会产生高带宽 TCP 流量。运行前必须准备并获准使用 iperf3 服务端；脚本不安装软件包、不开放端口，也不选择公共服务器。
 
@@ -562,7 +583,7 @@ env BENCHMARK_HOST='iperf.example.com' \
 
 摘要中的 `sender.retransmits` 是对应方向的 iperf3 sender 统计，`host.tcp_delta` 是测试窗口内的整机全局计数，`qdisc_delta` 是本地 qdisc 统计。三者不可互换：背景连接会计入整机统计，本地 qdisc drop 也不等于远端路径丢包。
 
-开始产生测试流量前，脚本会按 `带宽上限 × (有效时间 + omit) × 方向数` 计算 iperf payload 估算上界。`BENCHMARK_RATE_CAP_MBPS` 显式值优先；未提供时只接受合法管理状态中的 `network.port_speed_mbps`，否则明确报告无法量化，不使用 profile 默认值猜测。估算及其 `explicit`/`managed-state` 来源写入 `benchmark-meta.json`。该值不含 TCP/IP 和链路层开销，不等同于服务商最终计费流量，也不保证实际吞吐达到该上限。
+开始产生测试流量前，脚本会按 `带宽上限 × (有效时间 + omit) × 方向数` 计算 iperf payload 估算上界。`BENCHMARK_RATE_CAP_MBPS` 显式值优先；未提供时只接受合法管理状态中的 `network.port_speed_mbps`，否则明确报告无法量化，不使用 profile 默认值猜测。估算及其 `explicit`/`managed-state` 来源写入 `benchmark-meta.json`。为了保持旧入口兼容，该值默认仍只用于估算；只有同时显式设置 `BENCHMARK_ENFORCE_RATE_CAP=1` 时才向 iperf3 传递 `--bitrate`，且此时必须显式提供 cap。[ESnet 官方 iperf3 手册](https://software.es.net/iperf/invoking.html)说明 `--bitrate` 在 `-P` 多流下逐流生效，因此脚本会把总 cap 等分为每流 bps，并在元数据记录 `rate_cap_scope` 与 `rate_cap_per_stream_bps`；推荐直接使用固定单流的 `dvt probe`。估算不含 TCP/IP 和链路层开销，不等同于服务商最终计费流量，也不保证实际吞吐达到该上限。
 
 `sender.retransmits_per_gib` 按 iperf3 sender bytes 归一化。存在 `mq` 叶子时，`qdisc_active_totals` 汇总叶 qdisc；否则汇总根 qdisc，来源记录在 `qdisc_coverage.aggregation_source`。根与叶的统计不相加，以免重复计算同一流量。这些指标只适合比较服务端、方向、时段和参数一致的重复测试，不能单独用于性能排名。
 
@@ -610,6 +631,27 @@ env \
 节点变化不会自动使整组测试失效，但比较时必须剔除或单独标注不一致节点。包装脚本不调用主机包管理器或系统配置命令；固定上游的 `--all` 仍会访问节点、报告和测速端点，并产生显著的主动网络流量。
 
 ### 8. HTB 候选速率发现与 A/B/A
+
+安装后的短命令把原有工具链包装为带阶段门禁的入口：
+
+```bash
+dvt htb preflight
+dvt htb smoke --rate 190 --hold-seconds 10
+
+dvt htb reference \
+  --host iperf.example.com --server-port 5201 \
+  --output-dir /root/htb200-reference-a1
+
+# 只有 reference 的 COMPLETED、SHA256SUMS、有效窗口和人工复核均通过后：
+dvt htb sweep \
+  --host iperf.example.com --server-port 5201 \
+  --reference-evidence /root/htb200-reference-a1 \
+  --ack-reference-reviewed \
+  --rates 180,190,195 \
+  --output-dir /root/htb-candidate-sweep-a1
+```
+
+`--ack-reference-reviewed` 只是证明操作者已检查 reference 证据，不授权永久整形。wrapper 不暴露“安装永久 HTB”的路径；异常时仍由执行器 watchdog/EXIT 恢复逻辑处理，并保留 `dvt htb status` 与 `dvt htb stop`。
 
 `experiments/htb-aggregate/rate-sweep-plan.sh`、`rate-sweep-run.sh` 和 `rate-sweep-analyze.sh` 把候选发现分成只读计划、显式流量/临时 qdisc 执行和只读分析三层。当前边界只接受 rc.12 schema 4、`VERIFIED`、200 Mbps 的 Debian 13 1C1G/1C2G 基线；只测上传，因为本地 egress HTB 不能用于归因下载方向的远端 sender 重传。默认 `reference-screen` 只重复 3 次 `HTB rate=ceil=200 Mbit/s + fq`，先判断端口额定速率下的重传和测量窗口是否稳定。只有人工认为有必要继续时，才显式生成独立 `candidate-sweep`，以相同 HTB+fq 拓扑在首尾重复 HTB200 reference，并以正序/反序轮次扫描 180/190/195 Mbit/s；每阶段至少冷却 300 秒。这样比较时只改变 class rate/ceil，不再把无限速根 `fq` 与 HTB 候选混为同一基线。
 
