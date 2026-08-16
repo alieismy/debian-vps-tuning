@@ -48,6 +48,10 @@ UPDATE_CONTROLLER_PATH=''
 UPDATE_CONTROLLER_SHA256=''
 SOURCE_PROFILE_PATH=''
 SOURCE_PROFILE_SHA256=''
+ACTION_ARGS=()
+PROBE_PATH=''
+HTB_WRAPPER_PATH=''
+HTB_BUNDLE_DIR=''
 
 info() { printf '[+] %s\n' "$*"; }
 warn() { printf '[!] %s\n' "$*" >&2; }
@@ -67,7 +71,7 @@ usage() {
   cat <<'EOF_USAGE'
 Usage:
   debian-vps-tuning.sh
-  debian-vps-tuning.sh {guided|preflight|apply|verify|status|diagnose|benchmark|update|rollback|recover} [options]
+  debian-vps-tuning.sh {guided|preflight|apply|verify|status|diagnose|probe|benchmark|htb|update|rollback|recover} [options]
 
 Options:
   --port MBPS    provider port cap for guided/preflight/apply; default 200
@@ -83,6 +87,10 @@ Behavior:
   - guided runs preflight first and asks before apply.
   - benchmark requires BENCHMARK_HOST and an existing iperf3 server; it changes
     no system configuration but deliberately generates high-bandwidth traffic.
+  - probe requires an explicitly authorized iperf3 server, enforces an
+    application rate cap, repeats samples and emits advisory-only evidence.
+  - htb wraps the existing non-persistent Debian 13 / 200 Mbps experiment;
+    use "htb --help" for its narrower scope and stage gates.
   - update is read-only: it verifies the source and target Release assets, runs
     source verify and target update-preflight, then prints a manual handoff plan.
   - recover is an advanced rc.2 empty-state recovery action and is not shown
@@ -220,6 +228,13 @@ parse_arguments() {
         [ -z "$ACTION" ] || die "$EXIT_USAGE" '只能指定一个 action。'
         ACTION="$1"
         ;;
+      probe | htb)
+        [ -z "$ACTION" ] || die "$EXIT_USAGE" '只能指定一个 action。'
+        ACTION="$1"
+        shift
+        ACTION_ARGS=("$@")
+        break
+        ;;
       --port)
         [ "$#" -ge 2 ] || die "$EXIT_USAGE" '--port 缺少数值。'
         CLI_PORT_SPEED_MBPS="$2"
@@ -255,9 +270,11 @@ choose_action_interactively() {
   4) verify
   5) status
   6) diagnose（5 秒只读增量诊断）
-  7) benchmark（需 BENCHMARK_HOST，会产生测试流量）
-  8) update（只读检查并生成升级计划）
-  9) rollback
+  7) probe（重复、限速、advisory-only；需已授权 iperf3）
+  8) benchmark（高级单次证据入口；需 BENCHMARK_HOST）
+  9) HTB 实验（仅 Debian 13 / 200 Mbps / 非持久化）
+ 10) update（只读检查并生成升级计划）
+ 11) rollback
   0) 退出
 EOF_MENU
   printf '\n请选择 [默认 1]：'
@@ -269,9 +286,11 @@ EOF_MENU
     4) ACTION='verify' ;;
     5) ACTION='status' ;;
     6) ACTION='diagnose' ;;
-    7) ACTION='benchmark' ;;
-    8) ACTION='update' ;;
-    9) ACTION='rollback' ;;
+    7) ACTION='probe' ;;
+    8) ACTION='benchmark' ;;
+    9) ACTION='htb' ;;
+    10) ACTION='update' ;;
+    11) ACTION='rollback' ;;
     0) exit 0 ;;
     *) die "$EXIT_USAGE" '无效操作选择。' ;;
   esac
@@ -566,6 +585,58 @@ resolve_profile_script() {
   PROFILE_SOURCE="release:${RELEASE_TAG}"
 }
 
+resolve_companion_assets() {
+  local local_dir local_manifest controller_source manifest logical source target remote_name
+  local -a required=(dvt-probe.sh)
+  [ "$ACTION" != htb ] || required=(
+    dvt-htb.sh
+    experiments/htb-aggregate/experiment-plan.sh
+    experiments/htb-aggregate/htb-aggregate-experiment.sh
+    experiments/htb-aggregate/rate-sweep-plan.sh
+    experiments/htb-aggregate/rate-sweep-run.sh
+    experiments/htb-aggregate/rate-sweep-analyze.sh
+  )
+  local_dir="$(controller_directory)"
+  local_manifest="${local_dir}/SHA256SUMS"
+  controller_source="${BASH_SOURCE[0]}"
+  if [[ "$controller_source" != /* ]]; then controller_source="${PWD}/${controller_source}"; fi
+  if [ -f "$local_manifest" ]; then
+    verify_manifest_entry "$local_manifest" "$controller_source" debian-vps-tuning.sh ||
+      die "$EXIT_INTEGRITY" '同目录 companion 资产存在，但总控不属于该 SHA256SUMS。'
+    for logical in "${required[@]}"; do
+      source="${local_dir}/${logical}"
+      [ -f "$source" ] && [ ! -L "$source" ] || die "$EXIT_INTEGRITY" "同目录 Release 缺少 companion 资产：${logical}"
+      verify_manifest_entry "$local_manifest" "$source" "$logical" ||
+        die "$EXIT_INTEGRITY" "companion 资产未通过 SHA-256 校验：${logical}"
+    done
+    PROBE_PATH="${local_dir}/dvt-probe.sh"
+    HTB_WRAPPER_PATH="${local_dir}/dvt-htb.sh"
+    HTB_BUNDLE_DIR="${local_dir}/experiments/htb-aggregate"
+    return 0
+  fi
+
+  need_command curl
+  if [ -z "$TEMP_DIR" ]; then TEMP_DIR="$(mktemp -d)" || die "$EXIT_DOWNLOAD" '无法创建 companion 临时目录。'; fi
+  manifest="${TEMP_DIR}/SHA256SUMS"
+  if [ ! -f "$manifest" ]; then
+    download_file "${RELEASE_BASE_URL}/SHA256SUMS" "$manifest" ||
+      die "$EXIT_DOWNLOAD" '无法下载固定 companion 发布清单。'
+  fi
+  for logical in "${required[@]}"; do
+    target="${TEMP_DIR}/${logical}"
+    mkdir -p -- "$(dirname "$target")"
+    remote_name="$(basename "$logical")"
+    download_file "${RELEASE_BASE_URL}/${remote_name}" "$target" ||
+      die "$EXIT_DOWNLOAD" "无法下载固定 companion 资产：${remote_name}"
+    verify_manifest_entry "$manifest" "$target" "$logical" ||
+      die "$EXIT_INTEGRITY" "远程 companion 资产未通过 SHA-256 校验：${logical}"
+    chmod 0700 "$target"
+  done
+  PROBE_PATH="${TEMP_DIR}/dvt-probe.sh"
+  HTB_WRAPPER_PATH="${TEMP_DIR}/dvt-htb.sh"
+  HTB_BUNDLE_DIR="${TEMP_DIR}/experiments/htb-aggregate"
+}
+
 print_environment_summary() {
   printf '\nDebian VPS Tuning %s\n\n' "$CONTROLLER_VERSION"
   printf '检测结果：\n'
@@ -686,6 +757,12 @@ dispatch_action() {
       fi
       run_profile benchmark
       ;;
+    probe)
+      bash "$PROBE_PATH" --tuning-script "$PROFILE_PATH" --profile-id "$DETECTED_PROFILE" "${ACTION_ARGS[@]}"
+      ;;
+    htb)
+      bash "$HTB_WRAPPER_PATH" --bundle-dir "$HTB_BUNDLE_DIR" --tuning-script "$PROFILE_PATH" "${ACTION_ARGS[@]}"
+      ;;
     update) run_update ;;
     preflight | verify | status | diagnose | rollback | recover) run_profile "$ACTION" ;;
     *) die "$EXIT_USAGE" "不支持的 action：${ACTION}" ;;
@@ -711,6 +788,7 @@ main() {
   select_port_speed
   if [ "$ACTION" != 'update' ]; then
     resolve_profile_script
+    case "$ACTION" in probe | htb) resolve_companion_assets ;; esac
     print_execution_plan
   fi
   dispatch_action

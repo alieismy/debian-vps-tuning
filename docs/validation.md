@@ -31,7 +31,7 @@
 | C12 | 菜单 `apply` | 再次确认；N/Enter 不 apply | 目标 VPS 待测 |
 | C13 | 无 TTY 且无 action | 返回 usage，不等待输入 | 目标 Linux 待测 |
 | C14 | 状态档位与检测档位不一致 | 阻断，不自动换 profile | fixture 通过；目标 VPS 待测 |
-| C15 | 固定 rc.12 Release assets | 下载清单和唯一 profile，SHA-256 通过 | 本地 fixture 通过；Release 尚未创建，发布后须从公开地址重下载并复核九个资产 |
+| C15 | 固定 rc.12 Release assets | 外层固定 installer 摘要；installer 固定清单摘要；下载清单、总控、六份 profile、证据/CLI/HTB 资产并逐项通过 SHA-256 | 本地清单与静态门禁通过；Release 尚未创建，发布后须从公开地址重下载并复核十七个资产 |
 | C16 | 已安装状态下无 `--port`/环境变量地重复 `apply` | 复用状态中的端口带宽；显式参数仍优先；无效状态值阻断 | fixture 通过；目标 VPS 待测 |
 | C17 | `diagnose` | 默认 5 秒前后采样；输出 TCP/softnet、整机 CPU、接口和可识别 ethtool 错误增量；读取 qdisc、队列、RPS/XPS/IRQ、Xray sockopt 和代理进程 CPU time/RSS/线程/FD；无系统配置写入、无主动流量、无进程命令行 | CPU/接口增量 fixture 与结构检查通过；目标 VPS 待测 |
 | C18 | `benchmark` 未提供 host、无 iperf3、无效端口/时长/预热/并行/地址族/run ID，或输出目录非绝对路径/已经存在 | 明确拒绝；不覆盖旧证据，不安装软件、不改防火墙、不选择公共服务器 | 参数和输出目录 fixture 通过；目标 VPS 待测 |
@@ -43,7 +43,7 @@
 | C24 | `diagnose`/`benchmark` 在 `INT`/`TERM` 或其他异常中断 | 返回非零/对应信号退出码；临时模式只清理本次 root-only 目录，持久化 benchmark 默认保留含 stage/exit code 的 `INCOMPLETE`；只有完整提交才存在 `COMPLETED`；不触碰状态或系统配置 | manifest 失败终态 fixture 与 trap 结构检查通过；信号和目标 VPS 待测 |
 | C25 | 固定 TcpQuality 证据工具 | commit、三个脚本哈希、rootfs 哈希和固定目录清单均一致；拒绝覆盖；每轮恰好一个 CSV；节点响应通过 12 列 TSV schema；保存节点/CSV 哈希、漂移、实际 URL、原始日志和最终清单；任一关键步骤失败即停止；不调用本项目 apply | pinned 校验失败、节点 schema/漂移和静态只读门禁通过；完整 rootfs 目标 VPS 待测 |
 | C26 | 厂商 `/etc/sysctl.conf` 唯一且相同值的 `fq`/`bbr` 基线 | `preflight` 零写入并报告 `PASS_WITH_PROVIDER_SYSCTL_TRANSFER`；`apply` 提交 schema 4 状态后完整备份并原子迁移；`verify` 校验原始/迁移后哈希；`rollback` 恢复原文件和安装前运行值；外部修改时拒绝覆盖并保留 `DEGRADED` | 只读分类、迁移/恢复、外部修改拒绝和 schema 3 仅限 update-preflight fixture 通过；Debian 12/13 目标 VPS 生命周期待测 |
-| C27 | benchmark 流量预算 | 显式 `BENCHMARK_RATE_CAP_MBPS` 优先，否则只使用合法管理状态的端口上限；按 `(seconds+omit)×方向数` 计算 payload 上界并写入元数据；该变量不向 iperf3 注入 pacing，真实限速必须由实验拓扑另行保证；无可信 cap 时报告不可估算；非法 cap 阻断 | 显式 cap、无 cap、非法 cap、单/双方向公式和持久化元数据 fixture 通过；计费流量、真实吞吐和实际限速不由该静态预算证明 |
+| C27 | benchmark 流量预算与 opt-in pacing | 显式 `BENCHMARK_RATE_CAP_MBPS` 优先，否则只使用合法管理状态的端口上限；按 `(seconds+omit)×方向数` 计算 payload 上界并写入元数据；默认只估算，只有 `BENCHMARK_ENFORCE_RATE_CAP=1` 与显式 cap 同时存在时才传递 `iperf3 --bitrate`；并行流按逐流语义等分总 cap 并记录 scope/每流 bps；无可信 cap、缺 cap 强制限速或非法输入均阻断 | 显式 cap、无 cap、非法 cap、单/双方向公式、`--bitrate` 转发和持久化元数据 fixture 通过；计费流量、真实吞吐和实际限速精度不由静态 fixture 证明 |
 | C28 | HTB 实验排程生成器 | 只输出 JSON；支持首轮 A/B/A、可选反向第二周期、至少 300 秒冷却及候选结论关闭后的低速 A/C/A；不得执行 qdisc、流量或持久化 | 两周期、单周期、180 Mbit/s 控制、非法冷却和非法控制速率 fixture 通过；目标机执行仍按独立 SOP 门禁 |
 | C29 | HTB v0.4.0 执行器基线绑定 | 只接受 rc.12 schema 4、`VERIFIED`、200 Mbps 的 Debian 13 1C1G/1C2G；允许临时 100–200 Mbit/s，其中 200 仅用于端口额定 reference；活动状态保存实际 profile 和 managed-state SHA-256；profile/state 漂移、旧版本、超过端口或其他端口必须拒绝继续 | 两个允许 profile、100/200 边界及 profile/schema/version/port/hash/201 负向 fixture 通过；1C2G v0.4.0 目标机 smoke/A/B/A 待执行 |
 | C30 | HTB reference/candidate 只读计划 | 默认 `reference-screen` 只生成 2–5 个 HTB200 样本且拒绝 `--rates`；显式 `candidate-sweep` 只接受 3–8 个唯一 100–199 Mbit/s 候选，在首尾生成相同 HTB200 reference 并正序/反序扫描；每阶段 `rate_cap_mbit == rate_mbit`，预算按实际 HTB rate/ceil 求和；不读取主机、不执行流量 | 默认 HTB200 reference、180/190/195 和自定义候选计划、schema 2、实际 HTB 预算公式及 mode/端口/重复/越界速率/样本/冷却负向 fixture 通过 |
@@ -74,7 +74,7 @@ shellcheck -x \
 bash experiments/htb-aggregate/tests/static-check.sh
 ```
 
-发布前必须从 draft Release 下载总控、六份 profile、TcpQuality 证据工具和清单共九个资产，在与仓库不同的临时目录执行 `sha256sum -c SHA256SUMS`，再分别验证本地模式和缺少同目录 profile 时的远程模式。Release 尚未上传资产时，不得把远程下载测试标为通过。
+发布前必须从 draft Release 下载 installer、总控、六份 profile、TcpQuality、两个 `dvt` companion、五个 HTB 脚本和清单共十七个资产，在与仓库不同的临时目录复核 installer/manifest 固定摘要并执行 `sha256sum -c SHA256SUMS`，再分别验证安装器本地/远程模式、总控本地模式和缺少同目录 profile 时的远程模式。Release 尚未上传资产时，不得把远程下载测试标为通过。
 
 ## 首发目标机矩阵
 
@@ -130,6 +130,8 @@ rc.12 保持 rc.11/rc.10 的该矩阵。对 500/1000 Mbps 的 2G 档，rc.10–r
 | M11 | 显式 purge | `swapoff` 成功才删除 swap/fstab 行；失败时保留证据 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
 | M12 | 业务负载期间 `diagnose` | 采样窗口内记录 TCP/softnet/CPU/接口/ethtool 增量、qdisc 前后计数、队列/IRQ、Xray sockopt 和代理进程资源；无配置写入 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
 | M13 | 授权 iperf3 benchmark | 单流优先；固定服务端、地址族、有效时长、预热、run ID 和新输出目录；上传/下载分别保存原始 JSON、sender 吞吐/重传/每 GiB 重传、host-wide TCP/接口与 qdisc 增量；结果 PASS、`COMPLETED` 存在、`INCOMPLETE` 不存在且两层哈希可复算；确认不当作代理业务结果 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M14 | 固定 Release 安装器 | 外层 installer SHA-256、内置 manifest SHA-256、逐资产哈希均通过；版本化目录为 root-owned 且不可被 group/world 写；`current`/`dvt` 原子切换；安装前后 sysctl/qdisc/state 不变 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M15 | advisory-only `dvt probe` | `--plan-only` 零流量；超预算/无授权 host/无 cap 阻断；实际样本固定单流并记录 `rate_cap_enforced=true`；每个样本及顶层证据哈希通过；只输出 `REVIEW_REQUIRED`/`REVIEW_BLOCKED`，state/sysctl/qdisc 不变 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
 
 状态初始化还必须覆盖 jq 构造器失败路径：状态 JSON 未成功提交时，不得创建 sysctl、journald、helper、unit 或 x-ui drop-in；脚本应删除本次进程创建的 qdisc 快照、JSON 临时文件和空状态目录，并明确报告“未写入系统配置”。
 

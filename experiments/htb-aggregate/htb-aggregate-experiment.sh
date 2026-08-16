@@ -230,10 +230,10 @@ assert_active_internal() {
     return 1
   }
   watchdog_unit="$(jq -r '.watchdog_unit // empty' "$STATE_FILE")"
-  [ -n "$watchdog_unit" ] && systemctl is-active --quiet "${watchdog_unit}.timer" || {
+  if [ -z "$watchdog_unit" ] || ! systemctl is-active --quiet "${watchdog_unit}.timer"; then
     warn '自动回滚 timer 不是 active。'
     return 1
-  }
+  fi
   log "active-check=PASS profile=${profile} interface=${iface} rate=${actual_rate}Mbit root=htb class=1:10 leaf=fq watchdog=active"
 }
 

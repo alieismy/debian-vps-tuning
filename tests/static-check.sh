@@ -14,6 +14,9 @@ scripts=(
 )
 controller='debian-vps-tuning.sh'
 tcpquality_tool='tcpquality-evidence.sh'
+installer='install.sh'
+probe_tool='dvt-probe.sh'
+htb_wrapper='dvt-htb.sh'
 invalid_receiver_fixture='experiments/htb-aggregate/tests/fixtures/iperf3-invalid-receiver-window.json'
 
 if command -v python3 >/dev/null 2>&1; then
@@ -25,8 +28,8 @@ else
   exit 1
 fi
 "$python_cmd" tools/render_profiles.py --check
-bash -n "${scripts[@]}" "$controller" "$tcpquality_tool" tools/profile-template.sh.in \
-  tests/static-check.sh tests/controller-check.sh
+bash -n "${scripts[@]}" "$controller" "$tcpquality_tool" "$installer" "$probe_tool" "$htb_wrapper" tools/profile-template.sh.in \
+  tests/static-check.sh tests/controller-check.sh tests/installer-check.sh
 
 bash tests/controller-check.sh
 
@@ -270,8 +273,12 @@ grep -Fq 'debian12-1c512m-vps-tuning.sh' "$controller"
 grep -Fq 'debian13-1c512m-vps-tuning.sh' "$controller"
 grep -Fq "resource_class='2C2GB'" "$controller"
 grep -Fq 'diagnose（5 秒只读增量诊断）' "$controller"
-grep -Fq 'benchmark（需 BENCHMARK_HOST，会产生测试流量）' "$controller"
+grep -Fq 'probe（重复、限速、advisory-only；需已授权 iperf3）' "$controller"
+grep -Fq 'benchmark（高级单次证据入口；需 BENCHMARK_HOST）' "$controller"
+grep -Fq 'HTB 实验（仅 Debian 13 / 200 Mbps / 非持久化）' "$controller"
 grep -Fq 'update（只读检查并生成升级计划）' "$controller"
+grep -Fq 'resolve_companion_assets' "$controller"
+grep -Fq 'ACTION_ARGS=("$@")' "$controller"
 grep -Fq 'env UPDATE_PREFLIGHT=1 PORT_SPEED_MBPS=' "$controller"
 grep -Fq '系统配置未修改' "$controller"
 grep -Fq 'select_highest_release_tag' "$controller"
@@ -284,6 +291,36 @@ if grep -Eq 'raw\.githubusercontent\.com|/master/|/main/|releases/latest|http://
   printf 'mutable or insecure controller download source detected\n' >&2
   exit 1
 fi
+
+grep -Fq "RELEASE_TAG='v0.1.0-rc.12'" "$installer"
+grep -Eq "EXPECTED_MANIFEST_SHA256='[0-9a-f]{64}'" "$installer"
+if grep -Fq "EXPECTED_MANIFEST_SHA256='0000000000000000000000000000000000000000000000000000000000000000'" "$installer"; then
+  printf 'installer manifest digest placeholder was not finalized\n' >&2
+  exit 1
+fi
+grep -Fq -- "--proto '=https' --proto-redir '=https'" "$installer"
+grep -Fq 'manifest_entry_valid' "$installer"
+grep -Fq '安装过程没有执行 preflight/apply' "$installer"
+manifest_hash="$(sha256sum SHA256SUMS | awk '{print $1}')"
+grep -Fq "EXPECTED_MANIFEST_SHA256='${manifest_hash}'" "$installer"
+installer_hash="$(sha256sum "$installer" | awk '{print $1}')"
+grep -Fq "$installer_hash" README.md
+grep -Fq "$manifest_hash" docs/releases/v0.1.0-rc.12.md
+if grep -Eq 'raw\.githubusercontent\.com|/master/|/main/|releases/latest|http://' "$installer"; then
+  printf 'mutable or insecure installer download source detected\n' >&2
+  exit 1
+fi
+
+grep -Fq 'BENCHMARK_ENFORCE_RATE_CAP=1' "$probe_tool"
+grep -Fq 'rate_cap_enforced == true' "$probe_tool"
+grep -Fq 'advisory_only:true' "$probe_tool"
+grep -Fq 'persistent_shaping_authorized:false' "$probe_tool"
+grep -Fq -- '--plan-only' "$probe_tool"
+grep -Fq -- '--ack-reference-reviewed' "$htb_wrapper"
+grep -Fq '.measurement_gate.valid == true' "$htb_wrapper"
+grep -Fq 'never creates persistent HTB' "$htb_wrapper"
+grep -Fq 'rate_cap * 125000 * (seconds + omit) * direction_count * samples' "$probe_tool"
+( command sha256sum -c SHA256SUMS >/dev/null )
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf -- "$tmp_dir"' EXIT
@@ -500,6 +537,7 @@ ensure_required_tools() { :; }
 check_supported_os() { :; }
 iperf3() { :; }
 die() { exit "$1"; }
+is_bool() { case "$1" in 0 | 1) return 0 ;; *) return 1 ;; esac; }
 
 set +e
 ( unset BENCHMARK_HOST; run_network_benchmark ) >/dev/null 2>&1
@@ -536,6 +574,18 @@ set +e
 rc=$?
 set -e
 [ "$rc" -eq "$EXIT_USAGE" ] || { printf 'benchmark accepted rate cap 0\n' >&2; exit 1; }
+
+set +e
+( BENCHMARK_HOST=example.com BENCHMARK_ENFORCE_RATE_CAP=1 run_network_benchmark ) >/dev/null 2>&1
+rc=$?
+set -e
+[ "$rc" -eq "$EXIT_USAGE" ] || { printf 'benchmark enforced an unspecified rate cap\n' >&2; exit 1; }
+
+set +e
+( BENCHMARK_HOST=example.com BENCHMARK_ENFORCE_RATE_CAP=yes BENCHMARK_RATE_CAP_MBPS=200 run_network_benchmark ) >/dev/null 2>&1
+rc=$?
+set -e
+[ "$rc" -eq "$EXIT_USAGE" ] || { printf 'benchmark accepted invalid rate-cap boolean\n' >&2; exit 1; }
 
 case "$(uname -s)" in
   MINGW* | MSYS* | CYGWIN*) ;;
@@ -664,6 +714,14 @@ jq -e '.qdisc_root_totals.dropped_delta == 0 and .qdisc_root_totals.dropped_per_
 jq -e '.qdisc_coverage.aggregation_source == "root" and .qdisc_active_totals.dropped_delta == 0' \
   "$test_root/upload.summary.json" >/dev/null
 jq -e '.direction == "download" and .reverse == true' "$test_root/download.summary.json" >/dev/null
+
+: >"$capture"
+BENCHMARK_RATE_ARGS=(--bitrate 200M)
+run_benchmark_phase upload 0 "$test_root" "$test_root/ifaces" >/dev/null
+grep -Fq -- '--version6 --bitrate 200M --json' "$capture" || {
+  printf 'benchmark did not forward the enforced iperf3 bitrate: %s\n' "$(<"$capture")" >&2
+  exit 1
+}
 
 printf 'TcpRetransSegs\t10\n' >"$test_root/wrap.before"
 printf 'TcpRetransSegs\t5\n' >"$test_root/wrap.after"
@@ -813,6 +871,7 @@ ensure_required_tools() { :; }
 check_supported_os() { :; }
 info() { :; }
 die() { exit "$1"; }
+is_bool() { case "$1" in 0 | 1) return 0 ;; *) return 1 ;; esac; }
 default_route_ifaces() { printf 'eth0\n'; }
 state_file_is_valid() { [ "${STATE_VALID:-0}" = '1' ]; }
 sysctl() { printf 'stub\n'; }
@@ -829,11 +888,11 @@ sha256sum() {
 }
 
 success_dir="$test_root/success"
-BENCHMARK_HOST=example.com BENCHMARK_DIRECTION=upload BENCHMARK_RATE_CAP_MBPS=200 BENCHMARK_OUTPUT_DIR="$success_dir" run_network_benchmark >/dev/null
+BENCHMARK_HOST=example.com BENCHMARK_DIRECTION=upload BENCHMARK_RATE_CAP_MBPS=200 BENCHMARK_ENFORCE_RATE_CAP=1 BENCHMARK_OUTPUT_DIR="$success_dir" run_network_benchmark >/dev/null
 [ -f "$success_dir/COMPLETED" ] && [ ! -e "$success_dir/INCOMPLETE" ]
 jq -e '.status == "PASS" and .exit_code == 0 and (.evidence_manifest_sha256 | type == "string")' \
   "$success_dir/benchmark-result.json" >/dev/null
-jq -e '.benchmark.traffic_estimate.available == true and .benchmark.traffic_estimate.cap_source == "explicit" and .benchmark.traffic_estimate.payload_upper_bound_bytes == 325000000' \
+jq -e '.benchmark.traffic_estimate.available == true and .benchmark.traffic_estimate.cap_source == "explicit" and .benchmark.traffic_estimate.payload_upper_bound_bytes == 325000000 and .benchmark.rate_cap_enforced == true and .benchmark.rate_cap_method == "iperf3-bitrate" and .benchmark.rate_cap_scope == "aggregate-target-divided-across-streams" and .benchmark.rate_cap_per_stream_bps == 200000000' \
   "$success_dir/benchmark-meta.json" >/dev/null
 (cd "$success_dir" && command sha256sum -c SHA256SUMS >/dev/null)
 
@@ -1808,9 +1867,13 @@ for script in "${scripts[@]}"; do
 done
 
 if command -v shellcheck >/dev/null 2>&1; then
-  shellcheck -x "${scripts[@]}" "$controller" "$tcpquality_tool" \
+  shellcheck -x "${scripts[@]}" "$controller" "$tcpquality_tool" "$installer" "$probe_tool" "$htb_wrapper" \
     experiments/htb-aggregate/experiment-plan.sh \
-    tests/static-check.sh tests/controller-check.sh
+    experiments/htb-aggregate/htb-aggregate-experiment.sh \
+    experiments/htb-aggregate/rate-sweep-plan.sh \
+    experiments/htb-aggregate/rate-sweep-run.sh \
+    experiments/htb-aggregate/rate-sweep-analyze.sh \
+    tests/static-check.sh tests/controller-check.sh tests/installer-check.sh
   for helper in "$tmp_dir"/*.helper; do shellcheck -x "$helper"; done
 else
   printf '[WARN] shellcheck not found; syntax and structural checks only\n' >&2
