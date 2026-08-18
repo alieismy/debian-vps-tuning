@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.1.0-rc.12] - 2026-08-18
+
 ### Added
 
 - 新增固定 Release 的 `install.sh`：外层 installer SHA-256、内置发布清单摘要和逐资产摘要形成两层门禁；安装到版本化 root-owned 目录并提供 `/usr/local/bin/dvt`，安装过程不自动 apply 或发流量。
@@ -11,28 +13,6 @@
 - 新增 `dvt htb` 受限 wrapper：简化 preflight、10 秒 smoke、status/stop 和 reference/sweep；候选扫描必须先验证 reference 完成状态、清单、有效窗口并显式确认人工复核。
 - 新增独立的 VMISS Debian 13 1C2G / 200 Mbps HTB A/B/A SOP，使用与历史 1C1G 证据隔离的目录、10 秒 smoke gate、A1/B1/A2 冷却和人工恢复边界。
 - 新增实验性 HTB 候选速率发现工具链：只读计划生成器按首尾根 `fq` 基线和正序/反序轮次输出 JSON 与 payload 预算；显式 runner 复用 v0.3.0 HTB 状态/恢复门禁和 rc.12 benchmark，并按秒保存不含 endpoint/PID/进程名的 TCP_INFO 白名单指标；只读分析器用 receiver goodput 与 sender retransmits/GiB 的 median/MAD 形成 `REVIEW_REQUIRED` shortlist。
-
-### Changed
-
-- `benchmark` 新增 opt-in `BENCHMARK_ENFORCE_RATE_CAP=1`；与显式 `BENCHMARK_RATE_CAP_MBPS` 同时使用时向 iperf3 传递 `--bitrate`。旧 benchmark 默认行为保持不变。
-- 总控菜单和命令行增加 `probe`/`htb`，并只调用同一 `SHA256SUMS` 已校验的 companion 资产；Release 清单扩展到安装后运行所需的全部脚本。
-- 临时 HTB 执行器升级为 v0.3.0：严格限定 rc.12 schema 4、`VERIFIED`、200 Mbps 的 `debian13-1c1g`/`debian13-1c2g`，并把实际 profile 和 managed-state SHA-256 写入活动状态；实验期间发生 profile/state 漂移时拒绝继续或按旧假设 stop。
-
-### Validation
-
-- 两个允许 profile 及不支持 profile、旧 schema、旧 rc、错误端口和活动 state 哈希漂移的静态 fixture 已覆盖；Debian 13 1C2G 的 rc.12 生命周期基线已冻结，HTB smoke 与 A/B/A 仍待目标机执行。
-- 原 1C1G/v0.2.1 SOP 和运行哈希保持不变，不把历史运行证据上推为 v0.3.0 或 1C2G 通过。
-- 候选扫描默认/自定义计划、流量预算、非法速率/冷却、runner 计划 schema、mock preflight/start/双 ACTIVE/benchmark/stop/postflight、socket 隐私、合成 shortlist、benchmark manifest/hash 和缺失 `COMPLETED` 负向 fixture 已覆盖；真实 iperf3、目标 VPS qdisc、信号中断和跨窗口统计仍待验证。
-
-### Safety
-
-- installer 固定 tag 且禁止回退到可变分支/`latest`；同版本目录内容不一致时拒绝覆盖。probe 不反写探测值、不修改 qdisc/sysctl、不授权持久化 HTB；公共测速点可达不等于获得批量测试授权。
-- 候选扫描只测试本机 egress 上传，不把下载方向远端 sender 重传归因给本地 HTB；不假设固定 MSS、不计算 packet loss percentage、不使用固定全局重传阈值，也不创建或授权持久化整形。
-
-## [0.1.0-rc.12] - 2026-08-06
-
-### Added
-
 - `benchmark` 可通过 `BENCHMARK_OUTPUT_DIR` 将原始 iperf3 JSON、分方向结构化摘要、主机 TCP/接口/qdisc 计数器、运行元数据和总结果持久化到新的 root-only 证据目录，并生成可复核的 `SHA256SUMS`；
 - `benchmark` 在产生流量前按显式 `BENCHMARK_RATE_CAP_MBPS` 或合法管理状态中的端口上限估算 payload 流量预算，并把数值、来源、方向数、总时长和“不含协议开销”边界写入运行元数据；
 - 分方向摘要增加 sender 吞吐、sender retransmits、每 GiB 重传数、host-wide TCP/接口增量和 qdisc 增量；存在 `mq` 叶子时汇总 leaf，否则汇总 root，避免 root/leaf 重复计数；
@@ -42,27 +22,35 @@
 
 ### Changed
 
+- `benchmark` 新增 opt-in `BENCHMARK_ENFORCE_RATE_CAP=1`；与显式 `BENCHMARK_RATE_CAP_MBPS` 同时使用时向 iperf3 传递 `--bitrate`。旧 benchmark 默认行为保持不变。
+- 总控菜单和命令行增加 `probe`/`htb`，并只调用同一 `SHA256SUMS` 已校验的 companion 资产；Release 清单扩展到安装后运行所需的全部脚本。
+- 临时 HTB 执行器升级为 v0.3.0：严格限定 rc.12 schema 4、`VERIFIED`、200 Mbps 的 `debian13-1c1g`/`debian13-1c2g`，并把实际 profile 和 managed-state SHA-256 写入活动状态；实验期间发生 profile/state 漂移时拒绝继续或按旧假设 stop。
 - 总控和六份 profile 版本同步为 `0.1.0-rc.12`，固定 Release tag 改为 `v0.1.0-rc.12`；状态 schema 升级为 4，只读 `update-preflight` 保留对合法 schema 3 状态的兼容；
 - benchmark 证据目录采用 `INCOMPLETE → COMPLETED` 终态提交；最终结果绑定核心证据清单哈希，完成标记再绑定清单与结果哈希；计数器缺失/回退、iperf3 字段缺失/类型错误或证据清单校验失败均按验证失败处理；
 - TcpQuality 证据协议从人工约定升级为可执行工具：显式检查每个关键步骤，拒绝覆盖既有目录，验证固定 12 列节点 TSV，记录实际节点 URL、CSV/节点快照哈希，并分别报告逻辑节点增删、节点 IP 变化和精确快照一致性。
 - 已安装参数与本次 `apply` 输入不一致时，明确说明该调用尚未写入，并区分“输入错误直接 verify/按原参数重试”与“确需改参时显式 purge、重启和重新 apply”；避免普通 rollback 留下 `SWAP_RETAINED` 后再二次清理。
 - `/etc/sysctl.conf` 不存在且无需迁移时，新状态中的原始 UID、GID 和 mode 记录为 `null`，不再用 `0/0/000` 表示不存在的文件；脚本仍不创建该文件。状态校验兼容修正前本地候选生成的完整 `0/0/000` 组合，以便安全执行 `verify` 或 `rollback`，但拒绝残缺组合。
 
+### Validation
+
+- 两个允许 profile 及不支持 profile、旧 schema、旧 rc、错误端口和活动 state 哈希漂移的静态 fixture 已覆盖；Debian 13 1C2G 的 rc.12 生命周期基线已冻结，HTB smoke 与 A/B/A 仍待目标机执行。
+- 原 1C1G/v0.2.1 SOP 和运行哈希保持不变，不把历史运行证据上推为 v0.3.0 或 1C2G 通过。
+- 候选扫描默认/自定义计划、流量预算、非法速率/冷却、runner 计划 schema、mock preflight/start/双 ACTIVE/benchmark/stop/postflight、socket 隐私、合成 shortlist、benchmark manifest/hash 和缺失 `COMPLETED` 负向 fixture 已覆盖；真实 iperf3、目标 VPS qdisc、信号中断和跨窗口统计仍待验证。
+- 六份 profile 已由单一模板重新生成；新增 benchmark 缺失/回退计数器、空字段 JSON、`mq` 叶子、manifest 失败终态，以及 TcpQuality pinned 校验失败、节点 schema/漂移 fixture；
+- 本地 Bash 语法、静态门禁、控制器 fixture、生成一致性、固定 ShellCheck 0.11.0 和 Release 清单校验已通过；
+- rc.11 已有 Debian 13、1C1G、200 Mbps 生命周期和固定 TcpQuality S1/S2 私有证据；这些结果用于改进 rc.12 测量方法，不等同于 rc.12 最终哈希的目标 VPS 运行验收。
+- Debian 13、1C1G、100 Mbps、10 GB ext4 的 rc.12 本地候选已完成错误参数拒绝、显式 purge、100 Mbps apply、重启 verify 和幂等门禁，并验证缺失的 `/etc/sysctl.conf` 不会被创建；后续提示与状态语义修正改变了 profile 哈希，最终候选仍须重新绑定哈希验收。
+
 ### Safety
 
+- installer 固定 tag 且禁止回退到可变分支/`latest`；同版本目录内容不一致时拒绝覆盖。probe 不反写探测值、不修改 qdisc/sysctl、不授权持久化 HTB；公共测速点可达不等于获得批量测试授权。
+- 候选扫描只测试本机 egress 上传，不把下载方向远端 sender 重传归因给本地 HTB；不假设固定 MSS、不计算 packet loss percentage、不使用固定全局重传阈值，也不创建或授权持久化整形。
 - 17 个受管 sysctl、BBR/fq、自动缓冲矩阵、swap、journald 和 NOFILE 均未改变；schema 4 仅增加厂商 sysctl 迁移证据和恢复状态；
 - 只有 `/etc/sysctl.conf` 中唯一、规范且相同值的 `fq`/`bbr` 定义可自动迁移；不同值、重复定义、其他受管键、其他 sysctl 文件、符号链接和非 root 所有文件继续阻断。回滚发现迁移后文件被外部修改时拒绝覆盖并保留 `DEGRADED` 状态；
 - `benchmark` 仍只连接用户明确授权的 iperf3 服务端，不安装软件、开放端口或选择公共服务器；持久化目录必须是尚不存在的绝对路径；
 - benchmark 流量估算只是按配置 cap 计算的 payload 上界，不含协议开销；没有显式 cap 或合法管理状态时不猜测数值；
 - TcpQuality 工具不执行 `apt`、`sysctl`、`tc`、systemd、swap、网络配置或第三方安装，只读取已固定依赖并产生测试流量和证据文件。
 - HTB 排程生成器与已完成 smoke/B1 验证的 qdisc 执行脚本 v0.2.1 分离；排程 JSON 不自动调用 `start`、TcpQuality 或 `stop`。
-
-### Validation
-
-- 六份 profile 已由单一模板重新生成；新增 benchmark 缺失/回退计数器、空字段 JSON、`mq` 叶子、manifest 失败终态，以及 TcpQuality pinned 校验失败、节点 schema/漂移 fixture；
-- 本地 Bash 语法、静态门禁、控制器 fixture、生成一致性、固定 ShellCheck 0.11.0 和 Release 清单校验已通过；
-- rc.11 已有 Debian 13、1C1G、200 Mbps 生命周期和固定 TcpQuality S1/S2 私有证据；这些结果用于改进 rc.12 测量方法，不等同于 rc.12 最终哈希的目标 VPS 运行验收。
-- Debian 13、1C1G、100 Mbps、10 GB ext4 的 rc.12 本地候选已完成错误参数拒绝、显式 purge、100 Mbps apply、重启 verify 和幂等门禁，并验证缺失的 `/etc/sysctl.conf` 不会被创建；后续提示与状态语义修正改变了 profile 哈希，最终候选仍须重新绑定哈希验收。
 
 ## [0.1.0-rc.11] - 2026-08-04
 
