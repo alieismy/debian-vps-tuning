@@ -13,6 +13,11 @@ scripts=(
   debian13-1c2g-vps-tuning.sh
 )
 controller='debian-vps-tuning.sh'
+tcpquality_tool='tcpquality-evidence.sh'
+installer='install.sh'
+probe_tool='dvt-probe.sh'
+htb_wrapper='dvt-htb.sh'
+invalid_receiver_fixture='experiments/htb-aggregate/tests/fixtures/iperf3-invalid-receiver-window.json'
 
 if command -v python3 >/dev/null 2>&1; then
   python_cmd=python3
@@ -23,8 +28,8 @@ else
   exit 1
 fi
 "$python_cmd" tools/render_profiles.py --check
-bash -n "${scripts[@]}" "$controller" tools/profile-template.sh.in \
-  tests/static-check.sh tests/controller-check.sh
+bash -n "${scripts[@]}" "$controller" "$tcpquality_tool" "$installer" "$probe_tool" "$htb_wrapper" tools/profile-template.sh.in \
+  tests/static-check.sh tests/controller-check.sh tests/installer-check.sh
 
 bash tests/controller-check.sh
 
@@ -53,6 +58,29 @@ if [ "$(od -An -tx1 -N3 "$controller" | tr -d ' \n')" = 'efbbbf' ]; then
   exit 1
 fi
 
+if LC_ALL=C grep -n $'\r' "$tcpquality_tool"; then
+  printf 'CRLF detected: %s\n' "$tcpquality_tool" >&2
+  exit 1
+fi
+if [ "$(od -An -tx1 -N3 "$tcpquality_tool" | tr -d ' \n')" = 'efbbbf' ]; then
+  printf 'UTF-8 BOM detected: %s\n' "$tcpquality_tool" >&2
+  exit 1
+fi
+grep -Fq "TOOL_VERSION='0.1.0-rc.12'" "$tcpquality_tool"
+grep -Fq "SUPPORTED_COMMIT='5d1f85a6b8916b73ec0389dbc9b4ed4aa27dae01'" "$tcpquality_tool"
+grep -Fq "SUPPORTED_ROOTFS_SHA256='db92956873d674e65a573721ec6a3db4995f7cf648f61954380e0bfa53ce71a1'" "$tcpquality_tool"
+grep -Fq '证据目录已经存在，拒绝覆盖' "$tcpquality_tool"
+grep -Fq 'TCPQUALITY_ROOTFS_SHA256' "$tcpquality_tool"
+grep -Fq 'csv-inventory.tsv' "$tcpquality_tool"
+grep -Fq 'node-drift.tsv' "$tcpquality_tool"
+grep -Fq 'finalize_manifest' "$tcpquality_tool"
+grep -Fq 'runTcpQuality-rootfs.sh' "$tcpquality_tool"
+grep -Fq 'runTcpQuality-core.sh' "$tcpquality_tool"
+if grep -Eq 'sysctl[[:space:]]+(-w|--write)|tc[[:space:]]+qdisc[[:space:]]+(add|change|replace|del)|apt(-get)?[[:space:]]+(install|remove|purge)|systemctl[[:space:]]+(start|stop|restart|enable|disable)' "$tcpquality_tool"; then
+  printf 'mutating system operation detected in TcpQuality evidence tool\n' >&2
+  exit 1
+fi
+
 forbidden='ip_local_port_range|ip_local_reserved_ports|tcp_tw_reuse|tcp_tw_recycle|tcp_mem|tcp_fin_timeout|ip_forward|disable_ipv6|fs\.file-max|fs\.nr_open|nf_conntrack_max|busy_poll|busy_read'
 if grep -nE "^[[:space:]]*(${forbidden})[[:space:]]*=" "${scripts[@]}"; then
   printf 'forbidden sysctl assignment detected\n' >&2
@@ -73,8 +101,9 @@ expected_keys=17
 for script in "${scripts[@]}"; do
   actual="$(awk '/^PROFILE_SYSCTL_KEYS=\(/,/^\)/ {if ($1 ~ /^(net\.|vm\.)/) count++} END {print count+0}' "$script")"
   [ "$actual" -eq "$expected_keys" ] || { printf 'unexpected managed-key count: %s (%s)\n' "$script" "$actual" >&2; exit 1; }
-  grep -Fq "SCRIPT_VERSION='0.1.0-rc.11'" "$script"
-  grep -Fq "STATE_SCHEMA_VERSION=3" "$script"
+  grep -Fq "SCRIPT_VERSION='0.1.0-rc.12'" "$script"
+  grep -Eq '^STATE_SCHEMA_VERSION=4$' "$script"
+  grep -Eq '^LEGACY_STATE_SCHEMA_VERSION=3$' "$script"
   grep -Fq 'PROFILE_CPU_MIN=' "$script"
   grep -Fq 'PROFILE_CPU_MAX=' "$script"
   grep -Fq '无法读取可用逻辑 CPU 数' "$script"
@@ -128,9 +157,24 @@ for script in "${scripts[@]}"; do
   # shellcheck disable=SC2016  # Intentionally match literal shell source.
   grep -Fq 'benchmark-${label}-tcp-delta' "$script"
   grep -Fq 'tmp_dir rc=0 current_rc=0' "$script"
+  grep -Fq 'BENCHMARK_OUTPUT_DIR' "$script"
+  grep -Fq 'BENCHMARK_RATE_CAP_MBPS' "$script"
+  grep -Fq 'benchmark_traffic_estimate_json' "$script"
+  grep -Fq 'payload_upper_bound_bytes' "$script"
+  grep -Fq 'build_benchmark_phase_summary' "$script"
+  grep -Fq 'sender_retransmits_per_gib' "$script"
+  grep -Fq 'qdisc_root_totals' "$script"
+  grep -Fq 'dropped_per_gib' "$script"
+  grep -Fq 'benchmark-result.json' "$script"
+  grep -Fq 'SHA256SUMS.tmp' "$script"
   grep -Fq 'tcpFastOpen=not-explicit' "$script"
   grep -Fq 'report_sysctl_conflicts' "$script"
-  grep -Fq '即使值相同也属于重复配置归属' "$script"
+  grep -Fq 'PASS_WITH_PROVIDER_SYSCTL_TRANSFER' "$script"
+  grep -Fq 'transfer_provider_sysctl_ownership' "$script"
+  grep -Fq 'restore_provider_sysctl_ownership' "$script"
+  grep -Fq 'provider_sysctl_transfer_is_restorable' "$script"
+  grep -Fq 'verify_provider_sysctl_transfer' "$script"
+  grep -Fq '仅 /etc/sysctl.conf 中唯一且值严格为 fq/bbr 的厂商基线可由 apply 事务化迁移' "$script"
   grep -Fq 'verify 拒绝通过' "$script"
   grep -Fq '只读诊断发现重复 sysctl 配置归属' "$script"
   # shellcheck disable=SC2016  # Intentionally match literal jq variables.
@@ -167,6 +211,8 @@ for script in "${scripts[@]}"; do
   grep -Fq '事务状态尚未提交，未写入系统配置；不完整状态已清理。' "$script"
   grep -Fq "state_set_phase 'APPLYING'" "$script"
   grep -Fq "saved(port=\${saved_port},rtt=\${saved_rtt},buf=\${saved_buf})" "$script"
+  grep -Fq '本次 apply 尚未写入配置' "$script"
+  grep -Fq 'PURGE_CREATED_SWAP=1 执行 rollback' "$script"
   grep -Fq '升级配置必须先 rollback' "$script"
   [ "$(grep -Fc 'remove_fstab_swap_line || return 1' "$script")" -eq 2 ] || {
     printf 'fstab removal failure is not propagated by both swap purge paths: %s\n' "$script" >&2
@@ -219,16 +265,20 @@ for script in "${scripts[@]}"; do
   }
 done
 
-grep -Fq "CONTROLLER_VERSION='0.1.0-rc.11'" "$controller"
-grep -Fq "RELEASE_TAG='v0.1.0-rc.11'" "$controller"
+grep -Fq "CONTROLLER_VERSION='0.1.0-rc.12'" "$controller"
+grep -Fq "RELEASE_TAG='v0.1.0-rc.12'" "$controller"
 grep -Fq "DEFAULT_PORT_SPEED_MBPS=200" "$controller"
 grep -Fq 'verify_profile_contract' "$controller"
 grep -Fq 'debian12-1c512m-vps-tuning.sh' "$controller"
 grep -Fq 'debian13-1c512m-vps-tuning.sh' "$controller"
 grep -Fq "resource_class='2C2GB'" "$controller"
 grep -Fq 'diagnose（5 秒只读增量诊断）' "$controller"
-grep -Fq 'benchmark（需 BENCHMARK_HOST，会产生测试流量）' "$controller"
+grep -Fq 'probe（重复、限速、advisory-only；需已授权 iperf3）' "$controller"
+grep -Fq 'benchmark（高级单次证据入口；需 BENCHMARK_HOST）' "$controller"
+grep -Fq 'HTB 实验（仅 Debian 13 / 200 Mbps / 非持久化）' "$controller"
 grep -Fq 'update（只读检查并生成升级计划）' "$controller"
+grep -Fq 'resolve_companion_assets' "$controller"
+grep -Fq 'ACTION_ARGS=("$@")' "$controller"
 grep -Fq 'env UPDATE_PREFLIGHT=1 PORT_SPEED_MBPS=' "$controller"
 grep -Fq '系统配置未修改' "$controller"
 grep -Fq 'select_highest_release_tag' "$controller"
@@ -241,6 +291,36 @@ if grep -Eq 'raw\.githubusercontent\.com|/master/|/main/|releases/latest|http://
   printf 'mutable or insecure controller download source detected\n' >&2
   exit 1
 fi
+
+grep -Fq "RELEASE_TAG='v0.1.0-rc.12'" "$installer"
+grep -Eq "EXPECTED_MANIFEST_SHA256='[0-9a-f]{64}'" "$installer"
+if grep -Fq "EXPECTED_MANIFEST_SHA256='0000000000000000000000000000000000000000000000000000000000000000'" "$installer"; then
+  printf 'installer manifest digest placeholder was not finalized\n' >&2
+  exit 1
+fi
+grep -Fq -- "--proto '=https' --proto-redir '=https'" "$installer"
+grep -Fq 'manifest_entry_valid' "$installer"
+grep -Fq '安装过程没有执行 preflight/apply' "$installer"
+manifest_hash="$(sha256sum SHA256SUMS | awk '{print $1}')"
+grep -Fq "EXPECTED_MANIFEST_SHA256='${manifest_hash}'" "$installer"
+installer_hash="$(sha256sum "$installer" | awk '{print $1}')"
+grep -Fq "$installer_hash" README.md
+grep -Fq "$manifest_hash" docs/releases/v0.1.0-rc.12.md
+if grep -Eq 'raw\.githubusercontent\.com|/master/|/main/|releases/latest|http://' "$installer"; then
+  printf 'mutable or insecure installer download source detected\n' >&2
+  exit 1
+fi
+
+grep -Fq 'BENCHMARK_ENFORCE_RATE_CAP=1' "$probe_tool"
+grep -Fq 'rate_cap_enforced == true' "$probe_tool"
+grep -Fq 'advisory_only:true' "$probe_tool"
+grep -Fq 'persistent_shaping_authorized:false' "$probe_tool"
+grep -Fq -- '--plan-only' "$probe_tool"
+grep -Fq -- '--ack-reference-reviewed' "$htb_wrapper"
+grep -Fq '.measurement_gate.valid == true' "$htb_wrapper"
+grep -Fq 'never creates persistent HTB' "$htb_wrapper"
+grep -Fq 'rate_cap * 125000 * (seconds + omit) * direction_count * samples' "$probe_tool"
+( command sha256sum -c SHA256SUMS >/dev/null )
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf -- "$tmp_dir"' EXIT
@@ -446,15 +526,18 @@ bash "$diagnostic_delta_test"
 benchmark_guard_test="$tmp_dir/benchmark-guard-test.sh"
 {
   printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  awk '/^benchmark_traffic_estimate_json\(\)/,/^}/' "${scripts[0]}"
   awk '/^run_network_benchmark\(\)/,/^}/' "${scripts[0]}"
   cat <<'EOF_BENCHMARK_GUARD_TEST'
 EXIT_USAGE=2
 EXIT_UNSUPPORTED=3
+EXIT_CONFLICT=4
 EXIT_VERIFY=5
 ensure_required_tools() { :; }
 check_supported_os() { :; }
 iperf3() { :; }
 die() { exit "$1"; }
+is_bool() { case "$1" in 0 | 1) return 0 ;; *) return 1 ;; esac; }
 
 set +e
 ( unset BENCHMARK_HOST; run_network_benchmark ) >/dev/null 2>&1
@@ -485,14 +568,95 @@ set +e
 rc=$?
 set -e
 [ "$rc" -eq "$EXIT_USAGE" ] || { printf 'benchmark accepted an unsafe run id\n' >&2; exit 1; }
+
+set +e
+( BENCHMARK_HOST=example.com BENCHMARK_RATE_CAP_MBPS=0 run_network_benchmark ) >/dev/null 2>&1
+rc=$?
+set -e
+[ "$rc" -eq "$EXIT_USAGE" ] || { printf 'benchmark accepted rate cap 0\n' >&2; exit 1; }
+
+set +e
+( BENCHMARK_HOST=example.com BENCHMARK_ENFORCE_RATE_CAP=1 run_network_benchmark ) >/dev/null 2>&1
+rc=$?
+set -e
+[ "$rc" -eq "$EXIT_USAGE" ] || { printf 'benchmark enforced an unspecified rate cap\n' >&2; exit 1; }
+
+set +e
+( BENCHMARK_HOST=example.com BENCHMARK_ENFORCE_RATE_CAP=yes BENCHMARK_RATE_CAP_MBPS=200 run_network_benchmark ) >/dev/null 2>&1
+rc=$?
+set -e
+[ "$rc" -eq "$EXIT_USAGE" ] || { printf 'benchmark accepted invalid rate-cap boolean\n' >&2; exit 1; }
+
+case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*) ;;
+  *)
+    set +e
+    ( BENCHMARK_HOST=example.com BENCHMARK_OUTPUT_DIR='relative' run_network_benchmark ) >/dev/null 2>&1
+    rc=$?
+    set -e
+    [ "$rc" -eq "$EXIT_USAGE" ] || { printf 'benchmark accepted a relative output directory (rc=%s)\n' "$rc" >&2; exit 1; }
+    ;;
+esac
+
+case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*) ;;
+  *)
+    existing_output="$(mktemp -d)"
+    set +e
+    ( BENCHMARK_HOST=example.com BENCHMARK_OUTPUT_DIR="$existing_output" run_network_benchmark ) >/dev/null 2>&1
+    rc=$?
+    set -e
+    rmdir "$existing_output"
+    [ "$rc" -eq "$EXIT_CONFLICT" ] || { printf 'benchmark accepted an existing output directory\n' >&2; exit 1; }
+    ;;
+esac
 EOF_BENCHMARK_GUARD_TEST
 } >"$benchmark_guard_test"
 bash "$benchmark_guard_test"
 
+benchmark_traffic_estimate_test="$tmp_dir/benchmark-traffic-estimate-test.sh"
+{
+  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  awk '/^benchmark_traffic_estimate_json\(\)/,/^}/' "${scripts[0]}"
+  cat <<'EOF_BENCHMARK_TRAFFIC_ESTIMATE_TEST'
+estimate="$(benchmark_traffic_estimate_json 200 explicit 10 3 both)"
+jq -e '
+  .available == true and
+  .cap_mbps == 200 and
+  .cap_source == "explicit" and
+  .direction_count == 2 and
+  .per_direction_seconds == 13 and
+  .total_seconds == 26 and
+  .payload_upper_bound_bytes == 650000000 and
+  .protocol_overhead_included == false
+' <<<"$estimate" >/dev/null
+
+estimate="$(benchmark_traffic_estimate_json '' unavailable 5 0 download)"
+jq -e '
+  .available == false and
+  .cap_mbps == null and
+  .direction_count == 1 and
+  .total_seconds == 5 and
+  .payload_upper_bound_bytes == null
+' <<<"$estimate" >/dev/null
+
+if benchmark_traffic_estimate_json 200 explicit 10 3 invalid >/dev/null 2>&1; then
+  printf 'traffic estimator accepted an invalid direction\n' >&2
+  exit 1
+fi
+EOF_BENCHMARK_TRAFFIC_ESTIMATE_TEST
+} >"$benchmark_traffic_estimate_test"
+bash "$benchmark_traffic_estimate_test"
+
 benchmark_phase_test="$tmp_dir/benchmark-phase-test.sh"
 {
   printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  awk '/^counter_delta_json\(\)/,/^}/' "${scripts[0]}"
+  awk '/^link_total_delta\(\)/,/^}/' "${scripts[0]}"
+  awk '/^qdisc_counter_snapshot\(\)/,/^}/' "${scripts[0]}"
+  awk '/^build_benchmark_phase_summary\(\)/,/^}/' "${scripts[0]}"
   awk '/^run_benchmark_phase\(\)/,/^}/' "${scripts[0]}"
+  printf 'INVALID_RECEIVER_FIXTURE=%q\n' "$invalid_receiver_fixture"
   cat <<'EOF_BENCHMARK_PHASE_TEST'
 test_root="$(mktemp -d)"
 trap 'rm -rf -- "$test_root"' EXIT
@@ -508,12 +672,21 @@ BENCHMARK_FAMILY_ARGS=(--version6)
 softnet_snapshot() { printf '0\t1\t0\t0\n'; }
 tcp_counter_snapshot() { printf 'TcpRetransSegs\t1\n'; }
 cpu_snapshot() { printf 'user\t1\nnice\t0\nsystem\t0\nidle\t1\niowait\t0\nirq\t0\nsoftirq\t0\nsteal\t0\n'; }
-link_counter_snapshot() { printf 'eth0.rx_bytes\t1\n'; }
+link_counter_snapshot() { printf 'eth0.rx_bytes\t1\neth0.tx_bytes\t1\n'; }
 show_counter_delta() { :; }
 show_softnet_delta() { :; }
 show_cpu_delta() { :; }
-tc() { :; }
-iperf3() { printf '%q ' "$@" >>"$capture"; printf '\n' >>"$capture"; return "${IPERF_RC:-0}"; }
+tc() {
+  printf '%s\n' \
+    'qdisc fq 0: root refcnt 2 limit 10000p' \
+    ' Sent 1000 bytes 10 pkt (dropped 0, overlimits 0 requeues 0)'
+}
+iperf3() {
+  printf '%q ' "$@" >>"$capture"
+  printf '\n' >>"$capture"
+  printf '%s\n' '{"end":{"sum_sent":{"seconds":10,"bytes":250000000,"bits_per_second":200000000,"retransmits":2},"sum_received":{"seconds":10,"bytes":248750000,"bits_per_second":199000000}}}'
+  return "${IPERF_RC:-0}"
+}
 
 run_benchmark_phase upload 0 "$test_root" "$test_root/ifaces" >/dev/null
 run_benchmark_phase download 1 "$test_root" "$test_root/ifaces" >/dev/null
@@ -530,6 +703,143 @@ sed -n '2p' "$capture" | grep -Fq -- '--version6 --reverse --json' || {
   printf 'download benchmark arguments changed: %s\n' "$(sed -n '2p' "$capture")" >&2
   exit 1
 }
+jq -e '.schema_version == 2 and .direction == "upload" and
+  .measurement_window.status == "VALID" and .measurement_window.valid == true and
+  .sender.seconds == 10 and .receiver.seconds == 10 and
+  .sender.mbps == 200 and .sender.retransmits == 2 and
+  .sender.retransmits_per_gib > 8.5 and .sender.retransmits_per_gib < 8.7' \
+  "$test_root/upload.summary.json" >/dev/null
+jq -e '.qdisc_root_totals.dropped_delta == 0 and .qdisc_root_totals.dropped_per_gib == null' \
+  "$test_root/upload.summary.json" >/dev/null
+jq -e '.qdisc_coverage.aggregation_source == "root" and .qdisc_active_totals.dropped_delta == 0' \
+  "$test_root/upload.summary.json" >/dev/null
+jq -e '.direction == "download" and .reverse == true' "$test_root/download.summary.json" >/dev/null
+
+: >"$capture"
+BENCHMARK_RATE_ARGS=(--bitrate 200M)
+run_benchmark_phase upload 0 "$test_root" "$test_root/ifaces" >/dev/null
+grep -Fq -- '--version6 --bitrate 200M --json' "$capture" || {
+  printf 'benchmark did not forward the enforced iperf3 bitrate: %s\n' "$(<"$capture")" >&2
+  exit 1
+}
+
+printf 'TcpRetransSegs\t10\n' >"$test_root/wrap.before"
+printf 'TcpRetransSegs\t5\n' >"$test_root/wrap.after"
+if counter_delta_json "$test_root/wrap.before" "$test_root/wrap.after" >/dev/null 2>&1; then
+  printf 'counter delta accepted a negative/reset counter\n' >&2
+  exit 1
+fi
+
+printf 'TcpRetransSegs\t10\n' >"$test_root/missing.before"
+: >"$test_root/missing.after"
+if counter_delta_json "$test_root/missing.before" "$test_root/missing.after" >/dev/null 2>&1; then
+  printf 'counter delta accepted a missing after snapshot\n' >&2
+  exit 1
+fi
+
+printf 'eth0.rx_bytes\t10\neth0.tx_bytes\t20\n' >"$test_root/keyset.before"
+printf 'eth0.rx_bytes\t11\n' >"$test_root/keyset.after"
+if counter_delta_json "$test_root/keyset.before" "$test_root/keyset.after" >/dev/null 2>&1; then
+  printf 'counter delta accepted a changed key set\n' >&2
+  exit 1
+fi
+
+for suffix in tcp.before tcp.after link.before link.after qdisc.before qdisc.after; do
+  : >"$test_root/malformed.${suffix}"
+done
+printf '%s\n' '{}' >"$test_root/malformed.iperf3.json"
+set +e
+build_benchmark_phase_summary malformed 0 "$test_root" >/dev/null 2>&1
+rc=$?
+set -e
+[ "$rc" -eq "$EXIT_VERIFY" ] || { printf 'malformed iperf3 JSON was accepted\n' >&2; exit 1; }
+
+cp "$test_root/upload.tcp.before" "$test_root/partial.tcp.before"
+cp "$test_root/upload.tcp.after" "$test_root/partial.tcp.after"
+cp "$test_root/upload.link.before" "$test_root/partial.link.before"
+cp "$test_root/upload.link.after" "$test_root/partial.link.after"
+cp "$test_root/upload.qdisc.before" "$test_root/partial.qdisc.before"
+cp "$test_root/upload.qdisc.after" "$test_root/partial.qdisc.after"
+printf '%s\n' '{"end":{"sum_sent":{},"sum_received":{}}}' >"$test_root/partial.iperf3.json"
+if build_benchmark_phase_summary partial 0 "$test_root" >/dev/null 2>&1; then
+  printf 'partial iperf3 summary was accepted\n' >&2
+  exit 1
+fi
+
+for suffix in tcp.before tcp.after link.before link.after qdisc.before qdisc.after; do
+  cp "$test_root/upload.${suffix}" "$test_root/invalid-window.${suffix}"
+done
+cp "$INVALID_RECEIVER_FIXTURE" "$test_root/invalid-window.iperf3.json"
+build_benchmark_phase_summary invalid-window 0 "$test_root" >/dev/null
+jq -e '
+  .schema_version == 2 and
+  .measurement_window.status == "INVALID_MEASUREMENT_WINDOW" and
+  .measurement_window.valid == false and
+  (.measurement_window.issues | index("receiver-duration-mismatch") != null) and
+  (.measurement_window.issues | index("sender-receiver-window-mismatch") != null) and
+  (.measurement_window.issues | index("receiver-bytes-exceed-sender-tolerance") != null) and
+  .sender.retransmits == 0
+' "$test_root/invalid-window.summary.json" >/dev/null
+
+cat >"$test_root/mq.tc" <<'EOF_MQ_TC'
+qdisc mq 0: root
+ Sent 2000 bytes 20 pkt (dropped 0, overlimits 0 requeues 0)
+qdisc fq 8001: parent :1 limit 10000p
+ Sent 1000 bytes 10 pkt (dropped 2, overlimits 3 requeues 0)
+qdisc fq 8002: parent :2 limit 10000p
+ Sent 1000 bytes 10 pkt (dropped 1, overlimits 4 requeues 0)
+qdisc ingress ffff: parent ffff:fff1 ----------------
+ Sent 50 bytes 1 pkt (dropped 5, overlimits 0 requeues 0)
+EOF_MQ_TC
+tc() { cat "$test_root/mq.tc"; }
+qdisc_counter_snapshot "$test_root/ifaces" >"$test_root/mq.snapshot"
+grep -Fqx $'eth0.root.mq.0:.bytes\t2000' "$test_root/mq.snapshot"
+grep -Fqx $'eth0.leaf.fq.8001:.dropped\t2' "$test_root/mq.snapshot"
+grep -Fqx $'eth0.leaf.fq.8002:.overlimits\t4' "$test_root/mq.snapshot"
+grep -Fqx $'eth0.other.ingress.ffff:.dropped\t5' "$test_root/mq.snapshot"
+
+cp "$test_root/upload.tcp.before" "$test_root/mqphase.tcp.before"
+cp "$test_root/upload.tcp.after" "$test_root/mqphase.tcp.after"
+cp "$test_root/upload.link.before" "$test_root/mqphase.link.before"
+cp "$test_root/upload.link.after" "$test_root/mqphase.link.after"
+cp "$test_root/upload.iperf3.json" "$test_root/mqphase.iperf3.json"
+cat >"$test_root/mqphase.qdisc.before" <<'EOF_MQ_BEFORE'
+eth0.root.mq.0:.bytes	2000
+eth0.root.mq.0:.packets	20
+eth0.root.mq.0:.dropped	0
+eth0.root.mq.0:.overlimits	0
+eth0.root.mq.0:.requeues	0
+eth0.leaf.fq.8001:.bytes	1000
+eth0.leaf.fq.8001:.packets	10
+eth0.leaf.fq.8001:.dropped	2
+eth0.leaf.fq.8001:.overlimits	3
+eth0.leaf.fq.8001:.requeues	0
+eth0.leaf.fq.8002:.bytes	1000
+eth0.leaf.fq.8002:.packets	10
+eth0.leaf.fq.8002:.dropped	1
+eth0.leaf.fq.8002:.overlimits	4
+eth0.leaf.fq.8002:.requeues	0
+EOF_MQ_BEFORE
+cat >"$test_root/mqphase.qdisc.after" <<'EOF_MQ_AFTER'
+eth0.root.mq.0:.bytes	4000
+eth0.root.mq.0:.packets	40
+eth0.root.mq.0:.dropped	0
+eth0.root.mq.0:.overlimits	0
+eth0.root.mq.0:.requeues	0
+eth0.leaf.fq.8001:.bytes	2000
+eth0.leaf.fq.8001:.packets	20
+eth0.leaf.fq.8001:.dropped	4
+eth0.leaf.fq.8001:.overlimits	5
+eth0.leaf.fq.8001:.requeues	0
+eth0.leaf.fq.8002:.bytes	2000
+eth0.leaf.fq.8002:.packets	20
+eth0.leaf.fq.8002:.dropped	2
+eth0.leaf.fq.8002:.overlimits	7
+eth0.leaf.fq.8002:.requeues	0
+EOF_MQ_AFTER
+build_benchmark_phase_summary mqphase 0 "$test_root" >/dev/null
+jq -e '.qdisc_coverage.aggregation_source == "leaf" and .qdisc_coverage.root_is_mq == true and .qdisc_root_totals.dropped_delta == 0 and .qdisc_active_totals.dropped_delta == 3' \
+  "$test_root/mqphase.summary.json" >/dev/null
 
 set +e
 IPERF_RC=7 run_benchmark_phase upload 0 "$test_root" "$test_root/ifaces" >/dev/null
@@ -540,13 +850,153 @@ EOF_BENCHMARK_PHASE_TEST
 } >"$benchmark_phase_test"
 bash "$benchmark_phase_test"
 
+benchmark_persistence_test="$tmp_dir/benchmark-persistence-test.sh"
+{
+  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  awk '/^benchmark_traffic_estimate_json\(\)/,/^}/' "${scripts[0]}"
+  awk '/^run_network_benchmark\(\)/,/^}/' "${scripts[0]}"
+  cat <<'EOF_BENCHMARK_PERSISTENCE_TEST'
+test_root="$(mktemp -d)"
+trap 'rm -rf -- "$test_root"' EXIT
+PATH="/usr/bin:/bin:${PATH}"
+export PATH
+EXIT_USAGE=2
+EXIT_UNSUPPORTED=3
+EXIT_CONFLICT=4
+EXIT_VERIFY=5
+SCRIPT_VERSION='0.1.0-rc.12'
+PROFILE_ID='debian13-1c1g'
+STATE_FILE="$test_root/no-state.json"
+ensure_required_tools() { :; }
+check_supported_os() { :; }
+info() { :; }
+die() { exit "$1"; }
+is_bool() { case "$1" in 0 | 1) return 0 ;; *) return 1 ;; esac; }
+default_route_ifaces() { printf 'eth0\n'; }
+state_file_is_valid() { [ "${STATE_VALID:-0}" = '1' ]; }
+sysctl() { printf 'stub\n'; }
+ip() { :; }
+iperf3() { printf 'iperf 3.test\n'; }
+run_benchmark_phase() {
+  local label="$1" tmp_dir="$3"
+  printf '%s\n' '{"end":{"sum_sent":{"bytes":1,"bits_per_second":1,"retransmits":0},"sum_received":{"bytes":1,"bits_per_second":1}}}' >"${tmp_dir}/${label}.iperf3.json"
+  printf '%s\n' '{"schema_version":1,"direction":"upload"}' >"${tmp_dir}/${label}.summary.json"
+}
+sha256sum() {
+  if [ "${FAIL_MANIFEST:-0}" = '1' ] && [ "${1:-}" = '-c' ]; then return 9; fi
+  command sha256sum "$@"
+}
+
+success_dir="$test_root/success"
+BENCHMARK_HOST=example.com BENCHMARK_DIRECTION=upload BENCHMARK_RATE_CAP_MBPS=200 BENCHMARK_ENFORCE_RATE_CAP=1 BENCHMARK_OUTPUT_DIR="$success_dir" run_network_benchmark >/dev/null
+[ -f "$success_dir/COMPLETED" ] && [ ! -e "$success_dir/INCOMPLETE" ]
+jq -e '.status == "PASS" and .exit_code == 0 and (.evidence_manifest_sha256 | type == "string")' \
+  "$success_dir/benchmark-result.json" >/dev/null
+jq -e '.benchmark.traffic_estimate.available == true and .benchmark.traffic_estimate.cap_source == "explicit" and .benchmark.traffic_estimate.payload_upper_bound_bytes == 325000000 and .benchmark.rate_cap_enforced == true and .benchmark.rate_cap_method == "iperf3-bitrate" and .benchmark.rate_cap_scope == "aggregate-target-divided-across-streams" and .benchmark.rate_cap_per_stream_bps == 200000000' \
+  "$success_dir/benchmark-meta.json" >/dev/null
+(cd "$success_dir" && command sha256sum -c SHA256SUMS >/dev/null)
+
+managed_dir="$test_root/managed"
+printf '%s\n' '{"state":"VERIFIED","network":{"port_speed_mbps":500}}' >"$STATE_FILE"
+STATE_VALID=1 BENCHMARK_HOST=example.com BENCHMARK_DIRECTION=download BENCHMARK_OUTPUT_DIR="$managed_dir" run_network_benchmark >/dev/null
+jq -e '.benchmark.traffic_estimate.available == true and .benchmark.traffic_estimate.cap_mbps == 500 and .benchmark.traffic_estimate.cap_source == "managed-state" and .benchmark.traffic_estimate.payload_upper_bound_bytes == 812500000' \
+  "$managed_dir/benchmark-meta.json" >/dev/null
+
+failure_dir="$test_root/failure"
+set +e
+(FAIL_MANIFEST=1 BENCHMARK_HOST=example.com BENCHMARK_DIRECTION=upload BENCHMARK_RATE_CAP_MBPS=200 BENCHMARK_OUTPUT_DIR="$failure_dir" run_network_benchmark) >/dev/null 2>&1
+rc=$?
+set -e
+[ "$rc" -eq "$EXIT_VERIFY" ] || { printf 'manifest failure returned unexpected rc=%s\n' "$rc" >&2; exit 1; }
+[ -f "$failure_dir/INCOMPLETE" ] && [ ! -e "$failure_dir/COMPLETED" ]
+jq -e '.status == "FAIL" and .exit_code == 5' "$failure_dir/benchmark-result.json" >/dev/null
+EOF_BENCHMARK_PERSISTENCE_TEST
+} >"$benchmark_persistence_test"
+bash "$benchmark_persistence_test"
+
+tcpquality_node_test="$tmp_dir/tcpquality-node-test.sh"
+{
+  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  awk '/^snapshot_nodes\(\)/,/^}/' "$tcpquality_tool"
+  awk '/^logical_node_keys\(\)/,/^}/' "$tcpquality_tool"
+  awk '/^node_ip_change_count\(\)/,/^}/' "$tcpquality_tool"
+  awk '/^record_node_drift\(\)/,/^}/' "$tcpquality_tool"
+  cat <<'EOF_TCPQUALITY_NODE_TEST'
+test_root="$(mktemp -d)"
+trap 'rm -rf -- "$test_root"' EXIT
+PATH="/usr/bin:/bin:${PATH}"
+export PATH
+EVIDENCE_DIR="$test_root"
+GET_NODES_URL='https://nodes.example.test/getNodes'
+printf 'run\tscope\tbefore_rows\tafter_rows\tlogical_removed\tlogical_added\tip_changed\texact_equal\n' >"$test_root/node-drift.tsv"
+cat >"$test_root/before.tsv" <<'EOF_BEFORE'
+type	family	province	isp	host	ip	port	target	backup_host	backup_ip	backup_port	backup_target
+cdn	4	A	CT	a.example	192.0.2.1	80	a-target
+cdn	4	B	CU	b.example	192.0.2.2	80	b-target
+EOF_BEFORE
+cat >"$test_root/after.tsv" <<'EOF_AFTER'
+type	family	province	isp	host	ip	port	target	backup_host	backup_ip	backup_port	backup_target
+cdn	4	A	CT	a.example	192.0.2.9	80	a-target
+cdn	4	C	CM	c.example	192.0.2.3	80	c-target
+EOF_AFTER
+record_node_drift 1 all "$test_root/before.tsv" "$test_root/after.tsv"
+grep -Fqx $'1\tall\t2\t2\t1\t1\t1\t0' "$test_root/node-drift.tsv"
+
+CURL_BODY=$'type\tfamily\tprovince\tisp\thost\tip\tport\ttarget\tbackup_host\tbackup_ip\tbackup_port\tbackup_target\ntos\t4\tA\tCT\ta.example\t192.0.2.1\t443\ttarget\tb.example\t192.0.2.2\t443\tbackup\n'
+curl() { printf '%s' "$CURL_BODY"; }
+snapshot_nodes tos "$test_root/valid.tsv"
+[ -s "$test_root/valid.tsv" ]
+CURL_BODY='<html>gateway error</html>'
+if snapshot_nodes all "$test_root/html.tsv"; then
+  printf 'node snapshot accepted non-TSV content\n' >&2
+  exit 1
+fi
+CURL_BODY=$'type\tfamily\tprovince\ncdn\t4\tA\n'
+if snapshot_nodes all "$test_root/bad-schema.tsv"; then
+  printf 'node snapshot accepted an invalid schema\n' >&2
+  exit 1
+fi
+EOF_TCPQUALITY_NODE_TEST
+} >"$tcpquality_node_test"
+bash "$tcpquality_node_test"
+
+tcpquality_failure_test="$tmp_dir/tcpquality-failure-test.sh"
+{
+  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  awk '/^run_one\(\)/,/^}/' "$tcpquality_tool"
+  cat <<'EOF_TCPQUALITY_FAILURE_TEST'
+test_root="$(mktemp -d)"
+trap 'rm -rf -- "$test_root"' EXIT
+EVIDENCE_DIR="$test_root/evidence"
+PIN_DIR="$test_root/pin"
+COMMIT='5d1f85a6b8916b73ec0389dbc9b4ed4aa27dae01'
+COUNT=30
+PACKET_SIZE=0
+PARALLEL=16
+ROOTFS_SHA256='db92956873d674e65a573721ec6a3db4995f7cf648f61954380e0bfa53ce71a1'
+GET_NODES_URL='https://nodes.example.test/getNodes'
+TOOL_VERSION='0.1.0-rc.12'
+mkdir "$EVIDENCE_DIR" "$PIN_DIR"
+: >"$PIN_DIR/SHA256SUMS"
+find_csv_inventory() { :; }
+sha256sum() {
+  if [ "${1:-}" = '-c' ]; then return 7; fi
+  command sha256sum "$@"
+}
+run_rc=0
+run_one 1 || run_rc=$?
+[ "$run_rc" -ne 0 ] || { printf 'run_one ignored pinned checksum failure\n' >&2; exit 1; }
+EOF_TCPQUALITY_FAILURE_TEST
+} >"$tcpquality_failure_test"
+bash "$tcpquality_failure_test"
+
 cross_version_apply_test="$tmp_dir/cross-version-apply-test.sh"
 {
   printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
   awk '/^apply_settings\(\)/,/^}/' "${scripts[0]}"
   cat <<'EOF_CROSS_VERSION_APPLY_TEST'
 EXIT_CONFLICT=4
-SCRIPT_VERSION='0.1.0-rc.11'
+SCRIPT_VERSION='0.1.0-rc.12'
 PORT_SPEED_MBPS=200
 BUFFER_TARGET_RTT_MS=200
 BUF_MAX=16777216
@@ -570,6 +1020,42 @@ grep -Fq '升级配置必须先 rollback' <<<"$output"
 EOF_CROSS_VERSION_APPLY_TEST
 } >"$cross_version_apply_test"
 bash "$cross_version_apply_test"
+
+parameter_mismatch_apply_test="$tmp_dir/parameter-mismatch-apply-test.sh"
+{
+  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  awk '/^apply_settings\(\)/,/^}/' "${scripts[0]}"
+  cat <<'EOF_PARAMETER_MISMATCH_APPLY_TEST'
+EXIT_CONFLICT=4
+SCRIPT_VERSION='0.1.0-rc.12'
+PORT_SPEED_MBPS=100
+BUFFER_TARGET_RTT_MS=200
+BUF_MAX=16777216
+run_preflight() { :; }
+state_exists() { return 0; }
+state_get() {
+  case "$1" in
+    .state) printf 'VERIFIED\n' ;;
+    .script_version) printf '%s\n' "$SCRIPT_VERSION" ;;
+    .network.port_speed_mbps) printf '500\n' ;;
+    .network.target_rtt_ms) printf '200\n' ;;
+    .network.buffer_max_bytes) printf '16777216\n' ;;
+    *) printf '0\n' ;;
+  esac
+}
+die() { local code="$1"; shift; printf '%s\n' "$*" >&2; exit "$code"; }
+write_initial_state() { printf 'parameter mismatch reached write path\n' >&2; exit 99; }
+
+set +e
+output="$(apply_settings 2>&1)"
+rc=$?
+set -e
+[ "$rc" -eq "$EXIT_CONFLICT" ] || { printf 'parameter mismatch apply returned %s\n' "$rc" >&2; exit 1; }
+grep -Fq '本次 apply 尚未写入配置' <<<"$output"
+grep -Fq 'PURGE_CREATED_SWAP=1 执行 rollback' <<<"$output"
+EOF_PARAMETER_MISMATCH_APPLY_TEST
+} >"$parameter_mismatch_apply_test"
+bash "$parameter_mismatch_apply_test"
 
 sysctl_conflict_test="$tmp_dir/sysctl-conflict-test.sh"
 {
@@ -625,10 +1111,39 @@ sha256sum() { printf 'qhash  %s\n' "$1"; }
 assert_owned_file() { :; }
 systemctl() { printf '%s\n' "$FQ_SERVICE"; }
 verify_current_qdiscs() { return 0; }
+verify_provider_sysctl_transfer() { return 0; }
 verify_proxy_services() { return 0; }
 show_xray_socket_options() { :; }
 error() { printf '[x] %s\n' "$*" >&2; }
 info() { :; }
+warn() { WARNINGS=$((WARNINGS + 1)); printf '[!] %s\n' "$*" >&2; }
+stat() {
+  if [ "${1:-}" = '-c' ] && [ "${2:-}" = '%u' ]; then printf '0\n'; else command stat "$@"; fi
+}
+
+# A unique exact fq/bbr baseline in /etc/sysctl.conf is classified as
+# transactionally migratable.  The read-only scan must not change the file.
+provider="$SYSCTL_SCAN_ROOT/sysctl.conf"
+printf '%s\n' \
+  '# provider baseline' \
+  'net.core.default_qdisc = fq' \
+  'net.ipv4.tcp_congestion_control = bbr' >"$provider"
+provider_hash_before="$(sha256sum "$provider" | awk '{print $1}')"
+report_sysctl_conflicts >/dev/null 2>"$test_root/provider.err" || {
+  cat "$test_root/provider.err" >&2
+  printf 'exact provider fq/bbr baseline was not classified as migratable\n' >&2
+  exit 1
+}
+[ "$PROVIDER_SYSCTL_TRANSFER_REQUIRED" -eq 1 ] || {
+  printf 'provider transfer requirement was not recorded\n' >&2
+  exit 1
+}
+[ "$(sha256sum "$provider" | awk '{print $1}')" = "$provider_hash_before" ] || {
+  printf 'read-only sysctl conflict scan modified provider file\n' >&2
+  exit 1
+}
+grep -Fq 'preflight 保持只读' "$test_root/provider.err"
+rm -f -- "$provider"
 
 # The managed file and an alias to it are both excluded from conflict checks.
 verify_settings >/dev/null 2>"$test_root/managed-only.err" || {
@@ -651,7 +1166,7 @@ if verify_settings >/dev/null 2>"$test_root/conflict.err"; then
   printf 'verify accepted an external same-value sysctl owner\n' >&2
   exit 1
 fi
-grep -Fq '即使值相同也属于重复配置归属' "$test_root/conflict.err"
+grep -Fq '仅 /etc/sysctl.conf 中唯一且值严格为 fq/bbr' "$test_root/conflict.err"
 grep -Fq 'verify 拒绝通过' "$test_root/conflict.err"
 [ "$(grep -Fc 'net.core.default_qdisc 已在' "$test_root/conflict.err")" -eq 1 ] || {
   printf 'canonical sysctl alias was reported more than once\n' >&2
@@ -660,6 +1175,97 @@ grep -Fq 'verify 拒绝通过' "$test_root/conflict.err"
 EOF_SYSCTL_CONFLICT_TEST
 } >"$sysctl_conflict_test"
 bash "$sysctl_conflict_test"
+
+if command -v jq >/dev/null 2>&1; then
+  provider_transfer_test="$tmp_dir/provider-sysctl-transfer-test.sh"
+  {
+    printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+    awk '/^state_get\(\)/,/^}/' "${scripts[0]}"
+    awk '/^atomic_json_commit\(\)/,/^}/' "${scripts[0]}"
+    awk '/^set_provider_sysctl_transfer_state\(\)/,/^}/' "${scripts[0]}"
+    awk '/^transfer_provider_sysctl_ownership\(\)/,/^}/' "${scripts[0]}"
+    awk '/^provider_sysctl_transfer_is_restorable\(\)/,/^}/' "${scripts[0]}"
+    awk '/^restore_provider_sysctl_ownership\(\)/,/^}/' "${scripts[0]}"
+    cat <<'EOF_PROVIDER_TRANSFER_TEST'
+test_root="$(mktemp -d)"
+trap 'rm -rf -- "$test_root"' EXIT
+mkdir -p "$test_root/state"
+source_file="$test_root/sysctl.conf"
+backup_file="$test_root/state/provider-sysctl.conf.original"
+original_copy="$test_root/sysctl.conf.expected"
+migrated_copy="$test_root/sysctl.conf.migrated"
+STATE_FILE="$test_root/state/state.json"
+printf '%s\n' \
+  '# provider baseline' \
+  'vm.max_map_count = 262144' \
+  'net.core.default_qdisc = fq' \
+  'net.ipv4.tcp_congestion_control = bbr' >"$source_file"
+cp -- "$source_file" "$original_copy"
+original_hash="$(sha256sum "$source_file" | awk '{print $1}')"
+uid="$(id -u)"; gid="$(id -g)"; mode="$(stat -c '%a' "$source_file")"
+jq -n --arg source "$source_file" --arg backup "$backup_file" --arg original_hash "$original_hash" \
+  --argjson uid "$uid" --argjson gid "$gid" --arg mode "$mode" '
+  {provider_sysctl_transfer:{required:true,source_path:$source,backup_path:$backup,
+    original_sha256:$original_hash,backup_sha256:null,transferred_sha256:null,
+    original_uid:$uid,original_gid:$gid,original_mode:$mode,
+    keys:[{key:"net.core.default_qdisc",value:"fq"},{key:"net.ipv4.tcp_congestion_control",value:"bbr"}],state:"DETECTED"},
+   timestamps:{last_update:"test"}}
+  ' >"$STATE_FILE"
+
+state_file_is_valid() { return 0; }
+error() { printf '[x] %s\n' "$*" >&2; }
+info() { :; }
+chown() { :; }
+install() {
+  local mode_arg='0600' source_arg='' target_arg=''
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      -m) mode_arg="$2"; shift 2 ;;
+      -o | -g) shift 2 ;;
+      *) if [ -z "$source_arg" ]; then source_arg="$1"; else target_arg="$1"; fi; shift ;;
+    esac
+  done
+  cp -- "$source_arg" "$target_arg" && chmod "$mode_arg" "$target_arg"
+}
+stat() {
+  if [ "${1:-}" = '-c' ] && [ "${2:-}" = '%u' ] &&
+    { [ "${3:-}" = "$backup_file" ] || [ "${3##*/}" = "${backup_file##*/}" ]; }; then
+    printf '0\n'
+    return 0
+  fi
+  command stat "$@"
+}
+
+transfer_provider_sysctl_ownership
+[ "$(jq -r '.provider_sysctl_transfer.state' "$STATE_FILE")" = 'TRANSFERRED' ]
+cp -- "$source_file" "$migrated_copy"
+! grep -Eq '^[[:space:]]*net\.(core\.default_qdisc|ipv4\.tcp_congestion_control)[[:space:]]*=' "$source_file"
+cmp -s "$backup_file" "$original_copy"
+
+printf '%s\n' '# external administrator edit' >>"$source_file"
+external_hash="$(sha256sum "$source_file" | awk '{print $1}')"
+if provider_sysctl_transfer_is_restorable; then
+  printf 'rollback precheck accepted an externally edited provider file\n' >&2
+  exit 1
+fi
+if restore_provider_sysctl_ownership >/dev/null 2>&1; then
+  printf 'provider sysctl rollback overwrote an external edit\n' >&2
+  exit 1
+fi
+[ "$(sha256sum "$source_file" | awk '{print $1}')" = "$external_hash" ] || {
+  printf 'failed rollback changed externally edited provider file\n' >&2
+  exit 1
+}
+
+cp -- "$migrated_copy" "$source_file"
+provider_sysctl_transfer_is_restorable
+restore_provider_sysctl_ownership
+cmp -s "$source_file" "$original_copy"
+[ "$(jq -r '.provider_sysctl_transfer.state' "$STATE_FILE")" = 'RESTORED' ]
+EOF_PROVIDER_TRANSFER_TEST
+  } >"$provider_transfer_test"
+  bash "$provider_transfer_test"
+fi
 
 if command -v jq >/dev/null 2>&1; then
   for script in "${scripts[@]}"; do
@@ -681,7 +1287,7 @@ end += len("      managed_files:[],timestamps:{prepared:$now,last_update:$now}}"
 sys.stdout.buffer.write(text[start:end].encode("utf-8") + b"\n")
 PY
     jq -n \
-      --argjson schema 3 --arg version 'test' \
+      --argjson schema 4 --arg version 'test' \
       --arg profile 'test-profile' --arg profile_label 'Test Profile' \
       --arg debian '12' --arg arch 'x86_64' --arg kernel 'test-kernel' \
       --argjson mem 960 --argjson port 1000 --argjson rtt 200 \
@@ -689,8 +1295,12 @@ PY
       --argjson target_numerator 5 --argjson target_denominator 4 \
       --arg qfile '/tmp/qdisc.json' --arg qhash 'test-hash' \
       --arg now '2026-08-01T00:00:00Z' --argjson original '{}' \
+      --argjson provider_required false --arg provider_file '/etc/sysctl.conf' \
+      --arg provider_backup '/var/lib/proxy-vps-tuning/provider-sysctl.conf.original' \
+      --arg provider_hash '' --argjson provider_uid 0 --argjson provider_gid 0 \
+      --arg provider_mode '000' --arg provider_state 'NOT_REQUIRED' --argjson provider_keys '[]' \
       "$(<"$state_filter_file")" >"$state_json_file"
-    jq -e '.profile.label == "Test Profile" and .network.port_speed_mbps == 1000 and .network.buffer_target_numerator == 5 and .network.buffer_target_denominator == 4' \
+    jq -e '.schema_version == 4 and .profile.label == "Test Profile" and .network.port_speed_mbps == 1000 and .network.buffer_target_numerator == 5 and .network.buffer_target_denominator == 4 and .provider_sysctl_transfer.state == "NOT_REQUIRED" and .provider_sysctl_transfer.original_uid == null and .provider_sysctl_transfer.original_gid == null and .provider_sysctl_transfer.original_mode == null' \
       "$state_json_file" >/dev/null
   done
 else
@@ -822,9 +1432,19 @@ state_validation_test="$tmp_dir/state-validation-test.sh"
   cat <<'EOF_STATE_VALIDATION_TEST'
 test_root="$(mktemp -d)"
 trap 'rm -rf -- "$test_root"' EXIT
+case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*)
+    export MSYS2_ARG_CONV_EXCL='/etc/sysctl.conf;/var/lib/proxy-vps-tuning/provider-sysctl.conf.original'
+    ;;
+esac
 STATE_FILE="$test_root/state.json"
-STATE_SCHEMA_VERSION=3
+STATE_DIR='/var/lib/proxy-vps-tuning'
+SYSCTL_SCAN_ROOT='/etc'
+STATE_SCHEMA_VERSION=4
+LEGACY_STATE_SCHEMA_VERSION=3
+SCRIPT_VERSION='0.1.0-rc.12'
 PROFILE_ID='debian12-1c1g'
+UPDATE_PREFLIGHT=0
 stat() { printf '%s\n' '0'; }
 
 for fixture in empty whitespace null object multiple; do
@@ -841,7 +1461,28 @@ for fixture in empty whitespace null object multiple; do
   fi
 done
 
-printf '%s\n' '{"schema_version":3,"profile":{"id":"debian12-1c1g"},"state":"PREPARED","network":{},"original_sysctls":{},"qdisc":{"file":"/tmp/qdisc","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"swap":{},"managed_files":[],"timestamps":{}}' >"$STATE_FILE"
+printf '%s\n' '{"schema_version":4,"script_version":"0.1.0-rc.12","profile":{"id":"debian12-1c1g"},"state":"PREPARED","network":{},"original_sysctls":{},"qdisc":{"file":"/tmp/qdisc","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"swap":{},"provider_sysctl_transfer":{"required":false,"source_path":"/etc/sysctl.conf","backup_path":"/var/lib/proxy-vps-tuning/provider-sysctl.conf.original","original_sha256":null,"backup_sha256":null,"transferred_sha256":null,"original_uid":null,"original_gid":null,"original_mode":null,"keys":[],"state":"NOT_REQUIRED"},"managed_files":[],"timestamps":{}}' >"$STATE_FILE"
+state_file_is_valid
+
+jq '.provider_sysctl_transfer.original_uid = 0 | .provider_sysctl_transfer.original_gid = 0 | .provider_sysctl_transfer.original_mode = "000"' \
+  "$STATE_FILE" >"${STATE_FILE}.placeholder"
+mv -- "${STATE_FILE}.placeholder" "$STATE_FILE"
+state_file_is_valid
+
+jq '.provider_sysctl_transfer.original_mode = "0644"' \
+  "$STATE_FILE" >"${STATE_FILE}.placeholder"
+mv -- "${STATE_FILE}.placeholder" "$STATE_FILE"
+if state_file_is_valid; then
+  printf 'state validator accepted inconsistent ownership for absent provider sysctl\n' >&2
+  exit 1
+fi
+
+printf '%s\n' '{"schema_version":3,"script_version":"0.1.0-rc.11","profile":{"id":"debian12-1c1g"},"state":"VERIFIED","network":{},"original_sysctls":{},"qdisc":{"file":"/tmp/qdisc","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"swap":{},"managed_files":[],"timestamps":{}}' >"$STATE_FILE"
+if state_file_is_valid; then
+  printf 'state validator accepted legacy schema outside update-preflight\n' >&2
+  exit 1
+fi
+UPDATE_PREFLIGHT=1
 state_file_is_valid
 EOF_STATE_VALIDATION_TEST
 } >"$state_validation_test"
@@ -1176,6 +1817,8 @@ validate_state_file() { return 0; }
 state_get() { [ "$1" = '.state' ] && printf '%s\n' 'VERIFIED'; }
 state_set_phase() { PHASES="${PHASES} $1"; }
 assert_owned_file() { :; }
+provider_sysctl_transfer_is_restorable() { return 0; }
+restore_provider_sysctl_ownership() { return 0; }
 qdisc_snapshot_matches_current() { return 1; }
 restore_qdiscs() { return 0; }
 qdisc_snapshot_semantically_matches_current() { QDISC_MATCH_REASON='restored options differ'; return 1; }
@@ -1223,11 +1866,21 @@ for script in "${scripts[@]}"; do
   fi
 done
 
-if command -v shellcheck >/dev/null 2>&1; then
-  shellcheck -x "${scripts[@]}" "$controller" tests/static-check.sh tests/controller-check.sh
+if [ "${RUN_LOCAL_SHELLCHECK:-0}" = 1 ]; then
+  command -v shellcheck >/dev/null 2>&1 || {
+    printf 'RUN_LOCAL_SHELLCHECK=1 but shellcheck was not found\n' >&2
+    exit 1
+  }
+  shellcheck -x "${scripts[@]}" "$controller" "$tcpquality_tool" "$installer" "$probe_tool" "$htb_wrapper" \
+    experiments/htb-aggregate/experiment-plan.sh \
+    experiments/htb-aggregate/htb-aggregate-experiment.sh \
+    experiments/htb-aggregate/rate-sweep-plan.sh \
+    experiments/htb-aggregate/rate-sweep-run.sh \
+    experiments/htb-aggregate/rate-sweep-analyze.sh \
+    tests/static-check.sh tests/controller-check.sh tests/installer-check.sh
   for helper in "$tmp_dir"/*.helper; do shellcheck -x "$helper"; done
 else
-  printf '[WARN] shellcheck not found; syntax and structural checks only\n' >&2
+  printf '[INFO] deterministic syntax/fixture checks complete; pinned ShellCheck runs in its dedicated CI step\n' >&2
 fi
 
 printf 'static checks passed for %s scripts\n' "${#scripts[@]}"

@@ -8,7 +8,9 @@ The script uses BBR + fq, controlled TCP buffering, standard queue parameters, e
 
 > **System Selection Summary (as of 2026-08-04):** Newly created 1C1G, 1C2G, and 2C2G VPS instances are recommended to use Debian 13 minimal by default. Debian 13 is the current stable release; Debian 12 has transitioned to LTS and is better suited for retaining existing stable nodes or meeting explicit compatibility constraints. The OS version alone does not guarantee BBR availability, higher performance, or lower idle memory usage; virtualization type, running kernel, and target machine resources must still be verified.
 
-> Current release candidate: `v0.1.0-rc.11`. The following online commands are pinned to this specific RC release and its checksum assets, and will not follow branches or `latest`; do not execute these online commands before the release is published and public assets have been re-downloaded and verified. The official `v0.1.0` still requires completion of [Target VPS Runtime Acceptance](docs/validation.md); do not treat the release candidate as having completed full-platform, full-bandwidth, or performance acceptance.
+> Current release candidate: `v0.1.0-rc.12`. The following online commands are pinned to this specific RC release and its checksum assets, and will not follow branches or `latest`; do not execute these online commands before the release is published and public assets have been re-downloaded and verified. The official `v0.1.0` still requires completion of [Target VPS Runtime Acceptance](docs/validation.md); do not treat the release candidate as having completed full-platform, full-bandwidth, or performance acceptance.
+
+> This English document was originally translated from the rc.11 documentation. Release-critical URLs, hashes, version boundaries, and the rc.11-to-rc.12 migration contract have been synchronized for rc.12. The Chinese [README](README.md) and [rc.12 release notes](docs/releases/v0.1.0-rc.12.md) remain authoritative for the complete new `dvt` installer, advisory probe, and non-persistent HTB workflow details.
 
 ## Online Installation and Verification
 
@@ -16,7 +18,7 @@ The following commands assume you have entered the VPS root shell (prompt usuall
 
 ### 1. Online Installation
 
-After the rc.11 Release is published and passes public asset verification, it is recommended to execute its pinned main entry point. It will automatically detect Debian 12/13, amd64, CPU, and memory tiers, and will default to running a read-only `preflight` first; `apply` will only be executed if preflight passes and `y` is explicitly entered again:
+After the rc.12 Release is published and passes public asset verification, it is recommended to execute its pinned main entry point. It will automatically detect Debian 12/13, amd64, CPU, and memory tiers, and will default to running a read-only `preflight` first; `apply` will only be executed if preflight passes and `y` is explicitly entered again:
 
 ```bash
 (
@@ -31,10 +33,10 @@ After the rc.11 Release is published and passes public asset verification, it is
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.11/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.12/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    '24b1b9a15ad0c50834ef450f98a6a2d25b95bd93d89d22c00422f77e38b4ad96' \
+    'db2b94dbed9564cdc35786166b7000378b6c88876158d82d07e3e38639fa9309' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   bash "$dvt_tmp/debian-vps-tuning.sh"
@@ -72,10 +74,10 @@ Execute after re-logging into the VPS. `verify` is read-only validation and will
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.11/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.12/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    '24b1b9a15ad0c50834ef450f98a6a2d25b95bd93d89d22c00422f77e38b4ad96' \
+    'db2b94dbed9564cdc35786166b7000378b6c88876158d82d07e3e38639fa9309' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   bash "$dvt_tmp/debian-vps-tuning.sh" verify
@@ -103,10 +105,10 @@ The recommended order is to complete tuning and reboot verification first, then 
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.11/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.12/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    '24b1b9a15ad0c50834ef450f98a6a2d25b95bd93d89d22c00422f77e38b4ad96' \
+    'db2b94dbed9564cdc35786166b7000378b6c88876158d82d07e3e38639fa9309' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   env \
@@ -122,9 +124,9 @@ Strict verification requires `x-ui.service` to be active, and checks that the sy
 
 ### 4. Execute Read-Only Upgrade Check from Early rc Versions
 
-VPS instances already managed by rc.9 or rc.10 can download the rc.11 main entry and execute `update`. It will read the resource tier and port bandwidth from the state, verify the current profile, target `SHA256SUMS`, and target main entry script, sequentially execute the current version `verify` and the target version's read-only `update-preflight`, and finally output the fixed URL, SHA-256, and migration order required for the maintenance window. `update` does not perform rollback, purge, apply, or reboot, nor will it replace old Release assets already published.
+VPS instances already managed by rc.9, rc.10, or rc.11 can download the rc.12 main entry and execute `update`. It will read the resource tier and port bandwidth from the state, verify the current profile, target `SHA256SUMS`, and target main entry script, sequentially execute the current version `verify` and the target version's read-only `update-preflight`, and finally output the fixed URL, SHA-256, and migration order required for the maintenance window. `update` does not perform rollback, purge, apply, or reboot, nor will it replace old Release assets already published.
 
-The main entry, `SHA256SUMS`, and profile are treated as an indivisible Release package. **Assets from different versions must not be placed in the same directory.** For example, do not place rc.11 `SHA256SUMS` and profile next to the rc.10 main entry; otherwise, the main entry will refuse to execute per integrity protection rules and will not automatically fall back to online download. The following online commands and subsequent rollback examples all use independent `mktemp -d` directories to avoid version collisions.
+The main entry, `SHA256SUMS`, and profile are treated as an indivisible Release package. **Assets from different versions must not be placed in the same directory.** For example, do not place rc.12 `SHA256SUMS` and profile next to the rc.11 main entry; otherwise, the main entry will refuse to execute per integrity protection rules and will not automatically fall back to online download. The following online commands and subsequent rollback examples all use independent `mktemp -d` directories to avoid version collisions.
 
 ```bash
 (
@@ -139,17 +141,17 @@ The main entry, `SHA256SUMS`, and profile are treated as an indivisible Release 
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.11/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.12/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    '24b1b9a15ad0c50834ef450f98a6a2d25b95bd93d89d22c00422f77e38b4ad96' \
+    'db2b94dbed9564cdc35786166b7000378b6c88876158d82d07e3e38639fa9309' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   bash "$dvt_tmp/debian-vps-tuning.sh" update
 )
 ```
 
-Specify the target version using `update --target v0.1.0-rc.11`. Auto-discovery does not cross `major.minor` release lines: when on an rc, you can select a higher rc on the same line or the stable release; when on a stable release, prereleases are automatically excluded. Cross-line upgrades must be explicitly specified with `--target`, and downgrades and duplicate upgrades are still rejected. Explicitly specifying a prerelease represents the user's active choice of that target and is not affected by the stable channel auto-exclusion rule.
+Specify the target version using `update --target v0.1.0-rc.12`. Auto-discovery does not cross `major.minor` release lines: when on an rc, you can select a higher rc on the same line or the stable release; when on a stable release, prereleases are automatically excluded. Cross-line upgrades must be explicitly specified with `--target`, and downgrades and duplicate upgrades are still rejected. Explicitly specifying a prerelease represents the user's active choice of that target and is not affected by the stable channel auto-exclusion rule.
 
 `update` is only an upgrade compatibility check and plan generator; it will not rewrite old scripts on disk, system tuning configurations, or 3X-UI. A passed check does not mean the upgrade is complete; during the maintenance window, manually execute rollback/purge, reboot, target preflight/apply, reboot again, and verify according to the output and this README. If GitHub API queries fail or are subject to anonymous rate limits, using a reviewed `--target` can skip auto-discovery, but target Release assets will still be verified.
 
@@ -157,9 +159,9 @@ Specify the target version using `update --target v0.1.0-rc.11`. Auto-discovery 
 
 - Only supports vendor minimal Debian 12/13, `x86_64/amd64`, and the four CPU/memory resource tiers listed in the README; other combinations will be rejected;
 - Port bandwidth should be the provider's plan limit, not the link speed shown by the virtual NIC; default is 200 Mbps, allows 100–1000 Mbps;
-- Online entry is pinned to `v0.1.0-rc.11` and will not fall back to `master`, `main`, `latest`, HTTP, or third-party mirrors;
-- The above commands verify the fixed SHA-256 of the rc.11 main entry asset before execution; the main entry subsequently downloads the fixed Release's `SHA256SUMS` and matching profile, and verifies again;
-- Main entry, `SHA256SUMS`, and profile must come from the same Release; use different temporary directories for different versions, do not mix rc.10 and rc.11 assets in `/root` or the same working directory;
+- Online entry is pinned to `v0.1.0-rc.12` and will not fall back to `master`, `main`, `latest`, HTTP, or third-party mirrors;
+- The above commands verify the fixed SHA-256 of the rc.12 main entry asset before execution; the main entry subsequently downloads the fixed Release's `SHA256SUMS` and matching profile, and verifies again;
+- Main entry, `SHA256SUMS`, and profile must come from the same Release; use different temporary directories for different versions, do not mix rc.11 and rc.12 assets in `/root` or the same working directory;
 - Tags should not be moved or same-named assets replaced after publication; release a new version when defects are found;
 - `update` is a read-only upgrade check and will not automatically migrate configurations; after a passed check, you must still choose another maintenance window to complete manual rollback/apply and two reboots;
 - The script does not configure or allow UFW ports; do not treat UFW status prompts as the firewall being configured; ensure the SSH management port will not be locked out first;
@@ -175,12 +177,12 @@ As of 2026-08-04, the project has obtained the following target machine evidence
 
 | Record | OS & Kernel Series | VPS Config | Storage/Network | Covered Paths | Evidence Boundary |
 |---|---|---|---|---|---|
-| C1 | Debian 13; Linux 6.12 series | 1 vCPU / ~1 GiB; `debian13-1c1g` | ext4; plan limit 1000 Mbps | Fixed rc.9 asset verification, safe boot, `preflight`, `apply`, immediate/post-reboot `verify`, strict verification after 3X-UI installation; BBR, fq, swap, and NOFILE persist after reboot | Only proves the main path for corresponding rc.9 artifacts and this configuration category, not inherited as rc.10/rc.11 conclusion |
+| C1 | Debian 13; Linux 6.12 series | 1 vCPU / ~1 GiB; `debian13-1c1g` | ext4; plan limit 1000 Mbps | Fixed rc.9 asset verification, safe boot, `preflight`, `apply`, immediate/post-reboot `verify`, strict verification after 3X-UI installation; BBR, fq, swap, and NOFILE persist after reboot | Only proves the main path for corresponding rc.9 artifacts and this configuration category, not inherited as rc.10/rc.11/rc.12 conclusion |
 | C2 | Debian 12; Linux 6.1 series | 1 vCPU / ~1 GiB; `debian12-1c1g` | XFS; plan limit 200 Mbps | Completed rc.10 candidate `apply` after exiting rc.8, normal/strict `verify` and repeated `apply` after reboot; repeated execution did not overwrite configuration | Does not replace final Release asset verification, does not prove proxy throughput or line quality |
 | C3 | Debian 12; Linux 6.1 series | 1 vCPU / ~2 GiB; `debian12-1c2g` | XFS; plan limit 200 Mbps | Completed rc.10 candidate `apply` after exiting rc.8, normal/strict `verify` and repeated `apply` after reboot; 3X-UI main process and direct Xray child process NOFILE is 65536/65536 | Does not cover 2C2G, 512 MiB, other filesystems, or final Release assets |
 | C4 | Debian 13; Linux 6.12 series | 1 vCPU / ~1 GiB; `debian13-1c1g` | ext4; plan limit 1000 Mbps | Completed rc.9→rc.10 candidate migration using isolated directory, strict `verify` and repeated `apply` after reboot | This is a migration record, configuration category may overlap with C1; does not represent an additional independent VPS |
 
-The above records are bound to the specific script hashes at the time of testing. If the script content or SHA-256 changes before or after release, evidence must be re-established according to the [Validation Matrix](docs/validation.md); passing conclusions cannot be inherited solely based on version names or identical configuration values. Target VPS lifecycle validation for the final rc.11 hash is still pending.
+The above records are bound to the specific script hashes at the time of testing. If the script content or SHA-256 changes before or after release, evidence must be re-established according to the [Validation Matrix](docs/validation.md); passing conclusions cannot be inherited solely based on version names or identical configuration values. Target VPS lifecycle validation for the final rc.12 hash is still pending.
 
 ### 1C2G / 200 Mbps Performance Observation Case
 
@@ -198,7 +200,7 @@ In the two time-period samples of the same rc.10 configuration, the zero-retrans
 
 Furthermore, v6 has only one sample and rc.10 only two, which is still insufficient to estimate a stable distribution; TcpQuality uses random built-in packet lengths when `-s` is not specified, and the default `-c` sends only 30 packets per node; TcpQuality directly tests the VPS network stack, without passing through 3X-UI, VLESS, REALITY, or client links. Existing evidence is primarily remote images, lacking machine-readable raw tables sufficient for public recalculation.
 
-Therefore, the project will not roll back rc.10 based on these single reports, modify the 17 managed sysctls of rc.11, or add aggressive parameters. Performance acceptance must fix the TcpQuality commit, script SHA-256, node files, and `-c/-s/-p` parameters, cover low load, daytime, and evening peaks with repeated sampling, compare median, P95, and anomaly node reproduction rates; simultaneously cover actual VLESS + REALITY + TCP concurrency of 1, 3, 5, 10. Full pending test items see [Validation Matrix](docs/validation.md).
+Therefore, the project will not roll back rc.10 based on these single reports, modify the 17 managed sysctls retained by rc.12, or add aggressive parameters. Performance acceptance must fix the TcpQuality commit, script SHA-256, node files, and `-c/-s/-p` parameters, cover low load, daytime, and evening peaks with repeated sampling, compare median, P95, and anomaly node reproduction rates; simultaneously cover actual VLESS + REALITY + TCP concurrency of 1, 3, 5, 10. Full pending test items see [Validation Matrix](docs/validation.md).
 
 ## Local Usage and Command Line Mode
 
@@ -221,7 +223,7 @@ bash ./debian-vps-tuning.sh diagnose
 # benchmark also requires BENCHMARK_HOST, see below
 bash ./debian-vps-tuning.sh benchmark
 bash ./debian-vps-tuning.sh update
-bash ./debian-vps-tuning.sh update --target v0.1.0-rc.11
+bash ./debian-vps-tuning.sh update --target v0.1.0-rc.12
 bash ./debian-vps-tuning.sh rollback
 ```
 
@@ -575,7 +577,7 @@ env PORT_SPEED_MBPS=1000 \
   bash ./debian13-1c2g-vps-tuning.sh apply
 ```
 
-Any integer within 100–1000 can be used, 500 Mbps is also provided in the main menu. rc.11 maintains rc.10 network parameters: default target RTT is 200 ms, using 1×, 1.25×, 1.5×BDP targets by resource tier, then rounding up to 16/32/64 MiB, constrained by 16/32/64 MiB limits of 512M/1G/2G profiles:
+Any integer within 100–1000 can be used, 500 Mbps is also provided in the main menu. rc.12 maintains rc.11 network parameters: default target RTT is 200 ms, using 1×, 1.25×, 1.5×BDP targets by resource tier, then rounding up to 16/32/64 MiB, constrained by 16/32/64 MiB limits of 512M/1G/2G profiles:
 
 | Resource Tier | BDP Coeff | 100 Mbps | 200 Mbps | 500 Mbps | 1000 Mbps |
 |---|---:|---:|---:|---:|---:|
@@ -623,11 +625,11 @@ When repeatedly executing `apply` with the same script version and parameters, t
 
 State updates are first written to a temporary file in the same directory by `jq`, then the command exit code, non-empty, single JSON object, and complete schema are checked; only after all pass is `state.json` atomically replaced. Empty files, blank files, multiple JSON documents, or update failures must not overwrite the previous valid state.
 
-### Upgrading from rc.10 to rc.11
+### Upgrading from rc.11 to rc.12
 
-rc.11 does not change the 17 sysctls, qdisc, swap, journald, NOFILE, or state schema of rc.10; the main changes are enhanced read-only `diagnose` and user-authorized `benchmark`. Since the script versions and SHA-256 of the six profiles have changed, existing rc.10 states still cannot directly repeat `apply` via rc.11. First execute `update --target v0.1.0-rc.11` with the rc.11 main entry for read-only check; after passing, use the fixed and verified rc.10 Release in a maintenance window to execute `verify`, `PURGE_CREATED_SWAP=1 rollback`, and reboot, then use rc.11 in an independent directory to execute `preflight`, `apply`, reboot, and strict `verify`. rc.10 and rc.11 main entries, manifests, and profiles must not be placed in the same directory.
+rc.12 does not change the 17 sysctls, qdisc, swap, journald, or NOFILE values of rc.11, but it upgrades the managed-state schema from 3 to 4 to preserve provider sysctl migration and restoration evidence. Existing rc.11 states therefore cannot be overwritten by rc.12 `apply`. First execute `update --target v0.1.0-rc.12` with the rc.12 main entry for a read-only compatibility check; after passing, use the fixed and verified rc.11 Release in a maintenance window to execute `verify`, `PURGE_CREATED_SWAP=1 rollback`, and reboot, then use rc.12 in an independent directory to execute `preflight`, `apply`, reboot, and strict `verify`. rc.11 and rc.12 main entries, manifests, and profiles must not be placed in the same directory.
 
-If only the new diagnose or benchmark is needed, and migrating management state to rc.11 is not required, the installed rc.10 can continue to manage the configuration lifecycle, and the rc.11 profile can be placed in an independent temporary directory to execute read-only `diagnose` or explicitly authorized `benchmark`; do not use rc.11 `apply` to overwrite rc.10 state.
+If only the new diagnosis, benchmark evidence, or advisory tools are needed and migrating management state to rc.12 is not required, the installed rc.11 can continue to own the configuration lifecycle. Run the rc.12 read-only `diagnose`, explicitly authorized `benchmark`, or standalone evidence tools from an independent directory; do not use rc.12 `apply` to overwrite rc.11 state. See the Chinese README and rc.12 release notes for the complete `dvt probe` and non-persistent HTB safety contract.
 
 ### Upgrading from rc.8/rc.9 or old v5/v6 to rc.10
 
@@ -719,7 +721,7 @@ The first version primarily validates native systemd deployments. Docker may cha
 - Policy routing, TProxy, gateways, Docker firewalls, and complex qdiscs are out of scope;
 - Performance results are affected by CPU, virtualization overselling, lines, cross-border routing, clients, and encryption overhead.
 - Performance acceptance should separately cover 1, 3, 5, 10 concurrency; the script will not automatically generate proxy traffic.
-- 2C2G has been included in rc.11 resource contracts and local fixtures, real VPS lifecycle results are subject to [Validation Matrix](docs/validation.md).
+- 2C2G remains included in rc.12 resource contracts and local fixtures; real VPS lifecycle results are subject to [Validation Matrix](docs/validation.md).
 
 See [Runtime Acceptance Instructions](docs/validation.md) for details.
 

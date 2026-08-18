@@ -107,10 +107,10 @@ for invalid_port in 99 1001 20000 abc 20.0 ''; do
   fi
 done
 
-release_is_newer v0.1.0-rc.11 0.1.0-rc.10 || fail 'rc.11 was not newer than rc.10'
+release_is_newer v0.1.0-rc.12 0.1.0-rc.11 || fail 'rc.12 was not newer than rc.11'
 release_is_newer v0.1.0 0.1.0-rc.999999999 || fail 'stable release was not newer than prerelease'
 release_is_newer v0.2.0-rc.1 0.1.9 || fail 'minor release comparison failed'
-if release_is_newer v0.1.0-rc.10 0.1.0-rc.11; then
+if release_is_newer v0.1.0-rc.11 0.1.0-rc.12; then
   fail 'downgrade tag was considered newer'
 fi
 if parse_release_version latest >/dev/null 2>&1; then
@@ -202,15 +202,25 @@ fi
 
 ACTION=''
 ACTION_FROM_MENU=0
-choose_action_interactively <<<'8' >/dev/null
+choose_action_interactively <<<'10' >/dev/null
 if [ "$ACTION" != update ] || [ "$ACTION_FROM_MENU" -ne 1 ]; then
-  fail 'menu option 8 did not select update'
+  fail 'menu option 10 did not select update'
+fi
+
+ACTION=''
+ACTION_ARGS=()
+parse_arguments probe --host probe.example --rate-cap 200 --yes
+if [ "$ACTION" != probe ] || [ "${#ACTION_ARGS[@]}" -ne 5 ] ||
+  [ "${ACTION_ARGS[0]}" != --host ] || [ "${ACTION_ARGS[1]}" != probe.example ] ||
+  [ "${ACTION_ARGS[2]}" != --rate-cap ] || [ "${ACTION_ARGS[3]}" != 200 ] ||
+  [ "${ACTION_ARGS[4]}" != --yes ]; then
+  fail 'probe argument forwarding failed'
 fi
 
 ACTION=''
 CLI_UPDATE_TAG=''
-parse_arguments update --target v0.1.0-rc.11
-if [ "$ACTION" != update ] || [ "$CLI_UPDATE_TAG" != v0.1.0-rc.11 ]; then
+parse_arguments update --target v0.1.0-rc.12
+if [ "$ACTION" != update ] || [ "$CLI_UPDATE_TAG" != v0.1.0-rc.12 ]; then
   fail 'update --target parsing failed'
 fi
 
@@ -226,6 +236,14 @@ printf '%s  %s\n' "$fixture_hash" 'profile.sh' >"$manifest"
 PROFILE_SHA256=''
 verify_manifest_entry "$manifest" "$fixture" profile.sh || fail 'valid manifest entry was rejected'
 [ "$PROFILE_SHA256" = "$fixture_hash" ] || fail 'verified hash was not recorded'
+
+ACTION=probe
+resolve_companion_assets
+[ "$PROBE_PATH" = "${repo_root}/dvt-probe.sh" ] || fail 'local probe companion was not resolved'
+ACTION=htb
+resolve_companion_assets
+[ "$HTB_WRAPPER_PATH" = "${repo_root}/dvt-htb.sh" ] || fail 'local HTB wrapper was not resolved'
+[ "$HTB_BUNDLE_DIR" = "${repo_root}/experiments/htb-aggregate" ] || fail 'local HTB bundle was not resolved'
 
 printf '%s  %s\n%s  %s\n' "$fixture_hash" profile.sh "$fixture_hash" profile.sh >"$manifest"
 if verify_manifest_entry "$manifest" "$fixture" profile.sh; then

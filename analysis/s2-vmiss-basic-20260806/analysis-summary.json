@@ -1,0 +1,251 @@
+{
+  "evidence": {
+    "csv_files": 6,
+    "rows_per_csv": {
+      "S1-r1": 398,
+      "S1-r2": 398,
+      "S1-r3": 398,
+      "S2-r1": 398,
+      "S2-r2": 398,
+      "S2-r3": 398
+    },
+    "s2_manifest_entries": 20,
+    "s2_manifest_sha256_ok": 20,
+    "all_s2_run_gates_ok": true
+  },
+  "paired_probe": {
+    "matched_endpoints": 386,
+    "left_only": 1,
+    "right_only": 2,
+    "median_latency_delta_ms": -0.5069999999999952,
+    "latency_delta_q25_ms": -1.2199999999999989,
+    "latency_delta_q75_ms": 0.2667500000000008,
+    "latency_improved_share": 0.6839378238341969,
+    "median_loss_delta_pct_point": 0.0,
+    "same_phase_ip_set_share": 0.7642487046632125
+  },
+  "speed": {
+    "baseline_return_endpoint_median_mbps": 158.8,
+    "post_return_endpoint_median_mbps": 392.8,
+    "return_relative_change": 1.4735516372795967,
+    "baseline_forward_endpoint_median_mbps": 35.8,
+    "post_forward_endpoint_median_mbps": 122.7,
+    "forward_relative_change": 2.427374301675978,
+    "median_paired_shortfall_delta_mbps": 40.900000000000006,
+    "shortfall_improved_endpoints": 8,
+    "endpoint_count": 9
+  },
+  "retransmission": [
+    {
+      "run_label": "S1-r1",
+      "phase": "S1",
+      "egress_gb": 5.116,
+      "tcp_retrans_delta": 147,
+      "tcp_retrans_per_gb": 28.7,
+      "lost_retrans_delta": 7,
+      "qdisc_drop_delta": 0,
+      "tcpquality_exit_ok": true,
+      "runtime_gate_ok": false,
+      "evidence_gate_ok": false
+    },
+    {
+      "run_label": "S1-r2",
+      "phase": "S1",
+      "egress_gb": 5.131,
+      "tcp_retrans_delta": 101,
+      "tcp_retrans_per_gb": 19.7,
+      "lost_retrans_delta": 0,
+      "qdisc_drop_delta": 0,
+      "tcpquality_exit_ok": true,
+      "runtime_gate_ok": false,
+      "evidence_gate_ok": false
+    },
+    {
+      "run_label": "S1-r3",
+      "phase": "S1",
+      "egress_gb": 4.291,
+      "tcp_retrans_delta": 59,
+      "tcp_retrans_per_gb": 13.8,
+      "lost_retrans_delta": 0,
+      "qdisc_drop_delta": 0,
+      "tcpquality_exit_ok": true,
+      "runtime_gate_ok": false,
+      "evidence_gate_ok": false
+    },
+    {
+      "run_label": "S2-r1",
+      "phase": "S2",
+      "egress_gb": 8.92,
+      "tcp_retrans_delta": 5652,
+      "tcp_retrans_per_gb": 633.6,
+      "lost_retrans_delta": 2,
+      "qdisc_drop_delta": 0,
+      "tcpquality_exit_ok": true,
+      "runtime_gate_ok": true,
+      "evidence_gate_ok": true
+    },
+    {
+      "run_label": "S2-r2",
+      "phase": "S2",
+      "egress_gb": 9.381,
+      "tcp_retrans_delta": 23163,
+      "tcp_retrans_per_gb": 2469.0,
+      "lost_retrans_delta": 52,
+      "qdisc_drop_delta": 0,
+      "tcpquality_exit_ok": true,
+      "runtime_gate_ok": true,
+      "evidence_gate_ok": true
+    },
+    {
+      "run_label": "S2-r3",
+      "phase": "S2",
+      "egress_gb": 10.244,
+      "tcp_retrans_delta": 2905,
+      "tcp_retrans_per_gb": 283.6,
+      "lost_retrans_delta": 0,
+      "qdisc_drop_delta": 0,
+      "tcpquality_exit_ok": true,
+      "runtime_gate_ok": true,
+      "evidence_gate_ok": true
+    }
+  ],
+  "node_snapshot": {
+    "runs": [
+      {
+        "phase": "S1",
+        "scope": "all",
+        "run": 1,
+        "rows": 269,
+        "logical_left_only": 8,
+        "logical_right_only": 8,
+        "ip_changed": 122
+      },
+      {
+        "phase": "S1",
+        "scope": "all",
+        "run": 2,
+        "rows": 269,
+        "logical_left_only": 7,
+        "logical_right_only": 7,
+        "ip_changed": 105
+      },
+      {
+        "phase": "S1",
+        "scope": "all",
+        "run": 3,
+        "rows": 269,
+        "logical_left_only": 9,
+        "logical_right_only": 9,
+        "ip_changed": 35
+      },
+      {
+        "phase": "S1",
+        "scope": "tos",
+        "run": 1,
+        "rows": 21,
+        "logical_left_only": 8,
+        "logical_right_only": 8,
+        "ip_changed": 6
+      },
+      {
+        "phase": "S1",
+        "scope": "tos",
+        "run": 2,
+        "rows": 21,
+        "logical_left_only": 7,
+        "logical_right_only": 7,
+        "ip_changed": 5
+      },
+      {
+        "phase": "S1",
+        "scope": "tos",
+        "run": 3,
+        "rows": 21,
+        "logical_left_only": 9,
+        "logical_right_only": 9,
+        "ip_changed": 8
+      },
+      {
+        "phase": "S2",
+        "scope": "all",
+        "run": 1,
+        "rows": 269,
+        "logical_left_only": 6,
+        "logical_right_only": 6,
+        "ip_changed": 103
+      },
+      {
+        "phase": "S2",
+        "scope": "all",
+        "run": 2,
+        "rows": 269,
+        "logical_left_only": 5,
+        "logical_right_only": 5,
+        "ip_changed": 33
+      },
+      {
+        "phase": "S2",
+        "scope": "all",
+        "run": 3,
+        "rows": 269,
+        "logical_left_only": 6,
+        "logical_right_only": 6,
+        "ip_changed": 117
+      },
+      {
+        "phase": "S2",
+        "scope": "tos",
+        "run": 1,
+        "rows": 21,
+        "logical_left_only": 6,
+        "logical_right_only": 6,
+        "ip_changed": 4
+      },
+      {
+        "phase": "S2",
+        "scope": "tos",
+        "run": 2,
+        "rows": 21,
+        "logical_left_only": 5,
+        "logical_right_only": 5,
+        "ip_changed": 6
+      },
+      {
+        "phase": "S2",
+        "scope": "tos",
+        "run": 3,
+        "rows": 21,
+        "logical_left_only": 6,
+        "logical_right_only": 6,
+        "ip_changed": 4
+      }
+    ],
+    "note": "Live node inventory changed within both phases; exact endpoint population was not frozen."
+  },
+  "nonmatched_probe_keys": [
+    {
+      "网络": "IPv4大包",
+      "IP版本": "IPv4",
+      "省份": "天津",
+      "运营商": "移动",
+      "域名": "tj-cm-v4.ibsgss.uk",
+      "_merge": "right_only"
+    },
+    {
+      "网络": "IPv4大包",
+      "IP版本": "IPv4",
+      "省份": "新疆",
+      "运营商": "移动",
+      "域名": "bak.xj-cm-v4.ibsgss.uk",
+      "_merge": "right_only"
+    },
+    {
+      "网络": "三网",
+      "IP版本": "IPv6",
+      "省份": "重庆",
+      "运营商": "电信",
+      "域名": "bak.cq-ct-v6.ibsgss.uk",
+      "_merge": "left_only"
+    }
+  ]
+}
