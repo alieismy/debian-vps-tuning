@@ -2,7 +2,7 @@
 
 状态：实验性、非发布资产、非持久化。
 
-适用基线：Debian 13、`debian13-1c1g`/`debian13-1c2g`、rc.12 schema 4、
+适用基线：Debian 13、`debian13-1c1g`/`debian13-1c2g`、rc.13 schema 4、
 `VERIFIED`、200 Mbps、静态根 `fq`。
 
 目标：先用重复 HTB200 reference 判断额定端口附近的测量与重传是否稳定；只有人工确认仍需
@@ -11,8 +11,10 @@ shortlist。
 
 不证明：服务商存在 policer、代理业务改善、shortlist 是最优速率，或应建立持久化 HTB。
 
-执行顺序：**本 SOP 是当前实验入口。** 未先完成本文的 HTB200 reference，且在必要时完成
-candidate sweep 并人工冻结一个候选速率，不得开始
+执行顺序：本文是速率发现工具链的权威子流程。VMISS Basic 1C1G 应从
+[VMISS Basic 1C1G / 200 Mbps HTB 完整实验 SOP](vmiss-basic-1c1g-200mbps-htb-campaign.md)
+进入；1C2G 未先完成本文的 HTB200 reference，且在必要时完成 candidate sweep 并人工冻结
+一个候选速率，不得开始
 [VMISS 1C2G / 200 Mbps 临时 HTB A/B/A 实验](vmiss-1c2g-200mbps-htb-aba.md)。
 
 本流程吸收 tcpfit v0.5.6 固定 commit
@@ -23,7 +25,9 @@ receiver goodput 只作交叉核对。
 
 ## 1. 工具与两阶段边界
 
-- `rate-sweep-plan.sh`：只输出 schema 2 JSON；不读取目标机、不执行流量、不改 qdisc。
+- `rate-sweep-plan.sh`：只输出 schema 3 JSON；不读取目标机、不执行流量、不改 qdisc；把
+  sender 最低速率暴露、CPU idle/steal、softnet 和接口异常门禁冻结到计划中；candidate
+  模式还要求显式 ack 并绑定已复核 reference 的 manifest、analysis 和 completion 摘要。
 - `rate-sweep-run.sh`：经用户显式调用后产生高带宽上传流量；每个 reference/candidate 阶段
   都临时执行 `HTB rate=ceil=<rate> + fq`，状态切换委托 v0.4.0 HTB 执行器。
 - `rate-sweep-analyze.sh`：只读解析已完成证据，输出 `REVIEW_REQUIRED` 或
@@ -44,13 +48,13 @@ receiver goodput 只作交叉核对。
 
 只有全部满足才继续：
 
-1. 已冻结 rc.12 apply、重启后 verify 和幂等证据；managed state 仍为 schema 4、
+1. 已冻结 rc.13 apply、重启后 verify 和幂等证据；managed state 仍为 schema 4、
    `VERIFIED`、200 Mbps，profile 为 `debian13-1c1g` 或 `debian13-1c2g`。
 2. v0.4.0 `htb-aggregate-experiment` 已按对应 SOP 完成固定 hash 校验、preflight 和
    10 秒 smoke-test；当前工具 SHA-256 以仓库和上传时现场计算结果为准。
 3. 当前不存在 `/run/htb-aggregate-experiment/active.json`，根 qdisc 是单一 `fq`。
 4. 已安装 `iperf3` 和 `jq`；脚本不会自动安装软件。
-5. 已获得一个固定、明确授权的 iperf3 服务端；同一阶段固定 host、port、地址族和版本。
+5. 已获得一个固定、明确获准使用的 iperf3 服务端；同一阶段固定 host、port、地址族和版本。
 6. 扫描期间没有 apt/dpkg、备份、更新、TcpQuality、其他测速或可观察到的业务高峰。
 7. 服务商剩余流量足以覆盖计划预算、协议开销、失败重试和实际计费口径。
 8. 服务商控制台可用，已准备紧急命令 `tc qdisc replace dev eth0 root fq`，但只在受管
@@ -60,9 +64,12 @@ receiver goodput 只作交叉核对。
 
 ### 2.1 固定本轮 iperf3 endpoint
 
-本轮使用之前已成功建立 iperf3 会话的洛杉矶测试点 `lax.speedtest.is.cc:5209`。它是第三方
-公共服务，之前可连接不保证当前仍可用、空闲或允许长时间测试；开始前仍应确认其当前使用
-规则。不要硬编码以前解析到的 IP。先解析一次 IPv4，把结果冻结到 root-only JSON；后续
+InterServer 当前官方 [Speed Test](https://www.interserver.net/speedtest/) 页面（本 SOP 于
+2026-08-21 复核）公开洛杉矶测试点 `lax.speedtest.is.cc` 和 iperf3 端口 `5201–5209`，因此
+选择 `5209` 不再以额外书面许可为开始 blocker。它仍是第三方共享公共服务：公开测试入口
+不代表无限制占用，也不保证当前可用、空闲或结果稳定。本流程只做计划内短时、有限测试；
+若页面规则变化或服务端拒绝连接，立即停止。不要硬编码以前解析到的 IP。先解析一次 IPv4，
+把结果冻结到 root-only JSON；后续
 reference 和 candidate 必须读取同一文件，不得重新解析后静默换节点：
 
 ```bash
@@ -105,6 +112,10 @@ IP/port；root-only endpoint JSON 另行保留 DNS 和解析时间。二者都�
 在仓库目录确认工作树和工具内容后，将四个实验脚本上传到目标机。目标机执行：
 
 ```bash
+test ! -e /run/htb-aggregate-experiment/active.json
+install -o root -g root -m 0755 \
+  /root/debian-vps-tuning/experiments/htb-aggregate/htb-aggregate-experiment.sh \
+  /usr/local/sbin/htb-aggregate-experiment
 install -o root -g root -m 0755 \
   /root/debian-vps-tuning/experiments/htb-aggregate/rate-sweep-plan.sh \
   /root/rate-sweep-plan.sh
@@ -118,6 +129,7 @@ install -o root -g root -m 0755 \
 bash -n /root/rate-sweep-plan.sh
 bash -n /root/rate-sweep-run.sh
 bash -n /root/rate-sweep-analyze.sh
+bash -n /usr/local/sbin/htb-aggregate-experiment
 sha256sum \
   /root/rate-sweep-plan.sh \
   /root/rate-sweep-run.sh \
@@ -126,8 +138,14 @@ sha256sum \
   /root/debian13-1c2g-vps-tuning.sh
 ```
 
+若使用已安装的 `dvt`，还必须从其当前固定 Release 的 `SHA256SUMS` 提取执行器摘要，确认
+`/usr/local/sbin/htb-aggregate-experiment` 与 Release 资产完全相同；wrapper 不会在只读
+`preflight` 中隐式安装或替换执行器。活动实验期间禁止替换该文件。
+
 实际 profile 路径按目标机调整，但必须是与管理状态相符、固定 hash、root 所有且不能被
-group/world 写入的 rc.12 standalone profile。不要使用可变分支 URL 直接执行脚本。
+group/world 写入的 rc.13 standalone profile。runner 会在流量前执行该 profile 的只读
+`verify`，并冻结 managed profile/version/state/port/state SHA-256；每个 benchmark 的
+`benchmark-meta.json` 必须再次匹配该绑定。不要使用可变分支 URL 直接执行脚本。
 
 ## 4. 阶段一：生成 HTB200 reference 计划
 
@@ -143,14 +161,23 @@ REF_PLAN_TMP="${REF_PLAN}.tmp"
   --benchmark-seconds 10 \
   --omit-seconds 3 \
   --parallel 1 \
-  --family 4 >"$REF_PLAN_TMP"
+  --family 4 \
+  --minimum-rate-exposure-percent 90 \
+  --minimum-cpu-idle-percent 5 \
+  --maximum-cpu-steal-percent 5 >"$REF_PLAN_TMP"
 
 jq -e '
-  .schema_version == 2 and
+  .schema_version == 3 and
   .mode == "reference-screen" and
   .scope.provider_port_mbit == 200 and
   .reference_rate_mbit == 200 and
   .rates_mbit == [] and
+  .controls.minimum_rate_exposure_ratio == 0.9 and
+  .controls.minimum_cpu_idle_percent == 5 and
+  .controls.maximum_cpu_steal_percent == 5 and
+  .controls.require_zero_softnet_drops == true and
+  .controls.require_zero_softnet_time_squeeze == true and
+  .controls.require_zero_link_drops_errors == true and
   .traffic_budget.enforced_by == "htb-class-rate-and-ceil" and
   (.stages | length) == 3 and
   all(.stages[];
@@ -209,15 +236,18 @@ test -f "$REF_DIR/COMPLETED"
 test ! -e "$REF_DIR/INCOMPLETE"
 (cd "$REF_DIR" && sha256sum -c SHA256SUMS)
 
-jq '{status,measurement_gate,metric_contract,reference,
+jq '{status,measurement_gate,shaping_exposure_gate,resource_gate,metric_contract,reference,
      review_shortlist,required_manual_review,next_gate,traffic_budget}' \
   "$REF_DIR/sweep-analysis.json"
 ```
 
 阶段一停止条件：
 
-- `status == "REVIEW_BLOCKED"`：保存证据，不运行候选扫描。先核对
-  `measurement_gate.invalid_samples` 和原始 iperf3 JSON；新建证据目录重测，禁止原目录覆盖。
+- `status == "REVIEW_BLOCKED"`：保存证据，不运行候选扫描。先分别核对
+  `measurement_gate.invalid_samples`、`shaping_exposure_gate.invalid_samples` 和
+  `resource_gate.invalid_samples`。测量窗口异常时检查原始 iperf3 JSON；HTB 暴露不足时只有在
+  资源门禁仍通过的前提下，才可用固定的更高 `--parallel` 生成全新计划和证据目录；CPU、
+  softnet 或接口异常时不得靠增加并发绕过。所有重测都禁止覆盖原目录。
 - `status == "REVIEW_REQUIRED"` 且 HTB200 的 sender 吞吐、`retransmits_per_gib`、CPU、
   softnet、接口和 qdisc 证据可接受：停止，不因“预先计划过 180/190/195”而继续。
 - `status == "REVIEW_REQUIRED"`，测量有效但 HTB200 重传反复偏高，且没有 CPU steal、
@@ -227,11 +257,34 @@ jq '{status,measurement_gate,metric_contract,reference,
 
 阶段二必须使用新的计划和输出目录：
 
+下面的 `--parallel 1` 只是示例。候选扫描必须使用最终通过 reference 暴露和资源门禁的同一
+并发数；若 reference 实际在 P2 或 P4 才通过，则这里必须分别改为 `--parallel 2` 或
+`--parallel 4`，不得在候选阶段重新选择。
+
 ```bash
 ENDPOINT_FILE='/root/htb-iperf-endpoint.json'
 IPERF_HOST="$(jq -er '.ipv4' "$ENDPOINT_FILE")"
 IPERF_PORT="$(jq -er '.port' "$ENDPOINT_FILE")"
 ip -4 route get "$IPERF_HOST"
+
+# REF_DIR 必须指向上一阶段最终通过且已经人工复核的完整 reference 目录。
+test -f "$REF_DIR/COMPLETED"
+test ! -e "$REF_DIR/INCOMPLETE"
+(cd "$REF_DIR" && sha256sum -c SHA256SUMS)
+jq -e '
+  .schema_version == 3 and .plan_mode == "reference-screen" and
+  .status == "REVIEW_REQUIRED" and
+  .measurement_gate.valid == true and
+  .shaping_exposure_gate.valid == true and
+  .resource_gate.valid == true and
+  .persistence_authorized == false
+' "$REF_DIR/sweep-analysis.json" >/dev/null
+
+REF_MANIFEST_SHA256="$(sha256sum "$REF_DIR/SHA256SUMS" | awk '{print $1}')"
+REF_ANALYSIS_SHA256="$(sha256sum "$REF_DIR/sweep-analysis.json" | awk '{print $1}')"
+grep -Fxq "evidence_manifest_sha256=${REF_MANIFEST_SHA256}" "$REF_DIR/COMPLETED"
+grep -Fxq "analysis_sha256=${REF_ANALYSIS_SHA256}" "$REF_DIR/COMPLETED"
+REF_COMPLETED_SHA256="$(sha256sum "$REF_DIR/COMPLETED" | awk '{print $1}')"
 
 SWEEP_PLAN='/root/htb-candidate-180-190-195-plan.json'
 SWEEP_PLAN_TMP="${SWEEP_PLAN}.tmp"
@@ -245,13 +298,33 @@ SWEEP_PLAN_TMP="${SWEEP_PLAN}.tmp"
   --benchmark-seconds 10 \
   --omit-seconds 3 \
   --parallel 1 \
-  --family 4 >"$SWEEP_PLAN_TMP"
+  --family 4 \
+  --minimum-rate-exposure-percent 90 \
+  --minimum-cpu-idle-percent 5 \
+  --maximum-cpu-steal-percent 5 \
+  --ack-reference-reviewed \
+  --reference-manifest-sha256 "$REF_MANIFEST_SHA256" \
+  --reference-analysis-sha256 "$REF_ANALYSIS_SHA256" \
+  --reference-completed-sha256 "$REF_COMPLETED_SHA256" >"$SWEEP_PLAN_TMP"
 
-jq -e '
-  .schema_version == 2 and
+jq -e \
+  --arg manifest "$REF_MANIFEST_SHA256" \
+  --arg analysis "$REF_ANALYSIS_SHA256" \
+  --arg completed "$REF_COMPLETED_SHA256" '
+  .schema_version == 3 and
   .mode == "candidate-sweep" and
   .reference_rate_mbit == 200 and
+  .reference_gate.external_reference_required == true and
+  .reference_gate.review_acknowledged == true and
+  .reference_gate.evidence_manifest_sha256 == $manifest and
+  .reference_gate.analysis_sha256 == $analysis and
+  .reference_gate.completed_marker_sha256 == $completed and
+  .reference_gate.reference_path_recorded == false and
+  .reference_gate.persistence_authorized == false and
   .rates_mbit == [180,190,195] and
+  .controls.minimum_rate_exposure_ratio == 0.9 and
+  .controls.minimum_cpu_idle_percent == 5 and
+  .controls.maximum_cpu_steal_percent == 5 and
   .traffic_budget.enforced_by == "htb-class-rate-and-ceil" and
   (.stages | length) == 15 and
   all(.stages[];
@@ -274,6 +347,10 @@ SWEEP_DIR="/root/htb-candidate-180-190-195-$(date -u +%Y%m%dT%H%M%SZ)"
   --host "$IPERF_HOST" \
   --port "$IPERF_PORT"
 ```
+
+这三个摘要把 candidate plan 绑定到已关闭的 reference 证据，而不把目标机路径写进计划。
+`--ack-reference-reviewed` 仍只表示已经完成人工复核，不授权持久化。缺少任一摘要、摘要格式
+错误或没有显式 ack 时，candidate plan 生成器会在流量前拒绝。
 
 计划生成器只接受 200 Mbps provider port；reference 固定为 200，candidate 只接受 3–8 个
 唯一的 100–199 Mbit/s 整数。这不是通用 VPS 限速器；其他端口需要先扩展执行器的
@@ -319,7 +396,8 @@ test -f "$SWEEP_DIR/COMPLETED"
 test ! -e "$SWEEP_DIR/INCOMPLETE"
 (cd "$SWEEP_DIR" && sha256sum -c SHA256SUMS)
 
-jq '{status,measurement_gate,metric_contract,reference,rates,review_shortlist,
+jq '{status,measurement_gate,shaping_exposure_gate,resource_gate,
+     metric_contract,reference,rates,review_shortlist,
      required_manual_review,next_gate,interpretation,traffic_budget}' \
   "$SWEEP_DIR/sweep-analysis.json"
 
@@ -328,7 +406,9 @@ jq '{status,measurement_gate,metric_contract,reference,rates,review_shortlist,
 ```
 
 任何样本窗口无效时，分析器保留原始报告值但输出 `REVIEW_BLOCKED`，并强制
-`review_shortlist.rate_mbit == null`。不得删除坏样本后继续排名。
+`review_shortlist.rate_mbit == null`。任一样本没有正 `overlimits`、sender goodput 未达到
+计划速率的 90%，CPU idle 低于 5%、steal 高于 5%，或 softnet/interface 异常计数增加，
+也会得到相同阻断结果。不得删除坏样本、放宽结果文件或只挑通过样本继续排名。
 
 窗口全部有效且首尾 HTB200 reference 的 sender Mbit/s 与 sender retransmits/GiB 的
 median±MAD 区间均重叠时，每个候选仅获得以下描述性 flags：
@@ -336,7 +416,9 @@ median±MAD 区间均重叠时，每个候选仅获得以下描述性 flags：
 - sender retransmits/GiB 的候选离散上界低于 HTB200 reference 离散下界；
 - sender Mbit/s 位于本轮最佳候选的观察离散范围内；
 - 所有 receiver 测量窗口通过校验；
-- 所有本地 active qdisc drop 样本为 0。
+- 所有本地 active qdisc drop 样本为 0；
+- 所有 HTB 样本 `overlimits > 0`，且 sender goodput 达到冻结速率暴露比例；
+- 所有样本通过 CPU idle/steal、softnet drop/time_squeeze 和接口 drop/error 资源门禁。
 
 `review_shortlist.rate_mbit` 只是同时满足这些条件的最高候选速率，不是显著性检验或生产
 建议。MAD 为 0、样本很少、reference 漂移、公共服务端负载或背景流量都可能使 shortlist
@@ -356,12 +438,21 @@ percentage，也不使用固定 `0.1%` 一类全局重传阈值。
 ## 9. 后续门禁
 
 只有人工复核确认候选扫描有效，才把一个 shortlist 速率冻结为候选并使用现有
-`experiment-plan.sh` 生成独立正式 A/B/A：
+`experiment-plan.sh` 分两次、使用不同 window ID 生成独立正式窗口：
 
-```text
-A1 fq → B1 HTB candidate → A2 fq
-另一个可比窗口：B2 HTB candidate → A3 fq → B3 HTB candidate
+```bash
+/root/experiment-plan.sh --window-id basic-window-1 --window-order aba \
+  --candidate-rate 190 --cooldown-seconds 300 --control-rate none \
+  > /root/basic-window-1-plan.json
+
+# 只有首窗证据关闭后，另一个可比时段再单独生成：
+/root/experiment-plan.sh --window-id basic-window-2 --window-order bab \
+  --candidate-rate 190 --cooldown-seconds 300 --control-rate none \
+  > /root/basic-window-2-plan.json
 ```
+
+一个 plan 只允许一个三阶段窗口：首窗为 `A1 → B1 → A2`，反向窗为
+`B2 → A3 → B3`。不得把两个窗口放入一次连续调用或共用证据目录。
 
 这里的正式 A/B/A 仍回答“部署 HTB 相对静态根 fq 是否改善”，因此与前置的同拓扑速率发现
 不是同一个实验问题。它必须固定 endpoint、工具 hash、地址族、方向、参数和可比较时间窗。

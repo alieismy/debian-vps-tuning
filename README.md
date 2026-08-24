@@ -6,7 +6,7 @@ Debian VPS Tuning 用于配置 Debian 12/13 小型云 VPS 的主机网络。主�
 
 > 系统选择（信息日期：2026-08-04）：新建的 1C1G、1C2G 和 2C2G VPS 默认使用 Debian 13 minimal。Debian 13 是当前 stable；Debian 12 已转入 LTS，适用于保留既有稳定节点或满足明确兼容约束的场景。系统版本不能单独证明 BBR 可用、性能更高或空载内存更低，仍需检查虚拟化类型、运行内核和目标机资源。
 
-> 当前预发行候选版本为 `v0.1.0-rc.12`。以下联网命令固定到该候选 Release 及其校验和资产，不跟随分支或 `latest`。只有在 Release 发布且公开资产通过重下载校验后，这些命令才可使用。正式 `v0.1.0` 仍以 [目标 VPS 运行验收](docs/validation.md) 为发布条件；候选版本不代表已完成全平台、全带宽或性能验收。
+> 当前预发行候选版本为 `v0.1.0-rc.13`。以下联网命令固定到该候选 Release 及其校验和资产，不跟随分支或 `latest`。只有在 Release 发布且公开资产通过重下载校验后，这些命令才可使用。正式 `v0.1.0` 仍以 [目标 VPS 运行验收](docs/validation.md) 为发布条件；候选版本不代表已完成全平台、全带宽或性能验收。
 
 ## 联网安装与验证
 
@@ -14,13 +14,13 @@ Debian VPS Tuning 用于配置 Debian 12/13 小型云 VPS 的主机网络。主�
 
 ### 1. 联网安装
 
-rc.12 Release 发布并通过公开资产复核后，推荐安装固定版本的 `dvt` 短命令。下面是“一条可粘贴命令”，但仍保留“先完整下载、再核对固定 SHA-256、最后执行”三个门禁；它不会从 `main`/`master`/`latest` 下载，也不会在安装过程中自动执行调优或产生测试流量：
+rc.13 Release 发布并通过公开资产复核后，推荐安装固定版本的 `dvt` 短命令。下面是“一条可粘贴命令”，但仍保留“先完整下载、再核对固定 SHA-256、最后执行”三个门禁；它不会从 `main`/`master`/`latest` 下载，也不会在安装过程中自动执行调优或产生测试流量：
 
 ```bash
-(set -Eeuo pipefail; dvt_i="$(mktemp)"; trap 'rm -f -- "$dvt_i"' EXIT; curl --fail --show-error --silent --location --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 120 -o "$dvt_i" https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.12/install.sh; printf '%s  %s\n' '1f408fccc890dcdd84af6967e41c763c65cc9642c4d1d038c611b54b583a7c07' "$dvt_i" | sha256sum -c -; bash "$dvt_i")
+(set -Eeuo pipefail; dvt_i="$(mktemp)"; trap 'rm -f -- "$dvt_i"' EXIT; curl --fail --show-error --silent --location --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 120 -o "$dvt_i" https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.13/install.sh; printf '%s  %s\n' 'eec4697a547ced4d1f82049d48c2c6b42697cf7f6ebe368c98b1a13cbada8139' "$dvt_i" | sha256sum -c -; bash "$dvt_i")
 ```
 
-安装器先核对内置固定的 `SHA256SUMS` 摘要，再逐一核对总控、六份 profile、证据工具和 HTB 实验工具；通过后安装到 `/usr/local/lib/debian-vps-tuning/0.1.0-rc.12`，原子更新 `/usr/local/lib/debian-vps-tuning/current`，并创建 `/usr/local/bin/dvt`。已有同版本目录只有在全部文件重新校验通过时才复用，内容不一致时拒绝覆盖。交互终端随后打开菜单；也可加 `--no-launch` 只安装。
+安装器先核对内置固定的 `SHA256SUMS` 摘要，再逐一核对总控、六份 profile、证据工具和 HTB 实验工具；通过后安装到 `/usr/local/lib/debian-vps-tuning/0.1.0-rc.13`，原子更新 `/usr/local/lib/debian-vps-tuning/current`，并创建 `/usr/local/bin/dvt`。已有同版本目录只有在全部文件重新校验通过时才复用，内容不一致时拒绝覆盖。交互终端随后打开菜单；也可加 `--no-launch` 只安装。
 
 安装后常用命令：
 
@@ -64,10 +64,10 @@ reboot
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.12/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.13/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    'db2b94dbed9564cdc35786166b7000378b6c88876158d82d07e3e38639fa9309' \
+    '58abd5c5d20b5f3090d96b0ce74d4c1de5c043b3e882ac51ea0817009ebcb7e0' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   bash "$dvt_tmp/debian-vps-tuning.sh" verify
@@ -95,10 +95,10 @@ printf 'verify_after_reboot_exit=%s\n' "$?"
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.12/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.13/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    'db2b94dbed9564cdc35786166b7000378b6c88876158d82d07e3e38639fa9309' \
+    '58abd5c5d20b5f3090d96b0ce74d4c1de5c043b3e882ac51ea0817009ebcb7e0' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   env \
@@ -114,9 +114,9 @@ printf 'strict_verify_after_3xui_exit=%s\n' "$?"
 
 ### 4. 从早期 rc 版本执行只读升级检查
 
-由 rc.9、rc.10 或 rc.11 管理的 VPS，可下载 rc.12 总控并执行 `update`。该操作读取状态中的资源档和端口带宽，校验当前 profile、目标 `SHA256SUMS` 和目标总控脚本，然后依次运行当前版本的 `verify` 与目标版本的只读 `update-preflight`。输出包括维护窗口所需的固定 URL、SHA-256 和迁移顺序。`update` 不执行 `rollback`、purge、`apply` 或重启，也不替换已发布的旧 Release 资产。
+由 rc.9–rc.12 管理的 VPS，可下载 rc.13 总控并执行 `update`。该操作读取状态中的资源档和端口带宽，校验当前 profile、目标 `SHA256SUMS` 和目标总控脚本，然后依次运行当前版本的 `verify` 与目标版本的只读 `update-preflight`。输出包括维护窗口所需的固定 URL、SHA-256 和迁移顺序。`update` 不执行 `rollback`、purge、`apply` 或重启，也不替换已发布的旧 Release 资产。
 
-总控、`SHA256SUMS` 和 profile 构成一个不可拆分的 Release 包。不同版本的资产不得放在同一目录。例如，rc.11 总控不能与 rc.12 的 `SHA256SUMS` 和 profile 混放；总控检测到版本不一致时会拒绝执行，且不会自动改用联网下载。以下联网命令和后续回滚示例均使用独立的 `mktemp -d` 目录。
+总控、`SHA256SUMS` 和 profile 构成一个不可拆分的 Release 包。不同版本的资产不得放在同一目录。例如，rc.12 总控不能与 rc.13 的 `SHA256SUMS` 和 profile 混放；总控检测到版本不一致时会拒绝执行，且不会自动改用联网下载。以下联网命令和后续回滚示例均使用独立的 `mktemp -d` 目录。
 
 ```bash
 (
@@ -131,17 +131,17 @@ printf 'strict_verify_after_3xui_exit=%s\n' "$?"
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.12/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.13/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    'db2b94dbed9564cdc35786166b7000378b6c88876158d82d07e3e38639fa9309' \
+    '58abd5c5d20b5f3090d96b0ce74d4c1de5c043b3e882ac51ea0817009ebcb7e0' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   bash "$dvt_tmp/debian-vps-tuning.sh" update
 )
 ```
 
-使用 `update --target v0.1.0-rc.12` 可指定目标版本。自动发现不跨 `major.minor` 发布线：当前版本为 rc 时，可选择同线更高 rc 或稳定版；当前版本为稳定版时，自动排除 prerelease。跨线升级必须通过 `--target` 指定目标，且仍会拒绝降级和重复升级。显式指定 prerelease 视为主动选择，不受稳定通道的自动排除规则限制。
+使用 `update --target v0.1.0-rc.13` 可指定目标版本。自动发现不跨 `major.minor` 发布线：当前版本为 rc 时，可选择同线更高 rc 或稳定版；当前版本为稳定版时，自动排除 prerelease。跨线升级必须通过 `--target` 指定目标，且仍会拒绝降级和重复升级。显式指定 prerelease 视为主动选择，不受稳定通道的自动排除规则限制。
 
 `update` 只检查升级兼容性并生成操作计划，不改写磁盘上的旧脚本、系统配置或 3X-UI。检查通过不表示升级完成。维护窗口内仍需按输出和本文顺序执行 rollback/purge、重启、目标版本的 `preflight`/`apply`、再次重启及 `verify`。GitHub API 查询失败或触发匿名速率限制时，可用已审阅的 `--target` 跳过自动发现；目标 Release 资产仍会接受校验。
 
@@ -149,9 +149,9 @@ printf 'strict_verify_after_3xui_exit=%s\n' "$?"
 
 - 仅支持厂商最小化 Debian 12/13、`x86_64/amd64` 和本文列出的四个 CPU/内存资源档；其他组合会被拒绝；
 - 端口带宽填写服务商套餐上限，不要填写虚拟网卡显示的链路速率；默认 200 Mbps，允许 100–1000 Mbps；
-- 联网入口固定到 `v0.1.0-rc.12`，不会回退到 `master`、`main`、`latest`、HTTP 或第三方镜像；
-- 上述命令在执行总控前核对 rc.12 总控资产的固定 SHA-256；总控随后下载固定 Release 的 `SHA256SUMS` 和对应 profile，并再次校验；
-- 总控、`SHA256SUMS` 和 profile 必须来自同一 Release；不同版本使用不同的临时目录，不要把 rc.11 与 rc.12 资产混放在 `/root` 或同一工作目录；
+- 联网入口固定到 `v0.1.0-rc.13`，不会回退到 `master`、`main`、`latest`、HTTP 或第三方镜像；
+- 上述命令在执行总控前核对 rc.13 总控资产的固定 SHA-256；总控随后下载固定 Release 的 `SHA256SUMS` 和对应 profile，并再次校验；
+- 总控、`SHA256SUMS` 和 profile 必须来自同一 Release；不同版本使用不同的临时目录，不要把 rc.12 与 rc.13 资产混放在 `/root` 或同一工作目录；
 - 发布后不应移动 tag 或替换同名资产，发现缺陷时应发布新版本；
 - `update` 是只读升级检查，不自动迁移配置；检查通过后仍需在维护窗口人工完成 rollback/apply 和两次重启；
 - 脚本不配置或放行 UFW 端口，不要把 UFW 状态提示当成防火墙已配置；先确保 SSH 管理端口不会被锁死；
@@ -171,10 +171,10 @@ printf 'strict_verify_after_3xui_exit=%s\n' "$?"
 | C2 | Debian 12；Linux 6.1 系列 | 1 vCPU / 约 1 GiB；`debian12-1c1g` | XFS；套餐上限 200 Mbps | 退出 rc.8 后完成 rc.10 候选 `apply`、重启后普通/严格 `verify` 和重复 `apply`；重复执行未重写配置 | 不替代最终 Release 资产复核，不证明代理吞吐或线路质量 |
 | C3 | Debian 12；Linux 6.1 系列 | 1 vCPU / 约 2 GiB；`debian12-1c2g` | XFS；套餐上限 200 Mbps | 退出 rc.8 后完成 rc.10 候选 `apply`、重启后普通/严格 `verify` 和重复 `apply`；3X-UI 主进程及 Xray 直接子进程 NOFILE 为 65536/65536 | 不覆盖 2C2G、512 MiB、其他文件系统或最终 Release 资产 |
 | C4 | Debian 13；Linux 6.12 系列 | 1 vCPU / 约 1 GiB；`debian13-1c1g` | ext4；套餐上限 1000 Mbps | 使用隔离目录完成 rc.9→rc.10 候选迁移、重启后严格 `verify` 和重复 `apply` | 这是迁移记录，配置类别可能与 C1 重合；不代表新增一台独立 VPS |
-| C5 | Debian 13；Linux 6.12 系列 | 1 vCPU / 约 1 GiB；`debian13-1c1g` | ext4；套餐上限 200 Mbps | 固定 rc.11 候选完成 `preflight`、`apply`、立即/重启后 `verify`、幂等门禁，以及固定 commit/rootfs 的三轮 S1 与三轮 S2 TcpQuality 采集 | 原始证据私有保存；只证明 rc.11 生命周期和两时段线路观察，不证明 rc.12 最终哈希或调优导致性能改善 |
+| C5 | Debian 13；Linux 6.12 系列 | 1 vCPU / 约 1 GiB；`debian13-1c1g` | ext4；套餐上限 200 Mbps | 固定 rc.11 候选完成 `preflight`、`apply`、立即/重启后 `verify`、幂等门禁，以及固定 commit/rootfs 的三轮 S1 与三轮 S2 TcpQuality 采集 | 原始证据私有保存；只证明 rc.11 生命周期和两时段线路观察，不证明 rc.12/rc.13 最终哈希或调优导致性能改善 |
 | C6 | Debian 13；Linux 6.12 系列 | 1 vCPU / 967 MiB；`debian13-1c1g` | 10 GB / ext4；套餐上限 100 Mbps | rc.12 本地候选完成校验和复核、错误参数退出、显式 swap purge、100 Mbps `preflight`/`apply`、重启后 `verify` 和重复 `apply`；BBR、fq、1024 MiB swap 持久，缺失的 `/etc/sysctl.conf` 未被创建 | 暴露并修正了改参提示和缺失文件元数据；原运行绑定修正前 profile 哈希，最终候选仍须重跑哈希绑定门禁；未安装 3X-UI，不覆盖严格代理验证或性能收益 |
 
-每条记录均绑定测试时的脚本哈希。脚本内容或 SHA-256 改变后，必须按 [验证矩阵](docs/validation.md) 重新取证；版本名称或配置值相同不足以继承原结论。rc.12 最终哈希尚未完成目标 VPS 生命周期、严格代理验证、持久化 benchmark 和独立 TcpQuality 工具验证。
+每条记录均绑定测试时的脚本哈希。脚本内容或 SHA-256 改变后，必须按 [验证矩阵](docs/validation.md) 重新取证；版本名称或配置值相同不足以继承原结论。rc.13 最终哈希尚未完成目标 VPS 生命周期、严格代理验证、持久化 benchmark 和新版 TcpQuality 证据工具验证。
 
 ### 1C2G / 200 Mbps 性能观察案例
 
@@ -192,7 +192,7 @@ printf 'strict_verify_after_3xui_exit=%s\n' "$?"
 
 样本量同样不足：v6 只有一次，rc.10 只有两次，无法估计稳定分布。TcpQuality 未指定 `-s` 时随机使用内置包长，默认 `-c` 每个节点只发送 30 个包。该工具直接测试 VPS 网络栈，不经过 3X-UI、VLESS、REALITY 或客户端链路。现有证据以远程图片为主，缺少可供公开复算的机器可读原始表格。
 
-这些报告不足以支持回退 rc.10、修改 rc.11/rc.12 的 17 个受管 sysctl，或增加激进参数。性能验收必须固定 TcpQuality commit、脚本 SHA-256、节点文件和 `-c/-s/-p` 参数，在低负载、白天和晚高峰重复采样，并比较中位数、P95 与异常节点复现率。实际 VLESS + REALITY + TCP 链路还需覆盖 1、3、5、10 并发。完整待测项见 [验证矩阵](docs/validation.md)。
+这些报告不足以支持回退 rc.10、修改 rc.11–rc.13 的 17 个受管 sysctl，或增加激进参数。性能验收必须固定 TcpQuality commit、脚本 SHA-256、节点文件和 `-c/-s/-p` 参数，在低负载、白天和晚高峰重复采样，并比较中位数、P95 与异常节点复现率。实际 VLESS + REALITY + TCP 链路还需覆盖 1、3、5、10 并发。完整待测项见 [验证矩阵](docs/validation.md)。
 
 ## 本地使用与命令行模式
 
@@ -215,7 +215,7 @@ bash ./debian-vps-tuning.sh diagnose
 # benchmark 还需要 BENCHMARK_HOST，见下文
 bash ./debian-vps-tuning.sh benchmark
 bash ./debian-vps-tuning.sh update
-bash ./debian-vps-tuning.sh update --target v0.1.0-rc.12
+bash ./debian-vps-tuning.sh update --target v0.1.0-rc.13
 bash ./debian-vps-tuning.sh rollback
 ```
 
@@ -518,6 +518,8 @@ bash ./debian-vps-tuning.sh diagnose
 
 `diagnose` 默认采集间隔为 5 秒。它输出 TCP 重传、超时、监听溢出和 TFO 增量；每 CPU softnet 增量；整机 CPU user/system/softirq/steal；接口收发、丢包、错误及可识别的 ethtool 错误计数。输出还包含采样前后的 qdisc 状态、默认路由、RPS/XPS/IRQ，以及代理主进程和直接子进程的 CPU time、RSS、线程数与 FD 数。进程证据不包含命令行参数。
 
+`diagnose` 还会只读检查 `net.ipv4.tcp_window_scaling` 和 `net.ipv4.tcp_moderate_rcvbuf`。任一值不为精确的 `1` 或无法读取时会输出告警；这两个键不属于项目的 17 个受管 sysctl，脚本不会自动写入或持久化它们。该告警表示主机默认值未确认或偏离预期，不会单独导致受管状态的 `verify` 失败。
+
 该操作不产生性能测试流量，也不修改系统。需要观察实际负载时，应在采样窗口内从客户端复现 VLESS + REALITY + TCP 业务：
 
 ```bash
@@ -606,16 +608,39 @@ env BENCHMARK_HOST='iperf.example.com' \
 
 ### 7. 固定 TcpQuality 证据采集
 
-`tcpquality-evidence.sh` 独立于系统调优生命周期，不自动下载“最新”脚本或 rootfs，也不执行 `apply`。运行前必须按已审阅流程准备固定 commit 目录，其中至少包含三个脚本、rootfs、`PINNED-METADATA.txt`，以及覆盖这些文件的 `SHA256SUMS`。
+`tcpquality-evidence.sh` 独立于系统调优生命周期，不自动下载“最新”脚本或 rootfs，也不执行 `apply`。rc.13 固定 TcpQuality release `v1.00013`、commit `73606e2460bde21bb2e253842971f8ca8c9eb51c`、三个脚本、`rootfs-manifest.json` 和 amd64 rootfs。固定目录还必须包含记录 rootfs 内 TCP_INFO helper 与两份 eBPF 脚本审计值的 `PINNED-METADATA.txt`，以及覆盖五个下载资产的 `SHA256SUMS`。
 
-rc.12 只接受已审计 commit `5d1f85a6b8916b73ec0389dbc9b4ed4aa27dae01`、三个固定脚本哈希和 rootfs 哈希。在该 commit 中，`-s 0` 明确定义为标准无负载 TCP SYN，不表示随机包长；`-c` 的范围为 1–600，`-p` 的范围为 1–31。证据目录必须尚不存在：
+`PINNED-METADATA.txt` 的字段和值必须精确如下；这些值记录的是已检查的上游 release 资产，不代表目标 VPS 内核一定允许 eBPF/BTF：
+
+```text
+tcpquality_release_tag=v1.00013
+tcpquality_commit=73606e2460bde21bb2e253842971f8ca8c9eb51c
+rootfs_manifest_file=rootfs-manifest.json
+rootfs_manifest_sha256=555a53df40cbdd2778771c089d1bc2c2e1c0a52b5565ad15d2e01d52b90dd0f6
+rootfs_file=tcpquality-rootfs-amd64.tar.gz
+rootfs_size=140748758
+rootfs_sha256=c624b5cc611b7177c42608110024764e59dfd0a88150257137ae4e6d7f9f9d18
+tcp_info_helper_path=usr/local/lib/libtcpquality-tcpinfo.so
+tcp_info_helper_size=14152
+tcp_info_helper_sha256=159d31efc9dbfda7b5f552455d160ebde295c937dcc3f8b24d21fb5934cd8253
+retrans_seq_path=usr/local/libexec/tcpquality-retrans-seq.bt
+retrans_seq_size=1865
+retrans_seq_sha256=4ab10e0993becb37c5bff64e1f0ae4860959ff2ad16b372578701ffcf5c36aab
+retrans_skb_path=usr/local/libexec/tcpquality-retrans-skb.bt
+retrans_skb_size=819
+retrans_skb_sha256=b84d979a000b86515c3eb8b776d3e2b276031e418a659aa828eb7afbdab4bd89
+```
+
+`TCPQUALITY_MODE` 必须显式选择。推荐 `local-evidence`：上游参数固定增加 `--debug --no-rank-upload`，保留本地 debug archive，但不上传公开报告或 debug bundle。`public-report` 会使用 `--debug`，上传公开报告；报告成功后还可能上传线路、speedtest 和 probe debug bundle，其中可能包含公网地址、节点地址、路由和响应细节。上游 TOS 测速还会临时创建并删除 `iptables`/`ip6tables` 计数链；chroot 不隔离网络命名空间，所以必须在维护边界可接受且确认当前防火墙可恢复后显式设置 `TCPQUALITY_ACK_TRANSIENT_FIREWALL=1`。证据目录必须尚不存在：
 
 ```bash
 env \
-  TCPQUALITY_PIN_DIR='/root/tcpquality-pinned-5d1f85a6b8916b73ec0389dbc9b4ed4aa27dae01' \
-  TCPQUALITY_EVIDENCE_DIR='/root/rc12-evidence/tcpquality-s2' \
-  TCPQUALITY_COMMIT='5d1f85a6b8916b73ec0389dbc9b4ed4aa27dae01' \
-  TCPQUALITY_ROOTFS_SHA256='db92956873d674e65a573721ec6a3db4995f7cf648f61954380e0bfa53ce71a1' \
+  TCPQUALITY_PIN_DIR='/root/tcpquality-pinned-73606e2460bde21bb2e253842971f8ca8c9eb51c' \
+  TCPQUALITY_EVIDENCE_DIR='/root/rc13-evidence/tcpquality-s2' \
+  TCPQUALITY_COMMIT='73606e2460bde21bb2e253842971f8ca8c9eb51c' \
+  TCPQUALITY_ROOTFS_SHA256='c624b5cc611b7177c42608110024764e59dfd0a88150257137ae4e6d7f9f9d18' \
+  TCPQUALITY_MODE='local-evidence' \
+  TCPQUALITY_ACK_TRANSIENT_FIREWALL=1 \
   TCPQUALITY_RUNS=3 \
   TCPQUALITY_DELAY_SECONDS=60 \
   TCPQUALITY_COUNT=30 \
@@ -624,17 +649,30 @@ env \
   bash ./tcpquality-evidence.sh
 ```
 
-每轮测试保存原始日志和唯一 CSV，并在测试前后分别采集 `all`/`tos` 节点表。节点响应通过固定 12 列 TSV 结构校验后才原子写入。`node-inventory.tsv` 记录各快照哈希；`node-drift.tsv` 区分逻辑节点增删、同一逻辑节点的 IP 变化，以及完整快照是否一致。`summary.txt` 记录实际节点 URL。
+每轮测试保存原始日志、唯一 CSV 和唯一 debug archive，并在测试前后分别采集 `all`/`tos` 节点表。`debug-inventory.tsv` 固定 archive 哈希；`retransmission-evidence.tsv` 从 archive 中提取每个 TOS 方向的 `metric_source`、TCP_INFO、eBPF 去重值、分母、比例、回退原因和测量状态。只有 `ebpf_seq`、`ebpf_skb`、`tcp_info_getsockopt` 或 `tcp_info_ss` 可作为流级重传证据；`nstat` 必须标记为 `MEASUREMENT_DEGRADED`，不得解释成该测速连接的重传率。节点响应通过固定 12 列 TSV 结构校验后才原子写入。`node-inventory.tsv` 记录各快照哈希；`node-drift.tsv` 区分逻辑节点增删、同一逻辑节点的 IP 变化，以及完整快照是否一致。`summary.txt` 记录实际节点 URL、模式和上传边界。
 
 固定 commit、脚本和 rootfs 只能固定本地执行资产；远端节点、测速端点、运营商路径和测试时段仍是动态实验输入。最终 `SHA256SUMS` 覆盖 summary、文本、TSV、CSV 和日志，但不覆盖终态标记。`COMPLETED` 绑定清单哈希，`INCOMPLETE` 与 `COMPLETED` 不得同时存在。任何关键采集或校验失败都会终止后续轮次并保留失败现场。
 
-节点变化不会自动使整组测试失效，但比较时必须剔除或单独标注不一致节点。包装脚本不调用主机包管理器或系统配置命令；固定上游的 `--all` 仍会访问节点、报告和测速端点，并产生显著的主动网络流量。
+节点变化不会自动使整组测试失效，但比较时必须剔除或单独标注不一致节点。旧 commit 的整机 `TcpRetransSegs` 增量与 v1.00013 的流级百分比属于不同测量基线，不能串接为同一时间序列。包装层自身不写 sysctl/qdisc/systemd/swap，也不调用主机包管理器；固定上游的 `--all` 会访问节点和测速端点、加载临时 eBPF 探针并创建/删除目标计数链，因此不是零内核交互的纯只读操作。
 
 ### 8. HTB 候选速率发现与 A/B/A
 
-安装后的短命令把原有工具链包装为带阶段门禁的入口：
+安装后的短命令把原有工具链包装为带阶段门禁的入口。HTB watchdog 要求执行器从稳定路径
+运行；`dvt htb preflight` 不会隐式写入该路径。确认没有活动 HTB 后，先从同一固定 Release
+显式安装并按 manifest 校验：
 
 ```bash
+DVT_ROOT="$(readlink -f /usr/local/lib/debian-vps-tuning/current)"
+HTB_TOOL='/usr/local/sbin/htb-aggregate-experiment'
+test ! -e /run/htb-aggregate-experiment/active.json
+install -o root -g root -m 0755 \
+  "$DVT_ROOT/experiments/htb-aggregate/htb-aggregate-experiment.sh" \
+  "$HTB_TOOL"
+EXPECTED_HTB_SHA256="$(awk \
+  '$2 == "experiments/htb-aggregate/htb-aggregate-experiment.sh" {print $1}' \
+  "$DVT_ROOT/SHA256SUMS")"
+printf '%s  %s\n' "$EXPECTED_HTB_SHA256" "$HTB_TOOL" | sha256sum -c -
+
 dvt htb preflight
 dvt htb smoke --rate 190 --hold-seconds 10
 
@@ -642,7 +680,7 @@ dvt htb reference \
   --host iperf.example.com --server-port 5201 \
   --output-dir /root/htb200-reference-a1
 
-# 只有 reference 的 COMPLETED、SHA256SUMS、有效窗口和人工复核均通过后：
+# 只有 reference 的 COMPLETED、SHA256SUMS、三类 gate 和人工复核均通过后：
 dvt htb sweep \
   --host iperf.example.com --server-port 5201 \
   --reference-evidence /root/htb200-reference-a1 \
@@ -651,25 +689,65 @@ dvt htb sweep \
   --output-dir /root/htb-candidate-sweep-a1
 ```
 
-`--ack-reference-reviewed` 只是证明操作者已检查 reference 证据，不授权永久整形。wrapper 不暴露“安装永久 HTB”的路径；异常时仍由执行器 watchdog/EXIT 恢复逻辑处理，并保留 `dvt htb status` 与 `dvt htb stop`。
+`--ack-reference-reviewed` 只是证明操作者已检查 reference 证据，不授权永久整形。wrapper
+还会把该 reference 的 `SHA256SUMS`、`sweep-analysis.json` 和 `COMPLETED` 摘要写入 candidate
+plan；因此完成的扫描可以追溯到唯一已复核 reference，而不记录目标机绝对路径。wrapper
+要求 `/usr/local/sbin/htb-aggregate-experiment` 为 root 所有、非符号链接、不可被 group/world
+写入，且 SHA-256 与当前 Release 资产一致；`status/stop` 在事故恢复时仍优先使用已安装的稳定
+执行器。wrapper 不暴露“安装永久 HTB”的路径；异常时仍由 watchdog/EXIT 恢复逻辑处理，并
+保留 `dvt htb status` 与 `dvt htb stop`。
 
-`experiments/htb-aggregate/rate-sweep-plan.sh`、`rate-sweep-run.sh` 和 `rate-sweep-analyze.sh` 把候选发现分成只读计划、显式流量/临时 qdisc 执行和只读分析三层。当前边界只接受 rc.12 schema 4、`VERIFIED`、200 Mbps 的 Debian 13 1C1G/1C2G 基线；只测上传，因为本地 egress HTB 不能用于归因下载方向的远端 sender 重传。默认 `reference-screen` 只重复 3 次 `HTB rate=ceil=200 Mbit/s + fq`，先判断端口额定速率下的重传和测量窗口是否稳定。只有人工认为有必要继续时，才显式生成独立 `candidate-sweep`，以相同 HTB+fq 拓扑在首尾重复 HTB200 reference，并以正序/反序轮次扫描 180/190/195 Mbit/s；每阶段至少冷却 300 秒。这样比较时只改变 class rate/ceil，不再把无限速根 `fq` 与 HTB 候选混为同一基线。
+`experiments/htb-aggregate/rate-sweep-plan.sh`、`rate-sweep-run.sh` 和
+`rate-sweep-analyze.sh` 把候选发现分成 schema 3 只读计划、显式流量/临时 qdisc 执行和只读
+分析三层。当前边界只接受 rc.13 schema 4、`VERIFIED`、200 Mbps 的 Debian 13 1C1G/1C2G
+基线；runner 在流量前执行真实 profile 的只读 `verify`，冻结 managed
+profile/version/state/port/state SHA-256，并要求每个 `benchmark-meta.json` 再次匹配。只测
+上传，因为本地 egress HTB 不能用于归因下载方向的远端 sender 重传。通用默认
+`reference-screen` 为 3 次 HTB200；VMISS Basic 完整流程提高为初始 5 次。只有人工认为有
+必要继续时，才显式生成独立 `candidate-sweep`，以相同 HTB+fq 拓扑在首尾重复 HTB200
+reference，并以正序/反序轮次扫描 180/190/195 Mbit/s；每阶段至少冷却 300 秒。直接调用
+plan 生成器也必须显式 ack 并提供三项 reference 摘要，不能省略阶段授权字段；plan 生成器
+本身不读取主机，摘要真实性仍须由 `dvt htb` wrapper 或执行 SOP 校验。
 
-分析以通过窗口校验的 iperf3 sender Mbit/s 作为主吞吐指标，并使用精确 sender bytes 归一化的 `retransmits_per_gib`；receiver goodput 只作交叉核对。任一样本的 sender/receiver 时长或算术关系无效时，分析状态为 `REVIEW_BLOCKED` 且 shortlist 为空，不允许用异常 receiver 数值排名。分析不假设固定 MSS、不推算 packet loss percentage、不使用固定全局重传阈值。runner 还按秒保存只含 TCP_INFO 白名单 token、不含 endpoint/PID/进程名的 `socket-metrics.txt`，用于辅助检查 RTT、cwnd、重排、重传和收发缓冲受限；它可能混入同机背景 TCP，不能替代流级指标。输出只能是人工复核 shortlist；扫描完成、shortlist 非空和 HTB `overlimits` 都不授权持久化。完整命令、流量预算、停止条件和恢复边界见 [HTB200 参考筛查与候选聚合速率发现 SOP](docs/experiments/htb-candidate-rate-sweep.md)。
+分析以通过窗口校验的 iperf3 sender Mbit/s 作为主吞吐指标，并使用精确 sender bytes 归一化
+的 `retransmits_per_gib`；receiver goodput 只作交叉核对。任一样本测量窗口无效、HTB
+`overlimits` 不为正、sender 未达到计划速率的 90%、CPU idle/steal 不合格，或 softnet/
+接口异常计数增长时，输出 `REVIEW_BLOCKED` 且 shortlist 为空。阈值作为 plan controls 冻结，
+不是分析器隐藏常量。分析不假设固定 MSS、不推算 packet loss percentage、不使用固定全局
+重传阈值。runner 的脱敏 `socket-metrics.txt` 只作辅助归因，不能替代流级指标。扫描完成、
+shortlist 非空和 HTB `overlimits` 都不授权持久化。通用命令见
+[HTB200 参考筛查与候选聚合速率发现 SOP](docs/experiments/htb-candidate-rate-sweep.md)；VMISS
+Basic 1C1G 使用更完整的
+[HTB campaign SOP](docs/experiments/vmiss-basic-1c1g-200mbps-htb-campaign.md)。
 
-候选经人工复核后，`experiments/htb-aggregate/experiment-plan.sh` 才用于生成机器可读的正式 A/B/A 计划；它本身不检查或修改目标机，也不自动执行流量。默认计划为首个窗口 `A1 → B1 → A2` 和另一个可比窗口中的反向顺序 `B2 → A3 → B3`，stage 之间至少冷却 300 秒：
+候选经人工复核后，`experiment-plan.sh` 才用于生成机器可读计划。一个调用只允许一个三阶段
+窗口；首窗和反向窗必须使用不同 window ID、新证据目录和独立 operator invocation：
 
 ```bash
 bash ./experiments/htb-aggregate/experiment-plan.sh \
+  --window-id basic-window-1 \
+  --window-order aba \
   --candidate-rate 190 \
-  --repeat-cycles 2 \
   --cooldown-seconds 300 \
-  --control-rate none >./experiment-plan-190.json
+  --control-rate none >./basic-window-1-plan.json
+
+# 只有首窗结果关闭后，另一个可比窗口再单独生成：
+bash ./experiments/htb-aggregate/experiment-plan.sh \
+  --window-id basic-window-2 \
+  --window-order bab \
+  --candidate-rate 190 \
+  --cooldown-seconds 300 \
+  --control-rate none >./basic-window-2-plan.json
 ```
 
 较低速率控制必须等候选结果分析关闭后另建窗口，例如 `--control-rate 180` 会附加独立的 `A-control-before → C1 → A-control-after`，不会自动执行或授权 180 Mbit/s。候选扫描不能替代该 A/B/A 和反序复验。
 
-现行执行器 v0.4.0 只接受 rc.12 schema 4、`VERIFIED`、200 Mbps 的 `debian13-1c1g` 或 `debian13-1c2g` 基线，并把实际 profile 与受管 state 哈希绑定到活动状态；临时速率范围扩展为 100–200 Mbit/s，其中 200 仅用于同拓扑 reference，不授权超过端口上限。1C2G 新实验须使用独立的 [VMISS 1C2G / 200 Mbps HTB A/B/A SOP](docs/experiments/vmiss-1c2g-200mbps-htb-aba.md)。原 [VMISS Basic HTB A/B/A 实验 SOP](docs/experiments/vmiss-basic-200mbps-htb-aba.md) 保留为 1C1G/v0.2.1 历史运行证据，不得混用工具哈希或实验目录。
+现行执行器 v0.4.0 只接受 rc.13 schema 4、`VERIFIED`、200 Mbps 的
+`debian13-1c1g` 或 `debian13-1c2g` 基线；200 仅用于同拓扑 reference，不授权超过端口
+上限。正式 B stage 必须使用 `TCPQUALITY_RUNS=1`，避免三轮 TcpQuality 超过 40 分钟
+watchdog。1C2G 见独立 [A/B/A SOP](docs/experiments/vmiss-1c2g-200mbps-htb-aba.md)。原
+[VMISS Basic HTB A/B/A 文档](docs/experiments/vmiss-basic-200mbps-htb-aba.md)只保留
+1C1G/v0.2.1 历史证据，不得作为当前入口。
 
 ## 100–1000 Mbps
 
@@ -694,7 +772,7 @@ env PORT_SPEED_MBPS=1000 \
   bash ./debian13-1c2g-vps-tuning.sh apply
 ```
 
-可使用 100–1000 范围内的任意整数；总控菜单也提供 500 Mbps。rc.12 沿用 rc.11/rc.10 的网络参数：默认目标 RTT 为 200 ms；512M、1G 和 2G 资源档分别采用 1×、1.25× 和 1.5× BDP，再向上选择 16/32/64 MiB，并受各 profile 的 16/32/64 MiB 上限约束：
+可使用 100–1000 范围内的任意整数；总控菜单也提供 500 Mbps。rc.13 沿用 rc.12/rc.11/rc.10 的网络参数：默认目标 RTT 为 200 ms；512M、1G 和 2G 资源档分别采用 1×、1.25× 和 1.5× BDP，再向上选择 16/32/64 MiB，并受各 profile 的 16/32/64 MiB 上限约束：
 
 | 资源档 | BDP 系数 | 100 Mbps | 200 Mbps | 500 Mbps | 1000 Mbps |
 |---|---:|---:|---:|---:|---:|
@@ -730,6 +808,8 @@ env PORT_SPEED_MBPS=1000 \
 | `BENCHMARK_RATE_CAP_MBPS` | 合法管理状态的端口带宽，否则不可估算 | 可选 `1–100000`；只用于测试流量预算，不改变 iperf3 或系统配置 |
 | `BENCHMARK_RUN_ID` | 自动生成 | 可选的 1–96 字符运行标签；仅限字母、数字、点、下划线、冒号和连字符 |
 | `BENCHMARK_OUTPUT_DIR` | 临时目录 | 可选的持久化证据目录；必须是父目录已存在、目标尚不存在的绝对路径 |
+| `TCPQUALITY_MODE` | 无 | 证据工具必填；`local-evidence` 禁止报告/debug 上传，`public-report` 明确允许报告及附属 debug bundle 上传 |
+| `TCPQUALITY_ACK_TRANSIENT_FIREWALL` | `0` | 必须显式为 `1`；确认固定上游会临时创建/删除目标流量计数链，且维护窗口与恢复边界可接受 |
 | `UPDATE_TAG` | 自动发现 | `update` 的目标 Release；等价命令行参数为 `--target` |
 
 不支持自定义 swap 文件路径；脚本只可能创建 `/swapfile-proxy`。
@@ -745,6 +825,12 @@ env PORT_SPEED_MBPS=1000 \
 同一脚本版本和参数下重复执行 `apply` 时，脚本先验证当前配置；验证通过后不再写入。通过总控重复执行 `apply`，且未提供 `--port` 或 `PORT_SPEED_MBPS` 时，脚本复用状态中已安装的端口带宽；显式参数优先。若状态版本与当前脚本不同、资源脚本不同，或带宽/缓冲参数已改变，`apply` 会要求先回滚，防止将“旧配置仍可验证”误判为“新版本已经安装”。
 
 状态更新先由 `jq` 写入同目录临时文件。只有命令退出码、非空检查、单一 JSON 对象和完整结构校验全部通过后，才原子替换 `state.json`。空文件、空白文件、多个 JSON 文档或更新失败均不能覆盖上一个有效状态。
+
+### 从 rc.12 升级到 rc.13
+
+rc.13 不改变 rc.12 的 17 个受管 sysctl、qdisc、自动缓冲矩阵、swap、journald、NOFILE 或 schema 4 状态结构。变化仅包括只读 TCP 诊断字段、TcpQuality `v1.00013` 固定资产与流级重传证据契约，以及 HTB 实验器对当前脚本版本的绑定。由于 profile 版本与哈希已经变化，rc.13 仍不得直接对 rc.12 状态执行 `apply`。
+
+迁移管理状态时，先用 rc.13 总控执行 `update --target v0.1.0-rc.13` 做只读检查。检查通过后，在维护窗口使用固定且已校验的 rc.12 Release 依次执行 `verify`、`PURGE_CREATED_SWAP=1 rollback` 和重启；随后从独立目录运行 rc.13 的 `preflight`、`apply`、重启及严格 `verify`。如只需新诊断或 TcpQuality 证据能力，可继续由 rc.12 管理配置生命周期，并从独立目录运行 rc.13 的只读/独立工具；不得用 rc.13 `apply` 改写 rc.12 状态。
 
 ### 从 rc.11 升级到 rc.12
 
@@ -858,7 +944,7 @@ env PURGE_CREATED_SWAP=1 \
 - 策略路由、TProxy、网关、Docker 防火墙和复杂 qdisc 不在支持范围内。
 - 性能结果受 CPU、虚拟化超售、线路、跨境路由、客户端和加密开销影响。
 - 性能验收应分别覆盖 1、3、5、10 并发；脚本不自动生成代理流量。
-- 2C2G 已纳入 rc.12 资源契约和本地 fixture；真实 VPS 生命周期结果以 [验证矩阵](docs/validation.md) 为准。
+- 2C2G 已纳入 rc.13 资源契约和本地 fixture；真实 VPS 生命周期结果以 [验证矩阵](docs/validation.md) 为准。
 
 详见 [运行验收说明](docs/validation.md)。
 
