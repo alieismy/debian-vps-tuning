@@ -175,18 +175,18 @@ run_scan() {
       --parallel "$parallel" --family "$family" \
       --minimum-rate-exposure-percent "$minimum_rate_exposure_percent" \
       --minimum-cpu-idle-percent "$minimum_cpu_idle_percent" \
-      --maximum-cpu-steal-percent "$maximum_cpu_steal_percent" \
-      --ack-reference-reviewed \
-      --reference-manifest-sha256 "$reference_manifest_sha256" \
-      --reference-analysis-sha256 "$reference_analysis_sha256" \
-      --reference-completed-sha256 "$reference_completed_sha256" >"$plan_file"
+      --maximum-cpu-steal-percent "$maximum_cpu_steal_percent" >"$plan_file"
   else
     "$bundle_dir/rate-sweep-plan.sh" --mode candidate-sweep --rates "$rates" --samples-per-state "$samples" \
       --cooldown-seconds "$cooldown" --benchmark-seconds "$seconds" --omit-seconds "$omit" \
       --parallel "$parallel" --family "$family" \
       --minimum-rate-exposure-percent "$minimum_rate_exposure_percent" \
       --minimum-cpu-idle-percent "$minimum_cpu_idle_percent" \
-      --maximum-cpu-steal-percent "$maximum_cpu_steal_percent" >"$plan_file"
+      --maximum-cpu-steal-percent "$maximum_cpu_steal_percent" \
+      --ack-reference-reviewed \
+      --reference-manifest-sha256 "$reference_manifest_sha256" \
+      --reference-analysis-sha256 "$reference_analysis_sha256" \
+      --reference-completed-sha256 "$reference_completed_sha256" >"$plan_file"
   fi
   chmod 0600 "$plan_file"
   info "即将运行 ${mode}；这是非持久化 HTB 流量实验。"

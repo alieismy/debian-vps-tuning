@@ -211,6 +211,18 @@ meta_value() {
   '
 }
 
+is_nonnegative_integer() {
+  [[ "$1" =~ ^[0-9]+$ ]]
+}
+
+is_positive_integer() {
+  is_nonnegative_integer "$1" && [ "$((10#$1))" -gt 0 ]
+}
+
+is_percentage() {
+  [[ "$1" =~ ^[0-9]+([.][0-9]+)?%$ ]]
+}
+
 record_retransmission_evidence() {
   local run="$1" archive="$2" entries entry content
   local probe_type server_ip result metric_source tcp_info_retrans tcp_info_data_segs_out
@@ -245,12 +257,24 @@ record_retransmission_evidence() {
       ebpf_seq | ebpf_skb)
         ratio_denominator="$(meta_value retrans_trace_ratio_denominator <<<"$content")"
         ratio="$(meta_value retrans_trace_ratio <<<"$content")"
+        if ! is_nonnegative_integer "$ebpf_unique" ||
+          ! is_positive_integer "$ratio_denominator" || ! is_percentage "$ratio"; then
+          printf '[tcpquality-evidence][FAIL] eBPF 重传元数据字段无效：%s\n' "$entry" >&2
+          loop_status=1
+          break
+        fi
         fallback_reason='none'
         measurement_status='FLOW_LEVEL'
         ;;
       tcp_info_getsockopt | tcp_info_ss)
         ratio_denominator="$(meta_value tcp_info_ratio_denominator <<<"$content")"
         ratio="$(meta_value tcp_info_ratio <<<"$content")"
+        if ! is_nonnegative_integer "$tcp_info_retrans" ||
+          ! is_positive_integer "$ratio_denominator" || ! is_percentage "$ratio"; then
+          printf '[tcpquality-evidence][FAIL] TCP_INFO 重传元数据字段无效：%s\n' "$entry" >&2
+          loop_status=1
+          break
+        fi
         if [ "$trace_available" != '1' ]; then
           fallback_reason='ebpf_unavailable'
         elif [ "$trace_valid" != '1' ]; then

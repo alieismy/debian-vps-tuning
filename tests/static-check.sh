@@ -393,6 +393,90 @@ if (
   exit 1
 fi
 
+htb_route_fixture="$tmp_dir/htb-route"
+mkdir -p "$htb_route_fixture/bundle" "$htb_route_fixture/reference"
+cat >"$htb_route_fixture/bundle/rate-sweep-plan.sh" <<'EOF_HTB_ROUTE_PLAN'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+mode='' ack=0 manifest='' analysis='' completed=''
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --mode) mode="$2"; shift 2 ;;
+    --ack-reference-reviewed) ack=1; shift ;;
+    --reference-manifest-sha256) manifest="$2"; shift 2 ;;
+    --reference-analysis-sha256) analysis="$2"; shift 2 ;;
+    --reference-completed-sha256) completed="$2"; shift 2 ;;
+    *) shift 2 ;;
+  esac
+done
+if [ "$mode" = reference-screen ]; then
+  [ "$ack" -eq 0 ] && [ -z "$manifest$analysis$completed" ]
+  printf '%s\n' '{"schema_version":3,"mode":"reference-screen","reference_gate":{"external_reference_required":false,"review_acknowledged":false,"evidence_manifest_sha256":null}}'
+else
+  [ "$mode" = candidate-sweep ] && [ "$ack" -eq 1 ]
+  [[ "$manifest$analysis$completed" =~ ^[0-9a-f]{192}$ ]]
+  printf '{"schema_version":3,"mode":"candidate-sweep","reference_gate":{"external_reference_required":true,"review_acknowledged":true,"evidence_manifest_sha256":"%s","analysis_sha256":"%s","completed_marker_sha256":"%s"}}\n' \
+    "$manifest" "$analysis" "$completed"
+fi
+EOF_HTB_ROUTE_PLAN
+chmod +x "$htb_route_fixture/bundle/rate-sweep-plan.sh"
+cat >"$htb_route_fixture/bundle/rate-sweep-run.sh" <<'EOF_HTB_ROUTE_RUNNER'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+plan=''
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --plan) plan="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+jq -e '
+  .schema_version == 3 and
+  if .mode == "reference-screen" then
+    .reference_gate.external_reference_required == false and
+    .reference_gate.review_acknowledged == false and
+    .reference_gate.evidence_manifest_sha256 == null
+  else
+    .mode == "candidate-sweep" and
+    .reference_gate.external_reference_required == true and
+    .reference_gate.review_acknowledged == true and
+    (.reference_gate.evidence_manifest_sha256 | type == "string") and
+    (.reference_gate.analysis_sha256 | type == "string") and
+    (.reference_gate.completed_marker_sha256 | type == "string")
+  end
+' "$plan" >/dev/null
+EOF_HTB_ROUTE_RUNNER
+chmod +x "$htb_route_fixture/bundle/rate-sweep-run.sh"
+printf '%s\n' '{"schema_version":3,"plan_mode":"reference-screen","status":"REVIEW_REQUIRED","persistence_authorized":false,"measurement_gate":{"valid":true},"shaping_exposure_gate":{"valid":true},"resource_gate":{"valid":true}}' \
+  >"$htb_route_fixture/reference/sweep-analysis.json"
+(
+  cd "$htb_route_fixture/reference"
+  sha256sum sweep-analysis.json >SHA256SUMS
+)
+route_manifest_sha="$(sha256sum "$htb_route_fixture/reference/SHA256SUMS" | awk '{print $1}')"
+route_analysis_sha="$(sha256sum "$htb_route_fixture/reference/sweep-analysis.json" | awk '{print $1}')"
+printf 'evidence_manifest_sha256=%s\nanalysis_sha256=%s\n' "$route_manifest_sha" "$route_analysis_sha" \
+  >"$htb_route_fixture/reference/COMPLETED"
+htb_route_path="$PATH"
+if ! (
+  # shellcheck disable=SC1090
+  source "$htb_wrapper"
+  # shellcheck disable=SC2030
+  PATH="$htb_route_path"
+  # shellcheck disable=SC2034
+  bundle_dir="$htb_route_fixture/bundle"
+  tuning_script="$htb_route_fixture/tuning.sh"
+  htb_tool="$htb_route_fixture/htb-tool"
+  pass_args=(--host 192.0.2.1 --output-dir "$htb_route_fixture/reference-output")
+  run_scan reference-screen >/dev/null
+  pass_args=(--host 192.0.2.1 --output-dir "$htb_route_fixture/candidate-output"
+    --reference-evidence "$htb_route_fixture/reference" --ack-reference-reviewed)
+  run_scan candidate-sweep >/dev/null
+); then
+  printf 'HTB wrapper routed reference proof arguments to the wrong plan mode\n' >&2
+  exit 1
+fi
+
 resource_profile_test="$tmp_dir/resource-profile-test.sh"
 {
   printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
@@ -1166,6 +1250,9 @@ tcpquality_retrans_test="$tmp_dir/tcpquality-retrans-test.sh"
 {
   printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
   awk '/^meta_value\(\)/,/^}/' "$tcpquality_tool"
+  awk '/^is_nonnegative_integer\(\)/,/^}/' "$tcpquality_tool"
+  awk '/^is_positive_integer\(\)/,/^}/' "$tcpquality_tool"
+  awk '/^is_percentage\(\)/,/^}/' "$tcpquality_tool"
   awk '/^record_retransmission_evidence\(\)/,/^}/' "$tcpquality_tool"
   cat <<'EOF_TCPQUALITY_RETRANS_TEST'
 test_root="$(mktemp -d)"
@@ -1212,6 +1299,25 @@ awk -F '\t' '$7 == "ebpf_seq" && $8 == 8 && $12 == 5 && $13 == 992 && $14 == "0.
   "$EVIDENCE_DIR/retransmission-evidence.tsv"
 awk -F '\t' '$7 == "nstat" && $13 == "-" && $14 == "-" && $15 == "tcp_info_unavailable" && $16 == "MEASUREMENT_DEGRADED" {found=1} END {exit !found}' \
   "$EVIDENCE_DIR/retransmission-evidence.tsv"
+invalid_root="$test_root/invalid/tmp.fixture/speedtest.fixture"
+mkdir -p "$invalid_root"
+cat >"$invalid_root/result.download.meta" <<'EOF_INVALID_META'
+probe_type=download
+server_ip=192.0.2.12
+result=200.00
+retrans_source=ebpf_seq
+retrans_trace_available=1
+retrans_trace_valid=1
+retrans_trace_unique=not-a-number
+retrans_trace_ratio_denominator=992
+retrans_trace_ratio=0.50%
+EOF_INVALID_META
+invalid_archive="$test_root/invalid-debug.tar.gz"
+tar -C "$test_root/invalid" -czf "$invalid_archive" .
+if record_retransmission_evidence 2 "$invalid_archive"; then
+  printf 'retransmission parser accepted malformed flow-level fields\n' >&2
+  exit 1
+fi
 EOF_TCPQUALITY_RETRANS_TEST
 } >"$tcpquality_retrans_test"
 bash "$tcpquality_retrans_test"
