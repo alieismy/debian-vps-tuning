@@ -66,12 +66,19 @@ if [ "$(od -An -tx1 -N3 "$tcpquality_tool" | tr -d ' \n')" = 'efbbbf' ]; then
   printf 'UTF-8 BOM detected: %s\n' "$tcpquality_tool" >&2
   exit 1
 fi
-grep -Fq "TOOL_VERSION='0.1.0-rc.12'" "$tcpquality_tool"
-grep -Fq "SUPPORTED_COMMIT='5d1f85a6b8916b73ec0389dbc9b4ed4aa27dae01'" "$tcpquality_tool"
-grep -Fq "SUPPORTED_ROOTFS_SHA256='db92956873d674e65a573721ec6a3db4995f7cf648f61954380e0bfa53ce71a1'" "$tcpquality_tool"
+grep -Fq "TOOL_VERSION='0.1.0-rc.13'" "$tcpquality_tool"
+grep -Fq "SUPPORTED_RELEASE_TAG='v1.00013'" "$tcpquality_tool"
+grep -Fq "SUPPORTED_COMMIT='73606e2460bde21bb2e253842971f8ca8c9eb51c'" "$tcpquality_tool"
+grep -Fq "SUPPORTED_ROOTFS_MANIFEST_SHA256='555a53df40cbdd2778771c089d1bc2c2e1c0a52b5565ad15d2e01d52b90dd0f6'" "$tcpquality_tool"
+grep -Fq "SUPPORTED_ROOTFS_SHA256='c624b5cc611b7177c42608110024764e59dfd0a88150257137ae4e6d7f9f9d18'" "$tcpquality_tool"
 grep -Fq '证据目录已经存在，拒绝覆盖' "$tcpquality_tool"
 grep -Fq 'TCPQUALITY_ROOTFS_SHA256' "$tcpquality_tool"
 grep -Fq 'csv-inventory.tsv' "$tcpquality_tool"
+grep -Fq 'debug-inventory.tsv' "$tcpquality_tool"
+grep -Fq 'retransmission-evidence.tsv' "$tcpquality_tool"
+grep -Fq 'MEASUREMENT_DEGRADED' "$tcpquality_tool"
+grep -Fq 'TCPQUALITY_MODE 必须显式设为 local-evidence 或 public-report' "$tcpquality_tool"
+grep -Fq 'TCPQUALITY_ACK_TRANSIENT_FIREWALL=1' "$tcpquality_tool"
 grep -Fq 'node-drift.tsv' "$tcpquality_tool"
 grep -Fq 'finalize_manifest' "$tcpquality_tool"
 grep -Fq 'runTcpQuality-rootfs.sh' "$tcpquality_tool"
@@ -101,7 +108,7 @@ expected_keys=17
 for script in "${scripts[@]}"; do
   actual="$(awk '/^PROFILE_SYSCTL_KEYS=\(/,/^\)/ {if ($1 ~ /^(net\.|vm\.)/) count++} END {print count+0}' "$script")"
   [ "$actual" -eq "$expected_keys" ] || { printf 'unexpected managed-key count: %s (%s)\n' "$script" "$actual" >&2; exit 1; }
-  grep -Fq "SCRIPT_VERSION='0.1.0-rc.12'" "$script"
+  grep -Fq "SCRIPT_VERSION='0.1.0-rc.13'" "$script"
   grep -Eq '^STATE_SCHEMA_VERSION=4$' "$script"
   grep -Eq '^LEGACY_STATE_SCHEMA_VERSION=3$' "$script"
   grep -Fq 'PROFILE_CPU_MIN=' "$script"
@@ -147,7 +154,16 @@ for script in "${scripts[@]}"; do
   grep -Fq 'write_xui_dropin' "$script"
   grep -Fq '尚未安装代理服务；x-ui.service 的 LimitNOFILE drop-in 已预置' "$script"
   grep -Fq 'show_diagnostics' "$script"
+  grep -Fq 'show_readonly_tcp_settings' "$script"
   grep -Fq '只读诊断：不会修改 sysctl、qdisc、systemd、swap 或代理服务' "$script"
+  grep -Fq '[tcp-readonly] window_scaling=' "$script"
+  grep -Fq 'moderate_rcvbuf=' "$script"
+  grep -Fq 'slow_start_after_idle=' "$script"
+  grep -Fq 'limit_output_bytes=' "$script"
+  grep -Fq 'notsent_lowat=' "$script"
+  grep -Fq 'net.ipv4.tcp_window_scaling 当前值' "$script"
+  grep -Fq 'net.ipv4.tcp_moderate_rcvbuf 当前值' "$script"
+  grep -Fq '该键不受本项目管理，脚本不会自动修改。' "$script"
   grep -Fq 'show_cpu_delta' "$script"
   grep -Fq 'show_proxy_process_evidence' "$script"
   grep -Fq 'link_counter_snapshot' "$script"
@@ -265,8 +281,8 @@ for script in "${scripts[@]}"; do
   }
 done
 
-grep -Fq "CONTROLLER_VERSION='0.1.0-rc.12'" "$controller"
-grep -Fq "RELEASE_TAG='v0.1.0-rc.12'" "$controller"
+grep -Fq "CONTROLLER_VERSION='0.1.0-rc.13'" "$controller"
+grep -Fq "RELEASE_TAG='v0.1.0-rc.13'" "$controller"
 grep -Fq "DEFAULT_PORT_SPEED_MBPS=200" "$controller"
 grep -Fq 'verify_profile_contract' "$controller"
 grep -Fq 'debian12-1c512m-vps-tuning.sh' "$controller"
@@ -292,7 +308,7 @@ if grep -Eq 'raw\.githubusercontent\.com|/master/|/main/|releases/latest|http://
   exit 1
 fi
 
-grep -Fq "RELEASE_TAG='v0.1.0-rc.12'" "$installer"
+grep -Fq "RELEASE_TAG='v0.1.0-rc.13'" "$installer"
 grep -Eq "EXPECTED_MANIFEST_SHA256='[0-9a-f]{64}'" "$installer"
 if grep -Fq "EXPECTED_MANIFEST_SHA256='0000000000000000000000000000000000000000000000000000000000000000'" "$installer"; then
   printf 'installer manifest digest placeholder was not finalized\n' >&2
@@ -305,7 +321,7 @@ manifest_hash="$(sha256sum SHA256SUMS | awk '{print $1}')"
 grep -Fq "EXPECTED_MANIFEST_SHA256='${manifest_hash}'" "$installer"
 installer_hash="$(sha256sum "$installer" | awk '{print $1}')"
 grep -Fq "$installer_hash" README.md
-grep -Fq "$manifest_hash" docs/releases/v0.1.0-rc.12.md
+grep -Fq "$manifest_hash" docs/releases/v0.1.0-rc.13.md
 if grep -Eq 'raw\.githubusercontent\.com|/master/|/main/|releases/latest|http://' "$installer"; then
   printf 'mutable or insecure installer download source detected\n' >&2
   exit 1
@@ -319,11 +335,61 @@ grep -Fq -- '--plan-only' "$probe_tool"
 grep -Fq -- '--ack-reference-reviewed' "$htb_wrapper"
 grep -Fq '.measurement_gate.valid == true' "$htb_wrapper"
 grep -Fq 'never creates persistent HTB' "$htb_wrapper"
+grep -Fq "HTB_INSTALL_PATH='/usr/local/sbin/htb-aggregate-experiment'" "$htb_wrapper"
+grep -Fq '稳定 HTB 执行器与当前 Release 资产 SHA-256 不一致' "$htb_wrapper"
+grep -Fq -- '--htb-tool "$htb_tool"' "$htb_wrapper"
 grep -Fq 'rate_cap * 125000 * (seconds + omit) * direction_count * samples' "$probe_tool"
 ( command sha256sum -c SHA256SUMS >/dev/null )
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf -- "$tmp_dir"' EXIT
+
+htb_bind_fixture="$tmp_dir/htb-bind"
+mkdir -p "$htb_bind_fixture/bundle"
+cp experiments/htb-aggregate/htb-aggregate-experiment.sh \
+  "$htb_bind_fixture/bundle/htb-aggregate-experiment.sh"
+cp experiments/htb-aggregate/htb-aggregate-experiment.sh \
+  "$htb_bind_fixture/installed-htb"
+if ! (
+  inherited_path="$PATH"
+  # shellcheck disable=SC1090
+  source "$htb_wrapper"
+  PATH="$inherited_path"
+  bundle_dir="$htb_bind_fixture/bundle"
+  HTB_INSTALL_PATH="$htb_bind_fixture/installed-htb"
+  stat() {
+    case "${2:-}" in
+      %u) printf '0\n' ;;
+      %a) printf '755\n' ;;
+      *) command stat "$@" ;;
+    esac
+  }
+  bind_stable_htb_tool 1
+  [ "$htb_tool" = "$HTB_INSTALL_PATH" ]
+); then
+  printf 'HTB wrapper rejected a hash-matched stable executor\n' >&2
+  exit 1
+fi
+cp experiments/htb-aggregate/experiment-plan.sh "$htb_bind_fixture/installed-htb"
+if (
+  inherited_path="$PATH"
+  # shellcheck disable=SC1090
+  source "$htb_wrapper"
+  PATH="$inherited_path"
+  bundle_dir="$htb_bind_fixture/bundle"
+  HTB_INSTALL_PATH="$htb_bind_fixture/installed-htb"
+  stat() {
+    case "${2:-}" in
+      %u) printf '0\n' ;;
+      %a) printf '755\n' ;;
+      *) command stat "$@" ;;
+    esac
+  }
+  bind_stable_htb_tool 1
+) >/dev/null 2>&1; then
+  printf 'HTB wrapper accepted a stable executor with a mismatched hash\n' >&2
+  exit 1
+fi
 
 resource_profile_test="$tmp_dir/resource-profile-test.sh"
 {
@@ -400,6 +466,19 @@ validate_inputs
   exit 1
 }
 
+PORT_SPEED_MBPS_INPUT=200
+BUFFER_TARGET_RTT_MS_INPUT=200
+BUF_MAX_INPUT=auto
+MAX_BUF_MAX=33554432
+BUFFER_TARGET_NUMERATOR=5
+BUFFER_TARGET_DENOMINATOR=4
+WARNED=0
+validate_inputs
+[ "$BUF_MAX" -eq 16777216 ] && [ "$BUF_MAX_MODE" = auto ] && [ "$WARNED" -eq 0 ] || {
+  printf '1 GiB 200 Mbps auto buffer did not select 16 MiB without a warning\n' >&2
+  exit 1
+}
+
 PORT_SPEED_MBPS_INPUT=1000
 BUFFER_TARGET_RTT_MS_INPUT=200
 BUF_MAX_INPUT=auto
@@ -459,6 +538,127 @@ fi
 EOF_BUFFER_PROFILE_TEST
 } >"$buffer_profile_test"
 bash "$buffer_profile_test"
+
+readonly_tcp_settings_test="$tmp_dir/readonly-tcp-settings-test.sh"
+{
+  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  awk '/^show_readonly_tcp_settings\(\)/,/^}/' "${scripts[0]}"
+  cat <<'EOF_READONLY_TCP_SETTINGS_TEST'
+WARNINGS=0
+WINDOW_SCALING_VALUE=1
+WINDOW_SCALING_READABLE=1
+MODERATE_RCVBUF_VALUE=1
+MODERATE_RCVBUF_READABLE=1
+SLOW_START_AFTER_IDLE_VALUE=0
+MTU_PROBING_VALUE=1
+LIMIT_OUTPUT_BYTES_VALUE=1048576
+NOTSENT_LOWAT_VALUE=4294967295
+SYSCTL_CALLS_FILE="$(mktemp)"
+
+warn() { WARNINGS=$((WARNINGS + 1)); printf '[!] %s\n' "$*" >&2; }
+sysctl() {
+  [ "${1:-}" = '-n' ] || return 2
+  printf '%s\n' "${2:-}" >>"$SYSCTL_CALLS_FILE"
+  case "${2:-}" in
+    net.ipv4.tcp_window_scaling)
+      [ "$WINDOW_SCALING_READABLE" -eq 1 ] || return 1
+      printf '%s\n' "$WINDOW_SCALING_VALUE"
+      ;;
+    net.ipv4.tcp_moderate_rcvbuf)
+      [ "$MODERATE_RCVBUF_READABLE" -eq 1 ] || return 1
+      printf '%s\n' "$MODERATE_RCVBUF_VALUE"
+      ;;
+    net.ipv4.tcp_slow_start_after_idle) printf '%s\n' "$SLOW_START_AFTER_IDLE_VALUE" ;;
+    net.ipv4.tcp_mtu_probing) printf '%s\n' "$MTU_PROBING_VALUE" ;;
+    net.ipv4.tcp_limit_output_bytes) printf '%s\n' "$LIMIT_OUTPUT_BYTES_VALUE" ;;
+    net.ipv4.tcp_notsent_lowat) printf '%s\n' "$NOTSENT_LOWAT_VALUE" ;;
+    *) return 1 ;;
+  esac
+}
+assert_single_reads() {
+  local key count
+  for key in \
+    net.ipv4.tcp_window_scaling \
+    net.ipv4.tcp_moderate_rcvbuf \
+    net.ipv4.tcp_slow_start_after_idle \
+    net.ipv4.tcp_mtu_probing \
+    net.ipv4.tcp_limit_output_bytes \
+    net.ipv4.tcp_notsent_lowat; do
+    count="$(grep -Fxc "$key" "$SYSCTL_CALLS_FILE" || true)"
+    [ "$count" -eq 1 ] || {
+      printf 'read-only TCP setting was read %s times: %s\n' "$count" "$key" >&2
+      exit 1
+    }
+  done
+  [ "$(wc -l <"$SYSCTL_CALLS_FILE")" -eq 6 ] || {
+    printf 'read-only TCP helper made an unexpected number of sysctl reads\n' >&2
+    exit 1
+  }
+}
+
+normal_output="$(mktemp)"
+normal_warnings="$(mktemp)"
+abnormal_output="$(mktemp)"
+abnormal_warnings="$(mktemp)"
+unreadable_output="$(mktemp)"
+unreadable_warnings="$(mktemp)"
+trap 'rm -f -- "$normal_output" "$normal_warnings" "$abnormal_output" "$abnormal_warnings" "$unreadable_output" "$unreadable_warnings" "$SYSCTL_CALLS_FILE"' EXIT
+
+: >"$SYSCTL_CALLS_FILE"
+show_readonly_tcp_settings >"$normal_output" 2>"$normal_warnings"
+assert_single_reads
+[ "$WARNINGS" -eq 0 ] && [ ! -s "$normal_warnings" ] || {
+  printf 'expected TCP defaults produced a read-only warning\n' >&2
+  exit 1
+}
+grep -Fxq '[tcp-readonly] window_scaling=1 moderate_rcvbuf=1 slow_start_after_idle=0 mtu_probing=1 limit_output_bytes=1048576 notsent_lowat=4294967295' "$normal_output"
+
+WINDOW_SCALING_VALUE=0
+MODERATE_RCVBUF_VALUE=0
+WARNINGS=0
+: >"$SYSCTL_CALLS_FILE"
+show_readonly_tcp_settings >"$abnormal_output" 2>"$abnormal_warnings"
+assert_single_reads
+[ "$WARNINGS" -eq 2 ] && [ "$(wc -l <"$abnormal_warnings")" -eq 2 ] || {
+  printf 'unexpected TCP defaults did not produce exactly two warnings\n' >&2
+  exit 1
+}
+grep -Fxq '[!] 只读诊断：net.ipv4.tcp_window_scaling 当前值为 0，预期值为 1；该键不受本项目管理，脚本不会自动修改。' "$abnormal_warnings"
+grep -Fxq '[!] 只读诊断：net.ipv4.tcp_moderate_rcvbuf 当前值为 0，预期值为 1；该键不受本项目管理，脚本不会自动修改。' "$abnormal_warnings"
+if grep -Fq 'slow_start_after_idle' "$abnormal_warnings"; then
+  printf 'slow_start_after_idle unexpectedly triggered the unmanaged-default warning\n' >&2
+  exit 1
+fi
+
+WINDOW_SCALING_READABLE=0
+MODERATE_RCVBUF_VALUE=1
+WARNINGS=0
+: >"$SYSCTL_CALLS_FILE"
+show_readonly_tcp_settings >"$unreadable_output" 2>"$unreadable_warnings"
+assert_single_reads
+[ "$WARNINGS" -eq 1 ] && [ "$(wc -l <"$unreadable_warnings")" -eq 1 ] || {
+  printf 'unreadable tcp_window_scaling did not produce exactly one warning\n' >&2
+  exit 1
+}
+grep -Fxq '[tcp-readonly] window_scaling= moderate_rcvbuf=1 slow_start_after_idle=0 mtu_probing=1 limit_output_bytes=1048576 notsent_lowat=4294967295' "$unreadable_output"
+grep -Fxq '[!] 只读诊断：无法确认 net.ipv4.tcp_window_scaling 当前值，预期值为 1；该键不受本项目管理，脚本不会自动修改。' "$unreadable_warnings"
+
+WINDOW_SCALING_READABLE=1
+WINDOW_SCALING_VALUE=1
+MODERATE_RCVBUF_READABLE=0
+WARNINGS=0
+: >"$SYSCTL_CALLS_FILE"
+show_readonly_tcp_settings >"$unreadable_output" 2>"$unreadable_warnings"
+assert_single_reads
+[ "$WARNINGS" -eq 1 ] && [ "$(wc -l <"$unreadable_warnings")" -eq 1 ] || {
+  printf 'unreadable tcp_moderate_rcvbuf did not produce exactly one warning\n' >&2
+  exit 1
+}
+grep -Fxq '[tcp-readonly] window_scaling=1 moderate_rcvbuf= slow_start_after_idle=0 mtu_probing=1 limit_output_bytes=1048576 notsent_lowat=4294967295' "$unreadable_output"
+grep -Fxq '[!] 只读诊断：无法确认 net.ipv4.tcp_moderate_rcvbuf 当前值，预期值为 1；该键不受本项目管理，脚本不会自动修改。' "$unreadable_warnings"
+EOF_READONLY_TCP_SETTINGS_TEST
+} >"$readonly_tcp_settings_test"
+bash "$readonly_tcp_settings_test"
 
 diagnostic_delta_test="$tmp_dir/diagnostic-delta-test.sh"
 {
@@ -864,7 +1064,7 @@ EXIT_USAGE=2
 EXIT_UNSUPPORTED=3
 EXIT_CONFLICT=4
 EXIT_VERIFY=5
-SCRIPT_VERSION='0.1.0-rc.12'
+SCRIPT_VERSION='0.1.0-rc.13'
 PROFILE_ID='debian13-1c1g'
 STATE_FILE="$test_root/no-state.json"
 ensure_required_tools() { :; }
@@ -960,6 +1160,60 @@ EOF_TCPQUALITY_NODE_TEST
 } >"$tcpquality_node_test"
 bash "$tcpquality_node_test"
 
+tcpquality_retrans_test="$tmp_dir/tcpquality-retrans-test.sh"
+{
+  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  awk '/^meta_value\(\)/,/^}/' "$tcpquality_tool"
+  awk '/^record_retransmission_evidence\(\)/,/^}/' "$tcpquality_tool"
+  cat <<'EOF_TCPQUALITY_RETRANS_TEST'
+test_root="$(mktemp -d)"
+trap 'rm -rf -- "$test_root"' EXIT
+EVIDENCE_DIR="$test_root/evidence"
+archive_root="$test_root/archive/tmp.fixture/speedtest.fixture"
+mkdir -p "$EVIDENCE_DIR" "$archive_root"
+printf 'run\tdebug_archive\tmeta_file\tprobe_type\tserver_ip\tresult\tmetric_source\ttcp_info_total_retrans\ttcp_info_data_segs_out\ttcp_info_segs_out\ttcp_info_bytes_retrans\tebpf_unique_retrans\tratio_denominator\tratio\tfallback_reason\tmeasurement_status\n' \
+  >"$EVIDENCE_DIR/retransmission-evidence.tsv"
+cat >"$archive_root/result.download.meta" <<'EOF_EBPF_META'
+probe_type=download
+server_ip=192.0.2.10
+result=200.00
+retrans_source=ebpf_seq
+tcp_info_retrans=8
+tcp_info_data_segs_out=1000
+tcp_info_segs_out=1010
+tcp_info_bytes_retrans=12000
+tcp_info_mode=getsockopt
+retrans_trace_available=1
+retrans_trace_valid=1
+retrans_trace_unique=5
+retrans_trace_ratio_denominator=992
+retrans_trace_ratio=0.50%
+EOF_EBPF_META
+cat >"$archive_root/result.upload.meta" <<'EOF_NSTAT_META'
+probe_type=upload
+server_ip=192.0.2.11
+result=180.00
+retrans_source=nstat
+tcp_info_retrans=0
+tcp_info_data_segs_out=0
+tcp_info_segs_out=0
+tcp_info_bytes_retrans=0
+tcp_info_mode=none
+retrans_trace_available=0
+retrans_trace_valid=0
+retrans_trace_unique=0
+EOF_NSTAT_META
+archive="$test_root/debug.tar.gz"
+tar -C "$test_root/archive" -czf "$archive" .
+record_retransmission_evidence 1 "$archive"
+awk -F '\t' '$7 == "ebpf_seq" && $8 == 8 && $12 == 5 && $13 == 992 && $14 == "0.50%" && $15 == "none" && $16 == "FLOW_LEVEL" {found=1} END {exit !found}' \
+  "$EVIDENCE_DIR/retransmission-evidence.tsv"
+awk -F '\t' '$7 == "nstat" && $13 == "-" && $14 == "-" && $15 == "tcp_info_unavailable" && $16 == "MEASUREMENT_DEGRADED" {found=1} END {exit !found}' \
+  "$EVIDENCE_DIR/retransmission-evidence.tsv"
+EOF_TCPQUALITY_RETRANS_TEST
+} >"$tcpquality_retrans_test"
+bash "$tcpquality_retrans_test"
+
 tcpquality_failure_test="$tmp_dir/tcpquality-failure-test.sh"
 {
   printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
@@ -969,16 +1223,18 @@ test_root="$(mktemp -d)"
 trap 'rm -rf -- "$test_root"' EXIT
 EVIDENCE_DIR="$test_root/evidence"
 PIN_DIR="$test_root/pin"
-COMMIT='5d1f85a6b8916b73ec0389dbc9b4ed4aa27dae01'
+COMMIT='73606e2460bde21bb2e253842971f8ca8c9eb51c'
 COUNT=30
 PACKET_SIZE=0
 PARALLEL=16
-ROOTFS_SHA256='db92956873d674e65a573721ec6a3db4995f7cf648f61954380e0bfa53ce71a1'
+ROOTFS_SHA256='c624b5cc611b7177c42608110024764e59dfd0a88150257137ae4e6d7f9f9d18'
 GET_NODES_URL='https://nodes.example.test/getNodes'
-TOOL_VERSION='0.1.0-rc.12'
+TOOL_VERSION='0.1.0-rc.13'
+MODE='local-evidence'
 mkdir "$EVIDENCE_DIR" "$PIN_DIR"
 : >"$PIN_DIR/SHA256SUMS"
 find_csv_inventory() { :; }
+find_debug_inventory() { :; }
 sha256sum() {
   if [ "${1:-}" = '-c' ]; then return 7; fi
   command sha256sum "$@"
@@ -996,7 +1252,7 @@ cross_version_apply_test="$tmp_dir/cross-version-apply-test.sh"
   awk '/^apply_settings\(\)/,/^}/' "${scripts[0]}"
   cat <<'EOF_CROSS_VERSION_APPLY_TEST'
 EXIT_CONFLICT=4
-SCRIPT_VERSION='0.1.0-rc.12'
+SCRIPT_VERSION='0.1.0-rc.13'
 PORT_SPEED_MBPS=200
 BUFFER_TARGET_RTT_MS=200
 BUF_MAX=16777216
@@ -1027,7 +1283,7 @@ parameter_mismatch_apply_test="$tmp_dir/parameter-mismatch-apply-test.sh"
   awk '/^apply_settings\(\)/,/^}/' "${scripts[0]}"
   cat <<'EOF_PARAMETER_MISMATCH_APPLY_TEST'
 EXIT_CONFLICT=4
-SCRIPT_VERSION='0.1.0-rc.12'
+SCRIPT_VERSION='0.1.0-rc.13'
 PORT_SPEED_MBPS=100
 BUFFER_TARGET_RTT_MS=200
 BUF_MAX=16777216
@@ -1442,7 +1698,7 @@ STATE_DIR='/var/lib/proxy-vps-tuning'
 SYSCTL_SCAN_ROOT='/etc'
 STATE_SCHEMA_VERSION=4
 LEGACY_STATE_SCHEMA_VERSION=3
-SCRIPT_VERSION='0.1.0-rc.12'
+SCRIPT_VERSION='0.1.0-rc.13'
 PROFILE_ID='debian12-1c1g'
 UPDATE_PREFLIGHT=0
 stat() { printf '%s\n' '0'; }
@@ -1461,7 +1717,7 @@ for fixture in empty whitespace null object multiple; do
   fi
 done
 
-printf '%s\n' '{"schema_version":4,"script_version":"0.1.0-rc.12","profile":{"id":"debian12-1c1g"},"state":"PREPARED","network":{},"original_sysctls":{},"qdisc":{"file":"/tmp/qdisc","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"swap":{},"provider_sysctl_transfer":{"required":false,"source_path":"/etc/sysctl.conf","backup_path":"/var/lib/proxy-vps-tuning/provider-sysctl.conf.original","original_sha256":null,"backup_sha256":null,"transferred_sha256":null,"original_uid":null,"original_gid":null,"original_mode":null,"keys":[],"state":"NOT_REQUIRED"},"managed_files":[],"timestamps":{}}' >"$STATE_FILE"
+printf '%s\n' '{"schema_version":4,"script_version":"0.1.0-rc.13","profile":{"id":"debian12-1c1g"},"state":"PREPARED","network":{},"original_sysctls":{},"qdisc":{"file":"/tmp/qdisc","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"swap":{},"provider_sysctl_transfer":{"required":false,"source_path":"/etc/sysctl.conf","backup_path":"/var/lib/proxy-vps-tuning/provider-sysctl.conf.original","original_sha256":null,"backup_sha256":null,"transferred_sha256":null,"original_uid":null,"original_gid":null,"original_mode":null,"keys":[],"state":"NOT_REQUIRED"},"managed_files":[],"timestamps":{}}' >"$STATE_FILE"
 state_file_is_valid
 
 jq '.provider_sysctl_transfer.original_uid = 0 | .provider_sysctl_transfer.original_gid = 0 | .provider_sysctl_transfer.original_mode = "000"' \

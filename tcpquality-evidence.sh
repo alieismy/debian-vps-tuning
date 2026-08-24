@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 
 # Explicit TcpQuality evidence harness. This wrapper contains no host tuning,
-# package-manager or service mutations and never overwrites an evidence set;
-# the pinned upstream --all workload still performs its documented network I/O.
+# package-manager or service mutations and never overwrites an evidence set.
+# The pinned upstream --all workload performs network I/O and temporarily
+# creates/removes iptables/ip6tables counter chains; this requires an explicit
+# acknowledgement below because chroot does not isolate the network namespace.
 
 set -Eeuo pipefail
 IFS=$'\n\t'
@@ -10,17 +12,28 @@ PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 umask 077
 
-TOOL_VERSION='0.1.0-rc.12'
-SUPPORTED_COMMIT='5d1f85a6b8916b73ec0389dbc9b4ed4aa27dae01'
-SUPPORTED_RUN_SHA256='e374bdcb3dceab0164d42443b0cf5b006ecc8e5bbcb5ee348f216bb6f8ccbfc3'
-SUPPORTED_ROOTFS_RUNNER_SHA256='89944d708abaa55c0ef1833e1de49627da932f810848cb3aa73493bfee03e207'
-SUPPORTED_CORE_SHA256='4f611c8419c5b6ca23d36c102b4e20bac80f51e751c6fc9ebb7220cc30416f06'
-SUPPORTED_ROOTFS_SHA256='db92956873d674e65a573721ec6a3db4995f7cf648f61954380e0bfa53ce71a1'
+TOOL_VERSION='0.1.0-rc.13'
+SUPPORTED_RELEASE_TAG='v1.00013'
+SUPPORTED_COMMIT='73606e2460bde21bb2e253842971f8ca8c9eb51c'
+SUPPORTED_RUN_SHA256='3e9e08792b441d9d74aeb64630a657f6904821dd2a911a379fcea538ebdbd5c2'
+SUPPORTED_ROOTFS_RUNNER_SHA256='af62690d2631658dcd279cd15c7356c1c091a39309e3666e3c32c211331ed3ba'
+SUPPORTED_CORE_SHA256='78f3a5247717a0b856737da5c5a9fdc87ee39a93423906e5eaa47948bb79d628'
+SUPPORTED_ROOTFS_MANIFEST_SHA256='555a53df40cbdd2778771c089d1bc2c2e1c0a52b5565ad15d2e01d52b90dd0f6'
+SUPPORTED_ROOTFS_SHA256='c624b5cc611b7177c42608110024764e59dfd0a88150257137ae4e6d7f9f9d18'
+SUPPORTED_ROOTFS_SIZE='140748758'
+SUPPORTED_TCP_INFO_HELPER_SHA256='159d31efc9dbfda7b5f552455d160ebde295c937dcc3f8b24d21fb5934cd8253'
+SUPPORTED_TCP_INFO_HELPER_SIZE='14152'
+SUPPORTED_RETRANS_SEQ_SHA256='4ab10e0993becb37c5bff64e1f0ae4860959ff2ad16b372578701ffcf5c36aab'
+SUPPORTED_RETRANS_SEQ_SIZE='1865'
+SUPPORTED_RETRANS_SKB_SHA256='b84d979a000b86515c3eb8b776d3e2b276031e418a659aa828eb7afbdab4bd89'
+SUPPORTED_RETRANS_SKB_SIZE='819'
 GET_NODES_URL="${TCPQUALITY_GET_NODES_URL:-https://tcpquality.ibsgss.uk/getNodes}"
 PIN_DIR="${TCPQUALITY_PIN_DIR:-}"
 EVIDENCE_DIR="${TCPQUALITY_EVIDENCE_DIR:-}"
 COMMIT="${TCPQUALITY_COMMIT:-}"
 ROOTFS_SHA256="${TCPQUALITY_ROOTFS_SHA256:-}"
+MODE="${TCPQUALITY_MODE:-}"
+ACK_TRANSIENT_FIREWALL="${TCPQUALITY_ACK_TRANSIENT_FIREWALL:-0}"
 RUNS="${TCPQUALITY_RUNS:-3}"
 DELAY_SECONDS="${TCPQUALITY_DELAY_SECONDS:-60}"
 COUNT="${TCPQUALITY_COUNT:-30}"
@@ -157,7 +170,21 @@ capture_host_state() {
   uname -a || return 1
   uptime || return 1
   free -h || return 1
-  sysctl net.ipv4.tcp_congestion_control net.core.default_qdisc net.ipv4.tcp_rmem net.ipv4.tcp_wmem || return 1
+  sysctl net.ipv4.tcp_congestion_control net.core.default_qdisc net.ipv4.tcp_rmem net.ipv4.tcp_wmem \
+    net.ipv4.tcp_window_scaling net.ipv4.tcp_moderate_rcvbuf \
+    net.ipv4.tcp_slow_start_after_idle net.ipv4.tcp_mtu_probing \
+    net.ipv4.tcp_limit_output_bytes net.ipv4.tcp_notsent_lowat || return 1
+  printf '\n== default routes and reference egress ==\n'
+  ip -4 route show default 2>/dev/null || true
+  ip -6 route show default 2>/dev/null || true
+  ip -4 route get 1.1.1.1 2>/dev/null || true
+  ip -6 route get 2606:4700:4700::1111 2>/dev/null || true
+  printf '\n== aggregate CPU counters ==\n'
+  awk '$1 == "cpu" {print; exit}' /proc/stat || return 1
+  printf '\n== per-CPU softnet counters ==\n'
+  awk '{print}' /proc/net/softnet_stat || return 1
+  printf '\n== socket summary ==\n'
+  ss -s || return 1
   ip -s -s link show || return 1
   tc -s -d qdisc show || return 1
   nstat -az || return 1
@@ -168,20 +195,112 @@ find_csv_inventory() {
   find "$EVIDENCE_DIR" -maxdepth 1 -type f -name 'zstatic_nping_*.csv' -printf '%f\n' | LC_ALL=C sort
 }
 
+find_debug_inventory() {
+  find "$EVIDENCE_DIR" -maxdepth 1 -type f -name '*.tar.gz' -printf '%f\n' | LC_ALL=C sort
+}
+
+meta_value() {
+  local key="$1"
+  awk -F= -v key="$key" '
+    $1 == key {
+      sub(/^[^=]*=/, "")
+      gsub(/[\t\r\n]/, " ")
+      print
+      exit
+    }
+  '
+}
+
+record_retransmission_evidence() {
+  local run="$1" archive="$2" entries entry content
+  local probe_type server_ip result metric_source tcp_info_retrans tcp_info_data_segs_out
+  local tcp_info_segs_out tcp_info_bytes_retrans ebpf_unique ratio_denominator ratio
+  local fallback_reason tcp_info_mode trace_available trace_valid measurement_status
+  entries="${EVIDENCE_DIR}/.retrans-meta-r${run}.list"
+  tar -tzf "$archive" | awk '/\/speedtest\.[^/]+\/result\.(download|upload)\.meta$/ {print}' >"$entries" || return 1
+  [ -s "$entries" ] || { rm -f -- "$entries"; return 1; }
+  while IFS= read -r entry; do
+    case "/$entry/" in
+      */../* | /*//* ) rm -f -- "$entries"; return 1 ;;
+    esac
+    content="$(tar -xOzf "$archive" "$entry")" || { rm -f -- "$entries"; return 1; }
+    probe_type="$(meta_value probe_type <<<"$content")"
+    server_ip="$(meta_value server_ip <<<"$content")"
+    result="$(meta_value result <<<"$content")"
+    metric_source="$(meta_value retrans_source <<<"$content")"
+    tcp_info_retrans="$(meta_value tcp_info_retrans <<<"$content")"
+    tcp_info_data_segs_out="$(meta_value tcp_info_data_segs_out <<<"$content")"
+    tcp_info_segs_out="$(meta_value tcp_info_segs_out <<<"$content")"
+    tcp_info_bytes_retrans="$(meta_value tcp_info_bytes_retrans <<<"$content")"
+    tcp_info_mode="$(meta_value tcp_info_mode <<<"$content")"
+    trace_available="$(meta_value retrans_trace_available <<<"$content")"
+    trace_valid="$(meta_value retrans_trace_valid <<<"$content")"
+    ebpf_unique="$(meta_value retrans_trace_unique <<<"$content")"
+    case "$metric_source" in
+      ebpf_seq | ebpf_skb)
+        ratio_denominator="$(meta_value retrans_trace_ratio_denominator <<<"$content")"
+        ratio="$(meta_value retrans_trace_ratio <<<"$content")"
+        fallback_reason='none'
+        measurement_status='FLOW_LEVEL'
+        ;;
+      tcp_info_getsockopt | tcp_info_ss)
+        ratio_denominator="$(meta_value tcp_info_ratio_denominator <<<"$content")"
+        ratio="$(meta_value tcp_info_ratio <<<"$content")"
+        if [ "$trace_available" != '1' ]; then
+          fallback_reason='ebpf_unavailable'
+        elif [ "$trace_valid" != '1' ]; then
+          fallback_reason='ebpf_trace_invalid'
+        else
+          fallback_reason='ebpf_not_selected'
+        fi
+        measurement_status='FLOW_LEVEL'
+        ;;
+      nstat)
+        ratio_denominator='-'
+        ratio='-'
+        fallback_reason='tcp_info_unavailable'
+        measurement_status='MEASUREMENT_DEGRADED'
+        ;;
+      *)
+        ratio_denominator='-'
+        ratio='-'
+        fallback_reason='unknown_metric_source'
+        measurement_status='MEASUREMENT_DEGRADED'
+        ;;
+    esac
+    [ "$result" != 'failed' ] || measurement_status='PROBE_FAILED'
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+      "$run" "${archive##*/}" "$entry" "${probe_type:--}" "${server_ip:--}" "${result:--}" \
+      "${metric_source:--}" "${tcp_info_retrans:--}" "${tcp_info_data_segs_out:--}" \
+      "${tcp_info_segs_out:--}" "${tcp_info_bytes_retrans:--}" "${ebpf_unique:--}" \
+      "$ratio_denominator" "$ratio" "$fallback_reason" "$measurement_status" \
+      >>"${EVIDENCE_DIR}/retransmission-evidence.tsv" || { rm -f -- "$entries"; return 1; }
+  done <"$entries"
+  rm -f -- "$entries"
+}
+
 run_one() {
-  local run="$1" log
+  local run="$1" log debug_archive debug_hash
+  local -a upstream_args
   log="${EVIDENCE_DIR}/tcpquality-r${run}.log"
   local all_before="${EVIDENCE_DIR}/nodes-all-r${run}-before.tsv"
   local tos_before="${EVIDENCE_DIR}/nodes-tos-r${run}-before.tsv"
   local all_after="${EVIDENCE_DIR}/nodes-all-r${run}-after.tsv"
   local tos_after="${EVIDENCE_DIR}/nodes-tos-r${run}-after.tsv"
   local csv_before="${EVIDENCE_DIR}/.csv-r${run}-before" csv_after="${EVIDENCE_DIR}/.csv-r${run}-after"
+  local debug_before="${EVIDENCE_DIR}/.debug-r${run}-before" debug_after="${EVIDENCE_DIR}/.debug-r${run}-after"
   local new_csv csv_hash rc=0
 
   find_csv_inventory >"$csv_before" || return 1
+  find_debug_inventory >"$debug_before" || return 1
+  upstream_args=(-c "$COUNT" -s "$PACKET_SIZE" -p "$PARALLEL" --all --debug)
+  [ "$MODE" != 'local-evidence' ] || upstream_args+=(--no-rank-upload)
   {
     printf 'tool_version=%s\nrun=%s\nutc_start=%s\n' "$TOOL_VERSION" "$run" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    printf 'tcpquality_commit=%s\nargs=-c %s -s %s -p %s --all\n' "$COMMIT" "$COUNT" "$PACKET_SIZE" "$PARALLEL"
+    printf 'tcpquality_commit=%s\nmode=%s\n' "$COMMIT" "$MODE"
+    printf 'args='
+    printf '%q ' "${upstream_args[@]}"
+    printf '\n'
     printf '\n== pinned assets ==\n'
     (cd "$PIN_DIR" && sha256sum -c SHA256SUMS) || return 1
     printf '\n== node snapshots before ==\n'
@@ -200,7 +319,7 @@ run_one() {
       TCPQUALITY_ROOTFS_SHA256="$ROOTFS_SHA256" \
       TCPQUALITY_OUTPUT_DIR="$EVIDENCE_DIR" \
       GET_NODES_URL="$GET_NODES_URL" \
-      bash "${PIN_DIR}/runTcpQuality.sh" -c "$COUNT" -s "$PACKET_SIZE" -p "$PARALLEL" --all
+      bash "${PIN_DIR}/runTcpQuality.sh" "${upstream_args[@]}"
     rc=$?
     set -e
     printf 'tcpquality_exit=%s\n' "$rc"
@@ -220,18 +339,29 @@ run_one() {
   } >"$log" 2>&1
 
   find_csv_inventory >"$csv_after" || return 1
+  find_debug_inventory >"$debug_after" || return 1
   new_csv="$(comm -13 "$csv_before" "$csv_after")" || return 1
-  rm -f -- "$csv_before" "$csv_after"
+  debug_archive="$(comm -13 "$debug_before" "$debug_after")" || return 1
+  rm -f -- "$csv_before" "$csv_after" "$debug_before" "$debug_after"
   [ "$rc" -eq 0 ] || return "$rc"
   [ "$(printf '%s\n' "$new_csv" | sed '/^$/d' | wc -l)" -eq 1 ] || {
     printf '[FAIL] run %s 未产生且仅产生一个新 CSV。\n' "$run" >>"$log"
     return 1
   }
   [ -s "${EVIDENCE_DIR}/${new_csv}" ] || return 1
+  [ "$(printf '%s\n' "$debug_archive" | sed '/^$/d' | wc -l)" -eq 1 ] || {
+    printf '[FAIL] run %s 未产生且仅产生一个新 debug archive。\n' "$run" >>"$log"
+    return 1
+  }
+  [ -s "${EVIDENCE_DIR}/${debug_archive}" ] || return 1
   csv_hash="$(sha256sum "${EVIDENCE_DIR}/${new_csv}" | awk '{print $1}')" || return 1
   printf '%s  %s\n' "$csv_hash" "${EVIDENCE_DIR}/${new_csv}" >>"$log" || return 1
   printf '%s\t%s\t%s\n' "$run" "$new_csv" "$csv_hash" \
     >>"${EVIDENCE_DIR}/csv-inventory.tsv" || return 1
+  debug_hash="$(sha256sum "${EVIDENCE_DIR}/${debug_archive}" | awk '{print $1}')" || return 1
+  printf '%s\t%s\t%s\n' "$run" "$debug_archive" "$debug_hash" \
+    >>"${EVIDENCE_DIR}/debug-inventory.tsv" || return 1
+  record_retransmission_evidence "$run" "${EVIDENCE_DIR}/${debug_archive}" || return 1
   record_node_drift "$run" all "$all_before" "$all_after" || return 1
   record_node_drift "$run" tos "$tos_before" "$tos_after" || return 1
 }
@@ -255,13 +385,19 @@ finalize_manifest() {
 main() {
   local run successful=0 run_rc=0 manifest_sha
   [ "$(id -u)" -eq 0 ] || fail '必须以 root 运行。'
-  for command in awk bash chmod cmp comm curl date dirname find free grep id ip mv nstat sed sha256sum sleep sort swapon sysctl tc uptime wc; do
+  for command in awk bash chmod cmp comm curl date dirname find free grep id ip mv nstat sed sha256sum sleep sort ss swapon sysctl tar tc tr uptime wc; do
     need_command "$command"
   done
   [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]] || fail 'TCPQUALITY_COMMIT 必须是 40 位小写十六进制 commit。'
   [[ "$ROOTFS_SHA256" =~ ^[0-9a-f]{64}$ ]] || fail 'TCPQUALITY_ROOTFS_SHA256 必须是 64 位小写十六进制 SHA256。'
   [ "$COMMIT" = "$SUPPORTED_COMMIT" ] || fail "本版工具只接受已审计 commit：${SUPPORTED_COMMIT}。"
   [ "$ROOTFS_SHA256" = "$SUPPORTED_ROOTFS_SHA256" ] || fail 'rootfs SHA256 不属于本版已审计依赖。'
+  case "$MODE" in
+    local-evidence | public-report) ;;
+    *) fail 'TCPQUALITY_MODE 必须显式设为 local-evidence 或 public-report。' ;;
+  esac
+  [ "$ACK_TRANSIENT_FIREWALL" = '1' ] ||
+    fail 'v1.00013 会临时创建/删除 iptables 计数链；确认维护边界后设置 TCPQUALITY_ACK_TRANSIENT_FIREWALL=1。'
   [ -n "$PIN_DIR" ] && [[ "$PIN_DIR" = /* ]] || fail 'TCPQUALITY_PIN_DIR 必须是绝对路径。'
   [ -d "$PIN_DIR" ] && [ ! -L "$PIN_DIR" ] || fail 'TCPQUALITY_PIN_DIR 不存在或是符号链接。'
   [ -n "$EVIDENCE_DIR" ] && [[ "$EVIDENCE_DIR" = /* ]] || fail 'TCPQUALITY_EVIDENCE_DIR 必须是绝对路径。'
@@ -281,16 +417,40 @@ main() {
   PARALLEL=$((10#$PARALLEL))
   [ -f "${PIN_DIR}/SHA256SUMS" ] || fail '固定目录缺少 SHA256SUMS。'
   [ -f "${PIN_DIR}/PINNED-METADATA.txt" ] || fail '固定目录缺少 PINNED-METADATA.txt。'
+  [ -f "${PIN_DIR}/rootfs-manifest.json" ] || fail '固定目录缺少 rootfs-manifest.json。'
   [ -x "${PIN_DIR}/runTcpQuality.sh" ] || fail '固定目录缺少可执行 runTcpQuality.sh。'
   [ -x "${PIN_DIR}/runTcpQuality-rootfs.sh" ] || fail '固定目录缺少可执行 runTcpQuality-rootfs.sh。'
   [ -x "${PIN_DIR}/runTcpQuality-core.sh" ] || fail '固定目录缺少可执行 runTcpQuality-core.sh。'
   [ -f "${PIN_DIR}/tcpquality-rootfs-amd64.tar.gz" ] || fail '固定目录缺少 rootfs。'
+  [ "$(wc -c <"${PIN_DIR}/tcpquality-rootfs-amd64.tar.gz" | tr -d ' ')" = "$SUPPORTED_ROOTFS_SIZE" ] ||
+    fail 'rootfs 大小与已审计 release manifest 不一致。'
+  grep -Fqx "tcpquality_release_tag=${SUPPORTED_RELEASE_TAG}" "${PIN_DIR}/PINNED-METADATA.txt" ||
+    fail 'PINNED-METADATA.txt 中的 release tag 不属于本版已审计依赖。'
   grep -Fqx "tcpquality_commit=${COMMIT}" "${PIN_DIR}/PINNED-METADATA.txt" ||
     fail 'PINNED-METADATA.txt 中的 commit 与 TCPQUALITY_COMMIT 不一致。'
+  for metadata_line in \
+    "rootfs_manifest_file=rootfs-manifest.json" \
+    "rootfs_manifest_sha256=${SUPPORTED_ROOTFS_MANIFEST_SHA256}" \
+    "rootfs_file=tcpquality-rootfs-amd64.tar.gz" \
+    "rootfs_size=${SUPPORTED_ROOTFS_SIZE}" \
+    "rootfs_sha256=${SUPPORTED_ROOTFS_SHA256}" \
+    "tcp_info_helper_path=usr/local/lib/libtcpquality-tcpinfo.so" \
+    "tcp_info_helper_size=${SUPPORTED_TCP_INFO_HELPER_SIZE}" \
+    "tcp_info_helper_sha256=${SUPPORTED_TCP_INFO_HELPER_SHA256}" \
+    "retrans_seq_path=usr/local/libexec/tcpquality-retrans-seq.bt" \
+    "retrans_seq_size=${SUPPORTED_RETRANS_SEQ_SIZE}" \
+    "retrans_seq_sha256=${SUPPORTED_RETRANS_SEQ_SHA256}" \
+    "retrans_skb_path=usr/local/libexec/tcpquality-retrans-skb.bt" \
+    "retrans_skb_size=${SUPPORTED_RETRANS_SKB_SIZE}" \
+    "retrans_skb_sha256=${SUPPORTED_RETRANS_SKB_SHA256}"; do
+    grep -Fqx "$metadata_line" "${PIN_DIR}/PINNED-METADATA.txt" ||
+      fail "PINNED-METADATA.txt 缺少已审计字段：${metadata_line%%=*}。"
+  done
   printf '%s  %s\n' \
     "$SUPPORTED_RUN_SHA256" "${PIN_DIR}/runTcpQuality.sh" \
     "$SUPPORTED_ROOTFS_RUNNER_SHA256" "${PIN_DIR}/runTcpQuality-rootfs.sh" \
     "$SUPPORTED_CORE_SHA256" "${PIN_DIR}/runTcpQuality-core.sh" \
+    "$SUPPORTED_ROOTFS_MANIFEST_SHA256" "${PIN_DIR}/rootfs-manifest.json" \
     "$SUPPORTED_ROOTFS_SHA256" "${PIN_DIR}/tcpquality-rootfs-amd64.tar.gz" |
     sha256sum -c -
   (cd "$PIN_DIR" && sha256sum -c SHA256SUMS)
@@ -301,12 +461,22 @@ main() {
   trap 'write_incomplete_marker INT; exit 130' INT
   trap 'write_incomplete_marker TERM; exit 143' TERM
   printf 'run\tcsv\tsha256\n' >"${EVIDENCE_DIR}/csv-inventory.tsv"
+  printf 'run\tdebug_archive\tsha256\n' >"${EVIDENCE_DIR}/debug-inventory.tsv"
   printf 'run\tscope\tphase\tfile\tsha256\n' >"${EVIDENCE_DIR}/node-inventory.tsv"
   printf 'run\tscope\tbefore_rows\tafter_rows\tlogical_removed\tlogical_added\tip_changed\texact_equal\n' >"${EVIDENCE_DIR}/node-drift.tsv"
+  printf 'run\tdebug_archive\tmeta_file\tprobe_type\tserver_ip\tresult\tmetric_source\ttcp_info_total_retrans\ttcp_info_data_segs_out\ttcp_info_segs_out\ttcp_info_bytes_retrans\tebpf_unique_retrans\tratio_denominator\tratio\tfallback_reason\tmeasurement_status\n' \
+    >"${EVIDENCE_DIR}/retransmission-evidence.tsv"
   {
     printf 'tool_version=%s\nutc_start=%s\n' "$TOOL_VERSION" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    printf 'tcpquality_commit=%s\nrootfs_sha256=%s\nget_nodes_url=%s\nruns=%s\ndelay_seconds=%s\n' "$COMMIT" "$ROOTFS_SHA256" "$GET_NODES_URL" "$RUNS" "$DELAY_SECONDS"
-    printf 'args=-c %s -s %s -p %s --all\n' "$COUNT" "$PACKET_SIZE" "$PARALLEL"
+    printf 'tcpquality_release_tag=%s\ntcpquality_commit=%s\nrootfs_manifest_sha256=%s\nrootfs_sha256=%s\n' \
+      "$SUPPORTED_RELEASE_TAG" "$COMMIT" "$SUPPORTED_ROOTFS_MANIFEST_SHA256" "$ROOTFS_SHA256"
+    printf 'mode=%s\ntransient_firewall_counter_ack=%s\nreport_upload=%s\ndebug_bundle_upload=%s\n' "$MODE" "$ACK_TRANSIENT_FIREWALL" \
+      "$( [ "$MODE" = public-report ] && printf enabled || printf disabled )" \
+      "$( [ "$MODE" = public-report ] && printf enabled || printf disabled )"
+    printf 'get_nodes_url=%s\nruns=%s\ndelay_seconds=%s\n' "$GET_NODES_URL" "$RUNS" "$DELAY_SECONDS"
+    printf 'args=-c %s -s %s -p %s --all --debug%s\n' "$COUNT" "$PACKET_SIZE" "$PARALLEL" \
+      "$( [ "$MODE" = local-evidence ] && printf ' --no-rank-upload' || true )"
+    printf 'measurement_contract=flow-level when metric_source is ebpf_* or tcp_info_*; nstat is MEASUREMENT_DEGRADED\n'
   } >"${EVIDENCE_DIR}/summary.txt"
 
   for ((run=1; run<=RUNS; run++)); do

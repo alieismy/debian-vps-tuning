@@ -7,7 +7,7 @@ IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 
-SCRIPT_VERSION='0.1.0-rc.12'
+SCRIPT_VERSION='0.1.0-rc.13'
 STATE_SCHEMA_VERSION=4
 LEGACY_STATE_SCHEMA_VERSION=3
 NAMESPACE='proxy-vps'
@@ -2102,6 +2102,35 @@ show_xray_socket_options() {
     "${keep_idle:-not-explicit}" "${keep_interval:-not-explicit}"
 }
 
+show_readonly_tcp_settings() {
+  local window_scaling moderate_rcvbuf slow_start_after_idle mtu_probing limit_output_bytes notsent_lowat
+
+  window_scaling="$(sysctl -n net.ipv4.tcp_window_scaling 2>/dev/null || true)"
+  moderate_rcvbuf="$(sysctl -n net.ipv4.tcp_moderate_rcvbuf 2>/dev/null || true)"
+  slow_start_after_idle="$(sysctl -n net.ipv4.tcp_slow_start_after_idle 2>/dev/null || true)"
+  mtu_probing="$(sysctl -n net.ipv4.tcp_mtu_probing 2>/dev/null || true)"
+  limit_output_bytes="$(sysctl -n net.ipv4.tcp_limit_output_bytes 2>/dev/null || true)"
+  notsent_lowat="$(sysctl -n net.ipv4.tcp_notsent_lowat 2>/dev/null || true)"
+
+  printf '[tcp-readonly] window_scaling=%s moderate_rcvbuf=%s slow_start_after_idle=%s mtu_probing=%s limit_output_bytes=%s notsent_lowat=%s\n' \
+    "$window_scaling" "$moderate_rcvbuf" "$slow_start_after_idle" "$mtu_probing" "$limit_output_bytes" "$notsent_lowat"
+
+  if [ "$window_scaling" != '1' ]; then
+    if [ -n "$window_scaling" ]; then
+      warn "只读诊断：net.ipv4.tcp_window_scaling 当前值为 ${window_scaling}，预期值为 1；该键不受本项目管理，脚本不会自动修改。"
+    else
+      warn '只读诊断：无法确认 net.ipv4.tcp_window_scaling 当前值，预期值为 1；该键不受本项目管理，脚本不会自动修改。'
+    fi
+  fi
+  if [ "$moderate_rcvbuf" != '1' ]; then
+    if [ -n "$moderate_rcvbuf" ]; then
+      warn "只读诊断：net.ipv4.tcp_moderate_rcvbuf 当前值为 ${moderate_rcvbuf}，预期值为 1；该键不受本项目管理，脚本不会自动修改。"
+    else
+      warn '只读诊断：无法确认 net.ipv4.tcp_moderate_rcvbuf 当前值，预期值为 1；该键不受本项目管理，脚本不会自动修改。'
+    fi
+  fi
+}
+
 show_diagnostics() {
   local diagnostic_state='UNMANAGED' iface tmp_dir
   ensure_required_tools
@@ -2141,6 +2170,7 @@ show_diagnostics() {
     "$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || true)" \
     "$(sysctl -n net.ipv4.tcp_available_congestion_control 2>/dev/null || true)" \
     "$(sysctl -n net.core.default_qdisc 2>/dev/null || true)"
+  show_readonly_tcp_settings
   ip -br address show 2>/dev/null || true
   ip -4 route show default 2>/dev/null || true
   ip -6 route show default 2>/dev/null || true

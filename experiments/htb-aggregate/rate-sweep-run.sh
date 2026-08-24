@@ -7,7 +7,9 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 
-RUNNER_VERSION='0.2.0'
+RUNNER_VERSION='0.3.0'
+EXPECTED_TUNING_VERSION='0.1.0-rc.13'
+MANAGED_STATE_FILE='/var/lib/proxy-vps-tuning/state.json'
 RUNTIME_STATE_DIR='/run/htb-aggregate-experiment'
 RUNTIME_STATE_FILE="${RUNTIME_STATE_DIR}/active.json"
 RUNNER_LOCK='/run/lock/htb-rate-sweep.lock'
@@ -23,6 +25,10 @@ htb_started=0
 current_stage='initialization'
 session_created=0
 socket_sampler_pid=''
+managed_profile_id=''
+managed_script_version=''
+managed_state_sha256_frozen=''
+tuning_script_sha256=''
 
 log() { printf '[rate-sweep-run] %s\n' "$*"; }
 warn() { printf '[rate-sweep-run][WARN] %s\n' "$*" >&2; }
@@ -66,9 +72,75 @@ validate_root_owned_file() {
   [ $((mode_decimal & 0022)) -eq 0 ] || die "${name} 不能被 group/world 写入：${path}"
 }
 
+capture_managed_binding() {
+  local uid mode mode_decimal
+  [ -f "$MANAGED_STATE_FILE" ] && [ ! -L "$MANAGED_STATE_FILE" ] ||
+    die "managed state 不是普通文件或是符号链接：${MANAGED_STATE_FILE}"
+  uid="$(stat -c '%u' "$MANAGED_STATE_FILE")"
+  mode="$(stat -c '%a' "$MANAGED_STATE_FILE")"
+  [ "$uid" = '0' ] || die "managed state 必须由 root 所有：${MANAGED_STATE_FILE}"
+  mode_decimal=$((8#$mode))
+  [ $((mode_decimal & 0022)) -eq 0 ] ||
+    die "managed state 不能被 group/world 写入：${MANAGED_STATE_FILE}"
+  jq -e --arg version "$EXPECTED_TUNING_VERSION" '
+    .schema_version == 4 and .state == "VERIFIED" and
+    .script_version == $version and
+    ((.profile.id == "debian13-1c1g") or (.profile.id == "debian13-1c2g")) and
+    .network.port_speed_mbps == 200
+  ' "$MANAGED_STATE_FILE" >/dev/null ||
+    die 'managed state 不是 rc.13 schema-4 VERIFIED/debian13-1c1g-or-1c2g/200-Mbps 基线。'
+  managed_profile_id="$(jq -r '.profile.id' "$MANAGED_STATE_FILE")"
+  managed_script_version="$(jq -r '.script_version' "$MANAGED_STATE_FILE")"
+  managed_state_sha256_frozen="$(sha256sum "$MANAGED_STATE_FILE" | awk '{print $1}')"
+}
+
+verify_session_managed_binding() {
+  local actual_hash actual_profile actual_version actual_state actual_port
+  [ -f "$MANAGED_STATE_FILE" ] && [ ! -L "$MANAGED_STATE_FILE" ] ||
+    die '扫描期间 managed state 消失或变成符号链接。'
+  actual_hash="$(sha256sum "$MANAGED_STATE_FILE" | awk '{print $1}')"
+  actual_profile="$(jq -r '.profile.id // empty' "$MANAGED_STATE_FILE" 2>/dev/null)"
+  actual_version="$(jq -r '.script_version // empty' "$MANAGED_STATE_FILE" 2>/dev/null)"
+  actual_state="$(jq -r '.state // empty' "$MANAGED_STATE_FILE" 2>/dev/null)"
+  actual_port="$(jq -r '.network.port_speed_mbps // empty' "$MANAGED_STATE_FILE" 2>/dev/null)"
+  [ "$actual_hash" = "$managed_state_sha256_frozen" ] &&
+    [ "$actual_profile" = "$managed_profile_id" ] &&
+    [ "$actual_version" = "$managed_script_version" ] &&
+    [ "$actual_state" = 'VERIFIED' ] && [ "$actual_port" = '200' ] ||
+    die '扫描期间 managed profile/version/state/port/hash 发生漂移。'
+}
+
+verify_tuning_profile_baseline() {
+  local log_file="$1" verify_rc=0
+  verify_session_managed_binding
+  if bash "$tuning_script" verify >"$log_file" 2>&1; then
+    verify_rc=0
+  else
+    verify_rc=$?
+  fi
+  [ "$verify_rc" -eq 0 ] ||
+    die "所选 tuning script 未通过当前 managed state 的只读 verify；退出码 ${verify_rc}。"
+  verify_session_managed_binding
+}
+
+verify_benchmark_binding() {
+  local benchmark_dir="$1" metadata="${benchmark_dir}/benchmark-meta.json"
+  [ -s "$metadata" ] || die 'benchmark 缺少 benchmark-meta.json，无法验证 profile/state 绑定。'
+  jq -e \
+    --arg profile "$managed_profile_id" \
+    --arg version "$managed_script_version" \
+    --arg script_sha256 "$tuning_script_sha256" '
+      .schema_version == 1 and
+      .profile == $profile and .script_version == $version and
+      .script_sha256 == $script_sha256 and .state == "VERIFIED" and
+      .state_network.port_speed_mbps == 200
+    ' "$metadata" >/dev/null ||
+    die 'benchmark metadata 的 profile/version/script/state/port 与冻结 managed binding 不一致。'
+}
+
 validate_plan() {
   jq -e --argjson cooldown "$(jq -r '.controls.minimum_cooldown_seconds' "$plan_file")" '
-    type == "object" and .schema_version == 2 and
+    type == "object" and .schema_version == 3 and
     ((.mode == "reference-screen") or (.mode == "candidate-sweep")) and
     .scope.provider_port_mbit == 200 and
     .reference_rate_mbit == 200 and
@@ -83,6 +155,28 @@ validate_plan() {
     (.controls.minimum_cooldown_seconds | type == "number" and floor == . and . >= 300 and . <= 3600) and
     (.controls.samples_per_state | type == "number" and floor == . and . >= 2 and . <= 5) and
     .controls.automatic_candidate_persistence == false and
+    (.controls.minimum_rate_exposure_ratio | type == "number" and
+      . >= 0.9 and . <= 1) and
+    (.controls.minimum_cpu_idle_percent | type == "number" and . >= 0 and . <= 100) and
+    (.controls.maximum_cpu_steal_percent | type == "number" and . >= 0 and . <= 100) and
+    .controls.require_zero_softnet_drops == true and
+    .controls.require_zero_softnet_time_squeeze == true and
+    .controls.require_zero_link_drops_errors == true and
+    (if .mode == "reference-screen" then
+       .reference_gate.external_reference_required == false and
+       .reference_gate.review_acknowledged == false and
+       .reference_gate.evidence_manifest_sha256 == null and
+       .reference_gate.analysis_sha256 == null and
+       .reference_gate.completed_marker_sha256 == null
+     else
+       .reference_gate.external_reference_required == true and
+       .reference_gate.review_acknowledged == true and
+       (.reference_gate.evidence_manifest_sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
+       (.reference_gate.analysis_sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
+       (.reference_gate.completed_marker_sha256 | type == "string" and test("^[0-9a-f]{64}$"))
+     end) and
+    .reference_gate.reference_path_recorded == false and
+    .reference_gate.persistence_authorized == false and
     (.rates_mbit | type == "array") and
     ((.rates_mbit | length) == (.rates_mbit | unique | length)) and
     (if .mode == "reference-screen" then
@@ -192,9 +286,18 @@ write_stage_result() {
   jq -n --argjson plan_stage "$stage_json" \
     --arg started_utc "$started_utc" --arg completed_utc "$completed_utc" \
     --arg benchmark_result_sha256 "$benchmark_sha" \
-    '{schema_version:2,status:"PASS",plan_stage:$plan_stage,
+    --arg managed_profile_id "$managed_profile_id" \
+    --arg managed_script_version "$managed_script_version" \
+    --arg managed_state_sha256 "$managed_state_sha256_frozen" \
+    --arg tuning_script_sha256 "$tuning_script_sha256" \
+    '{schema_version:3,status:"PASS",plan_stage:$plan_stage,
       started_utc:$started_utc,completed_utc:$completed_utc,
       benchmark_result_sha256:$benchmark_result_sha256,
+      managed_binding:{profile_id:$managed_profile_id,
+        script_version:$managed_script_version,state:"VERIFIED",
+        port_speed_mbps:200,state_sha256:$managed_state_sha256,
+        tuning_script_sha256:$tuning_script_sha256},
+      benchmark_binding_valid:true,
       qdisc_rate_mbit:$plan_stage.rate_mbit,
       traffic_cap_enforced_by_htb:true,
       qdisc_restored_to_root_fq:true,persistent_shaping_created:false}' \
@@ -267,7 +370,9 @@ run_stage() {
   started_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   log "${current_stage}: condition=${condition} rate=${rate:-none}。"
 
+  verify_session_managed_binding
   "$htb_tool" preflight >"${stage_dir}/htb-preflight-before.log" 2>&1
+  verify_session_managed_binding
   htb_started=1
   "$htb_tool" start --rate "$rate" >"${stage_dir}/htb-start.log" 2>&1
   "$htb_tool" assert-active --rate "$rate" >"${stage_dir}/htb-active-before.log" 2>&1
@@ -317,12 +422,14 @@ run_stage() {
     die "${current_stage} benchmark SHA256SUMS 校验失败。"
   verify_benchmark_completion "$benchmark_dir" ||
     die "${current_stage} benchmark COMPLETED 与 result/manifest hash 不匹配。"
+  verify_benchmark_binding "$benchmark_dir"
+  verify_session_managed_binding
   completed_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   write_stage_result "$stage_dir" "$stage_json" "$started_utc" "$completed_utc"
 }
 
 main() {
-  local parent output_name plan_sha runner_sha tuning_sha htb_sha analyzer_sha
+  local parent output_name plan_sha runner_sha htb_sha analyzer_sha
   local generated_utc stage_json analysis_sha manifest_sha
 
   while [ "$#" -gt 0 ]; do
@@ -375,6 +482,8 @@ main() {
   flock -n 8 || die '另一个候选速率扫描正在运行。'
   [ ! -e "$RUNTIME_STATE_FILE" ] || die "已有活动 HTB 状态：${RUNTIME_STATE_FILE}"
   "$htb_tool" preflight >/dev/null
+  capture_managed_binding
+  tuning_script_sha256="$(sha256sum "$tuning_script" | awk '{print $1}')"
 
   install -d -o root -g root -m 0700 "$output_dir" "${output_dir}/stages"
   session_created=1
@@ -386,25 +495,33 @@ main() {
   plan_file="${output_dir}/plan.json"
   plan_sha="$(sha256sum "$plan_file" | awk '{print $1}')"
   runner_sha="$(sha256sum "${BASH_SOURCE[0]}" | awk '{print $1}')"
-  tuning_sha="$(sha256sum "$tuning_script" | awk '{print $1}')"
   htb_sha="$(sha256sum "$htb_tool" | awk '{print $1}')"
   analyzer_sha="$(sha256sum "$analyzer" | awk '{print $1}')"
   jq -n --arg version "$RUNNER_VERSION" --arg generated_utc "$generated_utc" \
     --arg plan_sha256 "$plan_sha" --arg runner_sha256 "$runner_sha" \
-    --arg tuning_script "$tuning_script" --arg tuning_sha256 "$tuning_sha" \
+    --arg tuning_script "$tuning_script" --arg tuning_sha256 "$tuning_script_sha256" \
     --arg htb_tool "$htb_tool" --arg htb_sha256 "$htb_sha" \
     --arg analyzer "$analyzer" --arg analyzer_sha256 "$analyzer_sha" \
+    --arg managed_profile_id "$managed_profile_id" \
+    --arg managed_script_version "$managed_script_version" \
+    --arg managed_state_file "$MANAGED_STATE_FILE" \
+    --arg managed_state_sha256 "$managed_state_sha256_frozen" \
     --arg host "$benchmark_host" --argjson port "$benchmark_port" \
-    '{schema_version:1,runner_version:$version,started_utc:$generated_utc,
+    '{schema_version:2,runner_version:$version,started_utc:$generated_utc,
       plan_sha256:$plan_sha256,runner_sha256:$runner_sha256,
       tuning_script:{path:$tuning_script,sha256:$tuning_sha256},
       htb_tool:{path:$htb_tool,sha256:$htb_sha256},
       analyzer:{path:$analyzer,sha256:$analyzer_sha256},
+      managed_binding:{state_file:$managed_state_file,
+        profile_id:$managed_profile_id,script_version:$managed_script_version,
+        state:"VERIFIED",port_speed_mbps:200,state_sha256:$managed_state_sha256},
       benchmark_endpoint:{host:$host,port:$port,explicitly_supplied:true},
       persistent_shaping_authorized:false}' >"${output_dir}/session-meta.json"
   chmod 0600 "${output_dir}/plan.json" "${output_dir}/session-meta.json"
   printf 'status=INCOMPLETE\nstage=initialization\nutc=%s\n' "$generated_utc" >"${output_dir}/INCOMPLETE"
   chmod 0600 "${output_dir}/INCOMPLETE"
+  current_stage='tuning-profile-verify'
+  verify_tuning_profile_baseline "${output_dir}/tuning-profile-verify.log"
 
   while IFS= read -r stage_json; do
     run_stage "$stage_json"
@@ -412,7 +529,7 @@ main() {
 
   current_stage='analysis'
   "$analyzer" "$output_dir" >"${output_dir}/sweep-analysis.json.tmp"
-  jq -e '.schema_version == 2 and
+  jq -e '.schema_version == 3 and
     ((.status == "REVIEW_REQUIRED") or (.status == "REVIEW_BLOCKED")) and
     .persistence_authorized == false' \
     "${output_dir}/sweep-analysis.json.tmp" >/dev/null || die '候选扫描分析输出无效。'

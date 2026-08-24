@@ -11,7 +11,7 @@ TOOL_VERSION='0.4.0'
 EXPECTED_IFACE='eth0'
 EXPECTED_PORT_MBIT=200
 EXPECTED_MANAGED_STATE_SCHEMA=4
-EXPECTED_TUNING_VERSION='0.1.0-rc.12'
+EXPECTED_TUNING_VERSION='0.1.0-rc.13'
 DEFAULT_RATE_MBIT=190
 BURST_BYTES=262144
 CBURST_BYTES=32768
@@ -120,7 +120,7 @@ verify_managed_host_baseline() {
      (.profile.id == "debian13-1c2g")) and
     (.network.port_speed_mbps == $port)
   ' "$MANAGED_STATE_FILE" >/dev/null ||
-    die '调优状态不是 rc.12 schema-4 VERIFIED/debian13-1c1g-or-1c2g/200-Mbps 基线。'
+    die '调优状态不是 rc.13 schema-4 VERIFIED/debian13-1c1g-or-1c2g/200-Mbps 基线。'
 
   [ "$(normalized_sysctl net.ipv4.tcp_congestion_control)" = 'bbr' ] ||
     die '当前拥塞控制不是 bbr。'

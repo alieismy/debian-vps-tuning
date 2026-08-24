@@ -6,7 +6,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 
-PLAN_TOOL_VERSION='0.2.0'
+PLAN_TOOL_VERSION='0.3.0'
 DEFAULT_MODE='reference-screen'
 DEFAULT_PORT_RATE_MBIT=200
 DEFAULT_RATES='180,190,195'
@@ -16,6 +16,9 @@ DEFAULT_BENCHMARK_SECONDS=10
 DEFAULT_OMIT_SECONDS=3
 DEFAULT_PARALLEL=1
 DEFAULT_FAMILY=4
+DEFAULT_MINIMUM_RATE_EXPOSURE_PERCENT=90
+DEFAULT_MINIMUM_CPU_IDLE_PERCENT=5
+DEFAULT_MAXIMUM_CPU_STEAL_PERCENT=5
 
 die() { printf '[rate-sweep-plan][FAIL] %s\n' "$*" >&2; exit 2; }
 
@@ -29,13 +32,23 @@ Usage:
                      [--benchmark-seconds 5..120]
                      [--omit-seconds 0..10]
                      [--parallel 1..4] [--family auto|4|6]
+                     [--minimum-rate-exposure-percent 90..100]
+                     [--minimum-cpu-idle-percent 0..100]
+                     [--maximum-cpu-steal-percent 0..100]
+                     [--ack-reference-reviewed
+                      --reference-manifest-sha256 SHA256
+                      --reference-analysis-sha256 SHA256
+                      --reference-completed-sha256 SHA256]
 
 The default reference-screen mode emits only repeated HTB200+fq stages. Use
 candidate-sweep explicitly, after manual review of the reference screen, to
 compare lower HTB rates. Every stage uses the same HTB class + fq topology;
 only rate/ceil changes. The command only prints JSON and never runs traffic,
 changes qdisc, selects an iperf3 endpoint, recommends a production rate, or
-authorizes persistent shaping.
+authorizes persistent shaping. A sample is ineligible unless HTB reports a
+positive overlimits delta, sender goodput reaches the frozen exposure ratio,
+and the CPU/softnet/link resource gate remains valid. Candidate mode also
+requires hash-bound proof of one completed, manually reviewed reference run.
 EOF
 }
 
@@ -48,12 +61,22 @@ validate_uint_range() {
   printf '%s\n' "$value"
 }
 
+validate_sha256() {
+  local name="$1" value="$2"
+  [[ "$value" =~ ^[0-9a-f]{64}$ ]] || die "${name} 必须是 64 位小写十六进制 SHA-256。"
+}
+
 main() {
   local mode="$DEFAULT_MODE" port_rate="$DEFAULT_PORT_RATE_MBIT"
   local rates_csv="$DEFAULT_RATES" rates_supplied=0
   local samples="$DEFAULT_SAMPLES_PER_STATE" cooldown="$DEFAULT_COOLDOWN_SECONDS"
   local seconds="$DEFAULT_BENCHMARK_SECONDS" omit="$DEFAULT_OMIT_SECONDS"
   local parallel="$DEFAULT_PARALLEL" family="$DEFAULT_FAMILY"
+  local minimum_rate_exposure_percent="$DEFAULT_MINIMUM_RATE_EXPOSURE_PERCENT"
+  local minimum_cpu_idle_percent="$DEFAULT_MINIMUM_CPU_IDLE_PERCENT"
+  local maximum_cpu_steal_percent="$DEFAULT_MAXIMUM_CPU_STEAL_PERCENT"
+  local reference_review_acknowledged=0 reference_manifest_sha256=''
+  local reference_analysis_sha256='' reference_completed_sha256=''
   local rates_json='[]' generated_utc plan_tool_sha256 rate_count input_rate_count
 
   while [ "$#" -gt 0 ]; do
@@ -67,6 +90,26 @@ main() {
       --omit-seconds) [ "$#" -ge 2 ] || die '--omit-seconds 缺少参数。'; omit="$2"; shift 2 ;;
       --parallel) [ "$#" -ge 2 ] || die '--parallel 缺少参数。'; parallel="$2"; shift 2 ;;
       --family) [ "$#" -ge 2 ] || die '--family 缺少参数。'; family="$2"; shift 2 ;;
+      --minimum-rate-exposure-percent)
+        [ "$#" -ge 2 ] || die '--minimum-rate-exposure-percent 缺少参数。'
+        minimum_rate_exposure_percent="$2"; shift 2 ;;
+      --minimum-cpu-idle-percent)
+        [ "$#" -ge 2 ] || die '--minimum-cpu-idle-percent 缺少参数。'
+        minimum_cpu_idle_percent="$2"; shift 2 ;;
+      --maximum-cpu-steal-percent)
+        [ "$#" -ge 2 ] || die '--maximum-cpu-steal-percent 缺少参数。'
+        maximum_cpu_steal_percent="$2"; shift 2 ;;
+      --ack-reference-reviewed)
+        reference_review_acknowledged=1; shift ;;
+      --reference-manifest-sha256)
+        [ "$#" -ge 2 ] || die '--reference-manifest-sha256 缺少参数。'
+        reference_manifest_sha256="$2"; shift 2 ;;
+      --reference-analysis-sha256)
+        [ "$#" -ge 2 ] || die '--reference-analysis-sha256 缺少参数。'
+        reference_analysis_sha256="$2"; shift 2 ;;
+      --reference-completed-sha256)
+        [ "$#" -ge 2 ] || die '--reference-completed-sha256 缺少参数。'
+        reference_completed_sha256="$2"; shift 2 ;;
       -h | --help | help) usage; return 0 ;;
       *) die "未知参数：$1" ;;
     esac
@@ -81,11 +124,24 @@ main() {
   seconds="$(validate_uint_range benchmark-seconds "$seconds" 5 120)"
   omit="$(validate_uint_range omit-seconds "$omit" 0 10)"
   parallel="$(validate_uint_range parallel "$parallel" 1 4)"
+  minimum_rate_exposure_percent="$(validate_uint_range minimum-rate-exposure-percent "$minimum_rate_exposure_percent" 90 100)"
+  minimum_cpu_idle_percent="$(validate_uint_range minimum-cpu-idle-percent "$minimum_cpu_idle_percent" 0 100)"
+  maximum_cpu_steal_percent="$(validate_uint_range maximum-cpu-steal-percent "$maximum_cpu_steal_percent" 0 100)"
   case "$family" in auto | 4 | 6) ;; *) die 'family 只能为 auto、4 或 6。' ;; esac
 
   if [ "$mode" = 'reference-screen' ]; then
     [ "$rates_supplied" -eq 0 ] || die 'reference-screen 不接受 --rates；它只测试 HTB200 reference。'
+    [ "$reference_review_acknowledged" -eq 0 ] &&
+      [ -z "$reference_manifest_sha256" ] &&
+      [ -z "$reference_analysis_sha256" ] &&
+      [ -z "$reference_completed_sha256" ] ||
+      die 'reference-screen 不接受 candidate reference 复核参数。'
   else
+    [ "$reference_review_acknowledged" -eq 1 ] ||
+      die 'candidate-sweep 必须显式提供 --ack-reference-reviewed。'
+    validate_sha256 reference-manifest-sha256 "$reference_manifest_sha256"
+    validate_sha256 reference-analysis-sha256 "$reference_analysis_sha256"
+    validate_sha256 reference-completed-sha256 "$reference_completed_sha256"
     [[ "$rates_csv" =~ ^[0-9]+(,[0-9]+){2,7}$ ]] ||
       die 'rates 必须包含 3–8 个逗号分隔的整数，不能包含空格。'
     input_rate_count="$(awk -F, '{print NF}' <<<"$rates_csv")"
@@ -114,6 +170,13 @@ main() {
     --argjson benchmark_seconds "$seconds" \
     --argjson omit_seconds "$omit" \
     --argjson parallel "$parallel" \
+    --argjson minimum_rate_exposure_percent "$minimum_rate_exposure_percent" \
+    --argjson minimum_cpu_idle_percent "$minimum_cpu_idle_percent" \
+    --argjson maximum_cpu_steal_percent "$maximum_cpu_steal_percent" \
+    --argjson reference_review_acknowledged "$reference_review_acknowledged" \
+    --arg reference_manifest_sha256 "$reference_manifest_sha256" \
+    --arg reference_analysis_sha256 "$reference_analysis_sha256" \
+    --arg reference_completed_sha256 "$reference_completed_sha256" \
     --arg family "$family" '
       def stage($label; $condition; $phase; $rate; $sample; $round):
         {label:$label,condition:$condition,phase:$phase,rate_mbit:$rate,
@@ -142,17 +205,31 @@ main() {
       ([$stages[].rate_cap_mbit] | add) as $rate_seconds_sum |
       ($rate_seconds_sum * 125000 * $per_stage_seconds) as $payload_upper_bound_bytes |
       {
-        schema_version:2,
+        schema_version:3,
         plan_tool_version:$tool_version,
         plan_tool_sha256:$plan_tool_sha256,
         generated_utc:$generated_utc,
         mode:$mode,
         scope:{provider_port_mbit:$port_rate_mbit,direction:"upload",persistent_shaping_authorized:false},
         reference_rate_mbit:$port_rate_mbit,
+        reference_gate:{
+          external_reference_required:($mode == "candidate-sweep"),
+          review_acknowledged:($reference_review_acknowledged == 1),
+          evidence_manifest_sha256:(if $reference_manifest_sha256 == "" then null else $reference_manifest_sha256 end),
+          analysis_sha256:(if $reference_analysis_sha256 == "" then null else $reference_analysis_sha256 end),
+          completed_marker_sha256:(if $reference_completed_sha256 == "" then null else $reference_completed_sha256 end),
+          reference_path_recorded:false,
+          persistence_authorized:false},
         rates_mbit:$rates,
         benchmark:{seconds:$benchmark_seconds,omit_seconds:$omit_seconds,
           parallel:$parallel,family:$family,direction:"upload"},
         controls:{samples_per_state:$samples,minimum_cooldown_seconds:$cooldown_seconds,
+          minimum_rate_exposure_ratio:($minimum_rate_exposure_percent/100),
+          minimum_cpu_idle_percent:$minimum_cpu_idle_percent,
+          maximum_cpu_steal_percent:$maximum_cpu_steal_percent,
+          require_zero_softnet_drops:true,
+          require_zero_softnet_time_squeeze:true,
+          require_zero_link_drops_errors:true,
           order:(if $mode == "reference-screen" then "repeated-htb200-reference"
                  else "forward-reverse-candidates-between-repeated-htb200-references" end),
           explicit_authorized_endpoint_required:true,
@@ -170,7 +247,7 @@ main() {
         stages:$stages,
         interpretation:{
           retransmission_metric:"use exact iperf3 sender bytes and retransmits_per_gib; do not infer packet-loss percentage",
-          reference_boundary:"review HTB200 samples first; lower-rate scanning requires a separate explicit candidate-sweep plan",
+          reference_boundary:"review HTB200 samples first; lower-rate scanning requires a separate hash-bound and explicitly acknowledged candidate-sweep plan",
           candidate_boundary:"analysis may produce a review shortlist only; a full A/B/A and reverse-window replication remain required",
           success_boundary:"completion does not prove provider policing, business-path improvement, or authorize persistence"
         }

@@ -107,10 +107,10 @@ for invalid_port in 99 1001 20000 abc 20.0 ''; do
   fi
 done
 
-release_is_newer v0.1.0-rc.12 0.1.0-rc.11 || fail 'rc.12 was not newer than rc.11'
+release_is_newer v0.1.0-rc.13 0.1.0-rc.12 || fail 'rc.13 was not newer than rc.12'
 release_is_newer v0.1.0 0.1.0-rc.999999999 || fail 'stable release was not newer than prerelease'
 release_is_newer v0.2.0-rc.1 0.1.9 || fail 'minor release comparison failed'
-if release_is_newer v0.1.0-rc.11 0.1.0-rc.12; then
+if release_is_newer v0.1.0-rc.12 0.1.0-rc.13; then
   fail 'downgrade tag was considered newer'
 fi
 if parse_release_version latest >/dev/null 2>&1; then
@@ -126,6 +126,7 @@ release_fixture="$test_root/releases.json"
 cat >"$release_fixture" <<'EOF_RELEASES'
 [
   {"tag_name":"v0.1.0-rc.9","draft":false},
+  {"tag_name":"v0.1.0-rc.13","draft":false},
   {"tag_name":"v0.1.0-rc.12","draft":false},
   {"tag_name":"v0.1.0-rc.10","draft":false},
   {"tag_name":"v9.9.9","draft":true},
@@ -137,9 +138,9 @@ EOF_RELEASES
 # The Windows Git Bash test environment does not provide jq. This fixture
 # isolates semantic version selection; JSON validation is exercised on VPS.
 jq() {
-  printf '%s\n' v0.1.0-rc.9 v0.1.0-rc.12 v0.1.0-rc.10 v0.2.0 v1.0.0 nightly
+  printf '%s\n' v0.1.0-rc.9 v0.1.0-rc.13 v0.1.0-rc.12 v0.1.0-rc.10 v0.2.0 v1.0.0 nightly
 }
-[ "$(select_highest_release_tag "$release_fixture" 0.1.0-rc.11)" = 'v0.1.0-rc.12' ] ||
+[ "$(select_highest_release_tag "$release_fixture" 0.1.0-rc.12)" = 'v0.1.0-rc.13' ] ||
   fail 'rc channel did not select its highest prerelease'
 unset -f jq
 jq() {
@@ -219,8 +220,8 @@ fi
 
 ACTION=''
 CLI_UPDATE_TAG=''
-parse_arguments update --target v0.1.0-rc.12
-if [ "$ACTION" != update ] || [ "$CLI_UPDATE_TAG" != v0.1.0-rc.12 ]; then
+parse_arguments update --target v0.1.0-rc.13
+if [ "$ACTION" != update ] || [ "$CLI_UPDATE_TAG" != v0.1.0-rc.13 ]; then
   fail 'update --target parsing failed'
 fi
 
@@ -412,11 +413,11 @@ exit 0
 EOF_TARGET_RUNNER
 chmod 0700 "$source_runner" "$target_runner"
 export UPDATE_TEST_LOG="$update_log"
-resolve_update_release() { UPDATE_TAG_SELECTED='v0.1.0-rc.12'; }
+resolve_update_release() { UPDATE_TAG_SELECTED='v0.1.0-rc.13'; }
 resolve_installed_profile() { SOURCE_PROFILE_PATH="$source_runner"; SOURCE_PROFILE_SHA256='source-hash'; }
 resolve_update_controller() { UPDATE_CONTROLLER_PATH="$target_runner"; UPDATE_CONTROLLER_SHA256='target-hash'; }
 STATE_PROFILE='debian12-1c1g'
-STATE_VERSION='0.1.0-rc.11'
+STATE_VERSION='0.1.0-rc.12'
 STATE_PORT_SPEED_MBPS=200
 update_output="$(run_update)"
 expected_update_log=$'source:verify\ntarget:preflight --port 200:port=200:update_preflight=1'

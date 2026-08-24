@@ -4,6 +4,31 @@
 
 ## [Unreleased]
 
+## [0.1.0-rc.13] - 2026-08-24
+
+### Changed
+
+- TcpQuality 固定基线升级到 release `v1.00013`、commit `73606e2460bde21bb2e253842971f8ca8c9eb51c`；同时固定三个脚本、`rootfs-manifest.json`、amd64 rootfs 大小/哈希，以及 rootfs 内 TCP_INFO helper 和两份 eBPF 重传脚本的审计元数据。
+- `tcpquality-evidence.sh` 要求显式选择 `local-evidence` 或 `public-report`，并确认上游会临时创建/删除 `iptables`/`ip6tables` 目标计数链。前者固定使用 `--debug --no-rank-upload`，仅保留本地 debug archive；后者明确允许报告与附属 debug bundle 上传，不再让上传和主机交互边界隐含在上游默认值中。
+- 每轮 TcpQuality 证据增加唯一 debug archive 及哈希，并生成稳定的 `retransmission-evidence.tsv`：优先记录 eBPF 序列/SKB 去重来源，其次记录 socket TCP_INFO；回退到整机 `nstat` 时标记 `MEASUREMENT_DEGRADED`，不得作为流级重传率或调优因果证据。
+- `diagnose` 和 TcpQuality 主机快照只读增加 `tcp_window_scaling`、`tcp_moderate_rcvbuf`、`tcp_slow_start_after_idle`、`tcp_mtu_probing`、`tcp_limit_output_bytes`、`tcp_notsent_lowat`；TcpQuality 快照另保存默认/参考出口、`/proc/stat`、`/proc/net/softnet_stat` 和 `ss -s`。`diagnose` 在前两个值不为 `1` 或不可读时只输出告警，不自动修改。
+- 总控、六份 profile、installer 与 HTB 实验器基线同步为 `0.1.0-rc.13`；状态 schema 保持 4。已发布 rc.12 的 tag、Release 和资产保持不变。
+- HTB rate plan/runner/analyzer 升级为 schema 3：流量前执行真实 profile `verify`，冻结 managed profile/version/state/port/state SHA-256，并要求每个 benchmark metadata 再次匹配；candidate plan 还绑定已人工复核 reference 的 manifest、analysis 和 completion 摘要，直接生成计划时也必须显式提供 ack 与三项摘要字段；每样本新增正 `overlimits`、最低 sender 速率暴露、CPU idle/steal、softnet 和接口零异常硬门禁，任一失败均 `REVIEW_BLOCKED` 且 shortlist 为空。
+- `experiment-plan.sh` 改为一个调用只生成一个显式 `window-id` 的 `aba` 或 `bab` 三阶段窗口；移除组合式 `--repeat-cycles`，要求反向窗口使用不同 ID、新证据目录和独立 operator invocation。
+- `dvt htb` 改用 `/usr/local/sbin/htb-aggregate-experiment` 稳定执行器；开始新实验前要求它与当前 Release 资产 SHA-256 一致，避免 watchdog 因从版本目录直接启动而拒绝建立。新增 VMISS Basic 1C1G / 200 Mbps 完整 campaign SOP；旧 v0.2.1 文档明确降级为历史审计材料。
+
+### Safety
+
+- 17 个受管 sysctl、BBR + fq、自动缓冲矩阵、swap、journald 和 NOFILE 均未改变；未加入 `tcp_slow_start_after_idle=0`、全局 `tcp_notsent_lowat`、更大 socket buffer、固定 MTU/MSS 或持久化 HTB。
+- 只读新增字段不进入 `PROFILE_SYSCTL_KEYS`，异常告警也不改变受管状态的 `verify` 语义。目标 VPS 是否支持 eBPF/BTF 必须由运行证据确认；`tcp_info_*` 或 `nstat` 回退不会被误报为 eBPF 成功。
+- HTB200 reference、candidate sweep、两个正式窗口和真实代理复验均保持非持久化；reference 人工复核、shortlist 和两个窗口通过也不自动授权开机整形。正式 TcpQuality B stage 固定 `TCPQUALITY_RUNS=1`，避免越过 40 分钟 watchdog。
+
+### Validation
+
+- 新增固定资产常量、模式、debug archive 与 flow-level/降级解析 fixture；补齐 `1C1G / 200 Mbps / 200 ms → 16 MiB` 自动缓冲 fixture，以及两个非受管 TCP 默认值的正常、异常和不可读告警 fixture；六份 profile 仍由单一模板生成。最终本地门禁和目标 VPS 运行验收状态见 [验证矩阵](docs/validation.md)。
+- HTB fixture 增加错 profile 在流量前阻断、benchmark/reference 绑定、零 overlimits、低 offered load、高 CPU steal、畸形 CPU/softnet 计数拒绝、稳定执行器同/异 hash、独立 `aba`/`bab` window 和旧组合参数拒绝测试；文档同步 schema 3、三类 gate 与 Basic 完整顺序。
+- 本轮未连接目标 VPS，未运行真实 TcpQuality、iperf3 或 HTB；旧 commit 的整机 `TcpRetransSegs` 增量与 v1.00013 流级百分比属于不同测量基线，不能直接拼接比较。
+
 ## [0.1.0-rc.12] - 2026-08-18
 
 ### Added

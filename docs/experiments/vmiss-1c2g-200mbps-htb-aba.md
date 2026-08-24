@@ -1,7 +1,7 @@
 # VMISS 1C2G / 200 Mbps 临时 HTB A/B/A 实验 SOP
 
 状态：待目标机执行  
-适用版本：`debian-vps-tuning 0.1.0-rc.12`、HTB 执行器 `0.4.0`
+适用版本：`debian-vps-tuning 0.1.0-rc.13`、HTB 执行器 `0.4.0`
 
 目标：比较根 `fq` 基线（A）与 `HTB 190 Mbit/s + fq` 聚合整形（B）对吞吐、重传和时延的影响。  
 边界：只改变 `eth0` 出站 qdisc；不改 sysctl、路由、防火墙、代理服务或持久化配置。
@@ -13,13 +13,13 @@ reference 可比较且经人工复核的候选速率。本文件当前固定候�
 
 ## 1. 已冻结基线与证据边界
 
-本 SOP 只适用于已经完成 rc.12 生命周期验证的以下目标类别：
+本 SOP 只适用于已经完成 rc.13 生命周期验证的以下目标类别：
 
 - Debian 13.6（trixie），Linux `6.12.101+deb13-cloud-amd64`，KVM；
 - 1 vCPU、约 1974 MiB RAM、15 GB ext4；
 - 套餐上限 200 Mbps，默认路由接口唯一且为 `eth0`；
 - `/var/lib/proxy-vps-tuning/state.json` 为 schema 4、`VERIFIED`、
-  `script_version=0.1.0-rc.12`、`profile.id=debian13-1c2g`、
+  `script_version=0.1.0-rc.13`、`profile.id=debian13-1c2g`、
   `network.port_speed_mbps=200`；
 - 运行态为 BBR、根 `fq`、`tcp_rmem=4096 131072 16777216`、
   `tcp_wmem=4096 65536 16777216`，且 `proxy-vps-fq.service` active。
@@ -51,7 +51,7 @@ install -o root -g root -m 0755 \
   /root/htb-aggregate-experiment.sh \
   /usr/local/sbin/htb-aggregate-experiment
 
-EXPECTED_HTB_SHA256='7f0671db7b768ed70799432bed6a28ef61c72dacfcc6a60aa97c5cc41a59c037'
+EXPECTED_HTB_SHA256='04f79a62b0c12187e36fe797bc7388c4a46250adc7c045450f2377aad50aaf11'
 printf '%s  %s\n' "$EXPECTED_HTB_SHA256" \
   /usr/local/sbin/htb-aggregate-experiment | sha256sum -c -
 
@@ -65,18 +65,24 @@ printf '%s  %s\n' "$EXPECTED_HTB_SHA256" \
 ```bash
 export EXP_DIR='/root/vmiss-1c2g-htb-evidence/A1-B1-A2-attempt1'
 install -d -o root -g root -m 0700 "$EXP_DIR"
+WINDOW_ID='vmiss-1c2g-aba-attempt1'
 
 bash /root/debian-vps-tuning/experiments/htb-aggregate/experiment-plan.sh \
+  --window-id "$WINDOW_ID" \
+  --window-order aba \
   --candidate-rate 190 \
-  --repeat-cycles 1 \
   --cooldown-seconds 300 \
   --control-rate none >"$EXP_DIR/experiment-plan.json"
 
-jq -e '.mode == "read-only-plan" and
+jq -e --arg id "$WINDOW_ID" '
+  .schema_version == 2 and .mode == "read-only-plan" and
+  .window.id == $id and .window.order == "aba" and
+  .window.evidence_directory_must_be_new == true and
   .candidate.rate_mbit == 190 and
-  .candidate.repeat_cycles == 1 and
   (.candidate.stages | map(.label)) == ["A1-fq","B1-htb-candidate","A2-fq"] and
-  .controls.minimum_cooldown_seconds == 300' \
+  .controls.minimum_cooldown_seconds == 300 and
+  .controls.exactly_one_window_per_plan == true and
+  .controls.persistent_shaping_authorized == false' \
   "$EXP_DIR/experiment-plan.json" >/dev/null
 ```
 
@@ -111,13 +117,33 @@ smoke-test 只证明短时切换、watchdog 和恢复链路通过，不证明性
 
 ## 6. A1/B1/A2 执行函数
 
-先把已冻结参数写成 Bash 数组，例如 `FROZEN_ARGUMENTS=(...)`。以下函数在三个 stage 中复用同一数组；不得在 stage 之间改变参数。
+使用 rc.13 `tcpquality-evidence.sh`，不要再直接运行旧 `/root/tcpquality/runTcpQuality`。执行前按
+README 准备并校验固定 TcpQuality `v1.00013`、commit 和 rootfs。HTB watchdog 为 40 分钟，
+历史单次 TcpQuality 约 22 分钟，因此每个 stage 必须显式使用 `TCPQUALITY_RUNS=1`；需要提高
+重复性时重复完整窗口，不能在一个 B stage 中连续三轮。
+
+```bash
+TQ_HARNESS='/root/debian-vps-tuning/tcpquality-evidence.sh'
+TQ_PIN_DIR='/root/tcpquality-pinned-73606e2460bde21bb2e253842971f8ca8c9eb51c'
+TQ_COMMIT='73606e2460bde21bb2e253842971f8ca8c9eb51c'
+TQ_ROOTFS_SHA256='c624b5cc611b7177c42608110024764e59dfd0a88150257137ae4e6d7f9f9d18'
+
+test -x "$TQ_HARNESS"
+test -d "$TQ_PIN_DIR"
+(cd "$TQ_PIN_DIR" && sha256sum -c SHA256SUMS)
+```
+
+以下函数在三个 stage 中复用完全相同的模式、轮数、节点接口和负载参数；每个证据目录必须
+不存在。`local-evidence` 不上传报告，但固定上游 `--all` 仍会产生真实网络流量、加载临时
+eBPF，并创建/删除目标 iptables/ip6tables 计数链。
 
 ```bash
 run_one_block() (
   set -Eeuo pipefail
   local label="$1"
   local block_dir="$EXP_DIR/$label"
+  local evidence_dir="$block_dir/tcpquality"
+  test ! -e "$block_dir"
   install -d -o root -g root -m 0700 "$block_dir"
   date -u +%Y-%m-%dT%H:%M:%SZ >"$block_dir/start-utc.txt"
   uname -a >"$block_dir/uname.txt"
@@ -127,9 +153,23 @@ run_one_block() (
   tc -s -d qdisc show dev eth0 >"$block_dir/qdisc-before.txt"
   tc -s -d class show dev eth0 >"$block_dir/class-before.txt"
 
-  [ "${#FROZEN_ARGUMENTS[@]}" -gt 0 ]
-  /root/tcpquality/runTcpQuality "${FROZEN_ARGUMENTS[@]}" \
-    >"$block_dir/tcpquality.log" 2>&1
+  env \
+    TCPQUALITY_PIN_DIR="$TQ_PIN_DIR" \
+    TCPQUALITY_EVIDENCE_DIR="$evidence_dir" \
+    TCPQUALITY_COMMIT="$TQ_COMMIT" \
+    TCPQUALITY_ROOTFS_SHA256="$TQ_ROOTFS_SHA256" \
+    TCPQUALITY_MODE='local-evidence' \
+    TCPQUALITY_ACK_TRANSIENT_FIREWALL=1 \
+    TCPQUALITY_RUNS=1 \
+    TCPQUALITY_DELAY_SECONDS=0 \
+    TCPQUALITY_COUNT=30 \
+    TCPQUALITY_PACKET_SIZE=0 \
+    TCPQUALITY_PARALLEL=16 \
+    bash "$TQ_HARNESS" >"$block_dir/harness-console.log" 2>&1
+
+  test -f "$evidence_dir/COMPLETED"
+  test ! -e "$evidence_dir/INCOMPLETE"
+  (cd "$evidence_dir" && sha256sum -c SHA256SUMS)
 
   uptime >"$block_dir/uptime-after.txt"
   tc -s -d qdisc show dev eth0 >"$block_dir/qdisc-after.txt"
@@ -137,38 +177,39 @@ run_one_block() (
   date -u +%Y-%m-%dT%H:%M:%SZ >"$block_dir/end-utc.txt"
 )
 
-run_b1_htb() (
+run_htb_block() (
   set -Eeuo pipefail
-  local B1_START_LOG="$EXP_DIR/B1-start.log"
-  local B1_AFTER_LOG="$EXP_DIR/B1-after.log"
-  local b1_active=0
-  cleanup_b1() {
-    if [ "$b1_active" -eq 1 ]; then
+  local label="$1"
+  local HTB_START_LOG="$EXP_DIR/${label}-start.log"
+  local HTB_AFTER_LOG="$EXP_DIR/${label}-after.log"
+  local htb_active=0
+  cleanup_htb_block() {
+    if [ "$htb_active" -eq 1 ]; then
       /usr/local/sbin/htb-aggregate-experiment stop \
-        2>&1 | tee -a "$B1_AFTER_LOG" || true
+        2>&1 | tee -a "$HTB_AFTER_LOG" || true
     fi
   }
-  trap cleanup_b1 EXIT
+  trap cleanup_htb_block EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
 
   set +e
   /usr/local/sbin/htb-aggregate-experiment start --rate 190 \
-    2>&1 | tee "$B1_START_LOG"
-  B1_START_RC=${PIPESTATUS[0]}
+    2>&1 | tee "$HTB_START_LOG"
+  HTB_START_RC=${PIPESTATUS[0]}
   set -e
-  [ "$B1_START_RC" -eq 0 ]
-  b1_active=1
+  [ "$HTB_START_RC" -eq 0 ]
+  htb_active=1
   /usr/local/sbin/htb-aggregate-experiment assert-active --rate 190 \
-    2>&1 | tee -a "$B1_START_LOG"
-  run_one_block B1-htb-candidate
+    2>&1 | tee -a "$HTB_START_LOG"
+  run_one_block "$label"
   /usr/local/sbin/htb-aggregate-experiment assert-active --rate 190 \
-    2>&1 | tee -a "$B1_AFTER_LOG"
+    2>&1 | tee -a "$HTB_AFTER_LOG"
   /usr/local/sbin/htb-aggregate-experiment stop \
-    2>&1 | tee -a "$B1_AFTER_LOG"
-  b1_active=0
+    2>&1 | tee -a "$HTB_AFTER_LOG"
+  htb_active=0
   /usr/local/sbin/htb-aggregate-experiment preflight \
-    2>&1 | tee -a "$B1_AFTER_LOG"
+    2>&1 | tee -a "$HTB_AFTER_LOG"
   trap - EXIT INT TERM
 )
 ```
@@ -178,7 +219,7 @@ run_b1_htb() (
 ```bash
 run_one_block A1-fq
 sleep 300
-run_b1_htb
+run_htb_block B1-htb-candidate
 sleep 300
 run_one_block A2-fq
 ```
@@ -196,6 +237,44 @@ run_one_block A2-fq
 - CPU、load、软中断、OOM 和业务错误。
 
 只有 A1 与 A2 足够一致，且 B1 的改善超过测量波动、没有引入不可接受副作用，才能认为 190 Mbit/s 候选值得进入另一个可比窗口的反向复验。一次 `A1 → B1 → A2` 不能授权持久化 HTB，也不能直接推出 180 Mbit/s 更优。
+
+首窗结果关闭后，另一个可比时段必须单独生成反向窗口，使用新的 window ID 和证据目录：
+
+```bash
+export EXP_DIR_2='/root/vmiss-1c2g-htb-evidence/B2-A3-B3-attempt1'
+test ! -e "$EXP_DIR_2"
+install -d -o root -g root -m 0700 "$EXP_DIR_2"
+WINDOW_ID_2='vmiss-1c2g-bab-attempt1'
+
+bash /root/debian-vps-tuning/experiments/htb-aggregate/experiment-plan.sh \
+  --window-id "$WINDOW_ID_2" \
+  --window-order bab \
+  --candidate-rate 190 \
+  --cooldown-seconds 300 \
+  --control-rate none >"$EXP_DIR_2/experiment-plan.json"
+
+jq -e --arg id "$WINDOW_ID_2" '
+  .schema_version == 2 and .window.id == $id and .window.order == "bab" and
+  (.candidate.stages | map(.label)) ==
+    ["B2-htb-candidate","A3-fq","B3-htb-candidate"] and
+  .controls.opposite_order_requires_distinct_window_id == true
+' "$EXP_DIR_2/experiment-plan.json" >/dev/null
+```
+
+执行时让相同采集函数指向新的 `EXP_DIR_2`：
+
+```bash
+EXP_DIR="$EXP_DIR_2"
+run_htb_block B2-htb-candidate
+sleep 300
+# 人工空闲、面板流量和磁盘门禁通过后：
+run_one_block A3-fq
+sleep 300
+# 再次通过人工门禁后：
+run_htb_block B3-htb-candidate
+```
+
+不得用旧 `--repeat-cycles 2` 把两个窗口合成一次连续运行。
 
 ## 8. 回退与收尾
 
@@ -220,8 +299,15 @@ systemctl is-active proxy-vps-fq.service
 最终生成证据清单：
 
 ```bash
-find "$EXP_DIR" -type f -print0 | sort -z | xargs -0 sha256sum \
-  >"$EXP_DIR/SHA256SUMS"
+(
+  cd "$EXP_DIR"
+  find . -type f ! -path './SHA256SUMS' ! -path './SHA256SUMS.tmp' -print0 |
+    sort -z |
+    xargs -0 sha256sum >SHA256SUMS.tmp
+  test -s SHA256SUMS.tmp
+  mv -f SHA256SUMS.tmp SHA256SUMS
+  sha256sum -c SHA256SUMS
+)
 chmod -R go-rwx "$EXP_DIR"
 ```
 
