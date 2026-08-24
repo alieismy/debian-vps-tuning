@@ -124,7 +124,8 @@ verify_tuning_profile_baseline() {
 }
 
 verify_benchmark_binding() {
-  local benchmark_dir="$1" metadata="${benchmark_dir}/benchmark-meta.json"
+  local benchmark_dir="$1" metadata
+  metadata="${benchmark_dir}/benchmark-meta.json"
   [ -s "$metadata" ] || die 'benchmark 缺少 benchmark-meta.json，无法验证 profile/state 绑定。'
   jq -e \
     --arg profile "$managed_profile_id" \

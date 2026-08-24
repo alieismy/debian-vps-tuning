@@ -215,15 +215,21 @@ record_retransmission_evidence() {
   local run="$1" archive="$2" entries entry content
   local probe_type server_ip result metric_source tcp_info_retrans tcp_info_data_segs_out
   local tcp_info_segs_out tcp_info_bytes_retrans ebpf_unique ratio_denominator ratio
-  local fallback_reason tcp_info_mode trace_available trace_valid measurement_status
+  local fallback_reason trace_available trace_valid measurement_status loop_status=0
   entries="${EVIDENCE_DIR}/.retrans-meta-r${run}.list"
-  tar -tzf "$archive" | awk '/\/speedtest\.[^/]+\/result\.(download|upload)\.meta$/ {print}' >"$entries" || return 1
+  if ! tar -tzf "$archive" | awk '/\/speedtest\.[^/]+\/result\.(download|upload)\.meta$/ {print}' >"$entries"; then
+    rm -f -- "$entries"
+    return 1
+  fi
   [ -s "$entries" ] || { rm -f -- "$entries"; return 1; }
   while IFS= read -r entry; do
     case "/$entry/" in
-      */../* | /*//* ) rm -f -- "$entries"; return 1 ;;
+      */../* | /*//* ) loop_status=1; break ;;
     esac
-    content="$(tar -xOzf "$archive" "$entry")" || { rm -f -- "$entries"; return 1; }
+    if ! content="$(tar -xOzf "$archive" "$entry")"; then
+      loop_status=1
+      break
+    fi
     probe_type="$(meta_value probe_type <<<"$content")"
     server_ip="$(meta_value server_ip <<<"$content")"
     result="$(meta_value result <<<"$content")"
@@ -232,7 +238,6 @@ record_retransmission_evidence() {
     tcp_info_data_segs_out="$(meta_value tcp_info_data_segs_out <<<"$content")"
     tcp_info_segs_out="$(meta_value tcp_info_segs_out <<<"$content")"
     tcp_info_bytes_retrans="$(meta_value tcp_info_bytes_retrans <<<"$content")"
-    tcp_info_mode="$(meta_value tcp_info_mode <<<"$content")"
     trace_available="$(meta_value retrans_trace_available <<<"$content")"
     trace_valid="$(meta_value retrans_trace_valid <<<"$content")"
     ebpf_unique="$(meta_value retrans_trace_unique <<<"$content")"
@@ -269,14 +274,18 @@ record_retransmission_evidence() {
         ;;
     esac
     [ "$result" != 'failed' ] || measurement_status='PROBE_FAILED'
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    if ! printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
       "$run" "${archive##*/}" "$entry" "${probe_type:--}" "${server_ip:--}" "${result:--}" \
       "${metric_source:--}" "${tcp_info_retrans:--}" "${tcp_info_data_segs_out:--}" \
       "${tcp_info_segs_out:--}" "${tcp_info_bytes_retrans:--}" "${ebpf_unique:--}" \
       "$ratio_denominator" "$ratio" "$fallback_reason" "$measurement_status" \
-      >>"${EVIDENCE_DIR}/retransmission-evidence.tsv" || { rm -f -- "$entries"; return 1; }
+      >>"${EVIDENCE_DIR}/retransmission-evidence.tsv"; then
+      loop_status=1
+      break
+    fi
   done <"$entries"
   rm -f -- "$entries"
+  [ "$loop_status" -eq 0 ]
 }
 
 run_one() {

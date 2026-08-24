@@ -337,6 +337,7 @@ grep -Fq '.measurement_gate.valid == true' "$htb_wrapper"
 grep -Fq 'never creates persistent HTB' "$htb_wrapper"
 grep -Fq "HTB_INSTALL_PATH='/usr/local/sbin/htb-aggregate-experiment'" "$htb_wrapper"
 grep -Fq '稳定 HTB 执行器与当前 Release 资产 SHA-256 不一致' "$htb_wrapper"
+# shellcheck disable=SC2016
 grep -Fq -- '--htb-tool "$htb_tool"' "$htb_wrapper"
 grep -Fq 'rate_cap * 125000 * (seconds + omit) * direction_count * samples' "$probe_tool"
 ( command sha256sum -c SHA256SUMS >/dev/null )
@@ -351,12 +352,12 @@ cp experiments/htb-aggregate/htb-aggregate-experiment.sh \
 cp experiments/htb-aggregate/htb-aggregate-experiment.sh \
   "$htb_bind_fixture/installed-htb"
 if ! (
-  inherited_path="$PATH"
   # shellcheck disable=SC1090
   source "$htb_wrapper"
-  PATH="$inherited_path"
+  # shellcheck disable=SC2034
   bundle_dir="$htb_bind_fixture/bundle"
   HTB_INSTALL_PATH="$htb_bind_fixture/installed-htb"
+  # shellcheck disable=SC2329
   stat() {
     case "${2:-}" in
       %u) printf '0\n' ;;
@@ -365,6 +366,7 @@ if ! (
     esac
   }
   bind_stable_htb_tool 1
+  # shellcheck disable=SC2154
   [ "$htb_tool" = "$HTB_INSTALL_PATH" ]
 ); then
   printf 'HTB wrapper rejected a hash-matched stable executor\n' >&2
@@ -372,12 +374,12 @@ if ! (
 fi
 cp experiments/htb-aggregate/experiment-plan.sh "$htb_bind_fixture/installed-htb"
 if (
-  inherited_path="$PATH"
   # shellcheck disable=SC1090
   source "$htb_wrapper"
-  PATH="$inherited_path"
+  # shellcheck disable=SC2034
   bundle_dir="$htb_bind_fixture/bundle"
   HTB_INSTALL_PATH="$htb_bind_fixture/installed-htb"
+  # shellcheck disable=SC2329
   stat() {
     case "${2:-}" in
       %u) printf '0\n' ;;
