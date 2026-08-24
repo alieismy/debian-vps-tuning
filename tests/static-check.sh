@@ -465,10 +465,13 @@ if ! (
   PATH="$htb_route_path"
   # shellcheck disable=SC2034
   bundle_dir="$htb_route_fixture/bundle"
+  # shellcheck disable=SC2034
   tuning_script="$htb_route_fixture/tuning.sh"
   htb_tool="$htb_route_fixture/htb-tool"
+  # shellcheck disable=SC2034
   pass_args=(--host 192.0.2.1 --output-dir "$htb_route_fixture/reference-output")
   run_scan reference-screen >/dev/null
+  # shellcheck disable=SC2034
   pass_args=(--host 192.0.2.1 --output-dir "$htb_route_fixture/candidate-output"
     --reference-evidence "$htb_route_fixture/reference" --ack-reference-reviewed)
   run_scan candidate-sweep >/dev/null
