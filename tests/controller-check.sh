@@ -232,6 +232,13 @@ if [ "$ACTION" != reconfigure ] || [ "$ACTION_FROM_MENU" -ne 1 ]; then
 fi
 
 ACTION=''
+ACTION_FROM_MENU=0
+choose_action_interactively <<<'12' >/dev/null
+if [ "$ACTION" != rollback ] || [ "$ACTION_FROM_MENU" -ne 1 ]; then
+  fail 'menu option 12 did not select rollback'
+fi
+
+ACTION=''
 ACTION_ARGS=()
 parse_arguments probe --host probe.example --rate-cap 200 --yes
 if [ "$ACTION" != probe ] || [ "${#ACTION_ARGS[@]}" -ne 5 ] ||
