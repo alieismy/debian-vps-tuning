@@ -124,7 +124,7 @@ Strict verification requires `x-ui.service` to be active, and checks that the sy
 
 ### 4. Execute Read-Only Upgrade Check from Early rc Versions
 
-After rc.14 is published, VPS instances managed by rc.9 through rc.13 can download its main entry and execute `update`. It reads the resource tier and port bandwidth from state, verifies the current profile, target `SHA256SUMS`, and target main entry, then runs the current version's `verify` and the target's read-only `update-preflight`. `update` does not perform rollback, purge, apply, reconfigure, or reboot, and never replaces previously published assets.
+After rc.14 is published, VPS instances managed by rc.9 through rc.13 can download its main entry and execute `update`. It reads the resource tier and port bandwidth from state, verifies the current profile, target `SHA256SUMS`, and target main entry, then runs the current version's `verify` and the target's read-only `update-preflight`. The output includes the fixed URLs, SHA-256 values, and migration order required for the maintenance window. `update` does not perform rollback, purge, apply, reconfigure, or reboot, and never replaces previously published assets.
 
 The main entry, `SHA256SUMS`, and profile are an indivisible Release package. **Assets from different versions must not be placed in the same directory.** For example, do not place rc.14 `SHA256SUMS` and profile next to the rc.13 main entry; otherwise integrity checks reject execution without falling back to an online download. Use independent `mktemp -d` directories for each version.
 
