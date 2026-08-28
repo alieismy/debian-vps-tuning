@@ -6,6 +6,31 @@
 
 本文件是 `AGENTS.md` 指定的唯一项目阶段备忘入口，用于记录每轮对话工作的闭环状态，以及当前阶段不主动展开的后续候选事项。它不构成需求批准、生产变更授权、发布授权或下一阶段启动决定；控制规则以 [项目级 AGENTS.md](../AGENTS.md) 为准，具体验证事实以 [验证矩阵](validation.md) 和对应发布说明为准。
 
+## 本轮记录：2026-08-28（rc.14 GitHub Pre-release 发布）
+
+### 已完成及证据
+
+- 已从中断点继续 rc.14 发布任务，在独立分支完成 28 个候选文件的本地生成一致性、Bash 语法、控制器/事务/恢复 fixture、HTB fixture、manifest、staged whitespace 及新增敏感模式检查；Windows 本地的 root installer 门禁按预期报告 `installer check requires root`，没有冒充通过。
+- 已通过 PR #9 合并到 `master`。CodeRabbit 首轮实质评审提出英文 README 输出契约不同步和 rollback 菜单槽位未锁定两项意见；两项均经源码复核后修复，唯一 inline thread 已回复并解决。修复后的 push/PR CI、合并后 `master` CI 和 tag CI 均通过，覆盖 Ubuntu root installer lifecycle 与固定 ShellCheck 0.11.0；后续 CodeRabbit 状态为 `Review rate limited`，未作为第二轮实质评审证据。
+- 已创建 annotated tag `v0.1.0-rc.14`，tag object 为 `aedee73b7b4d2f87d4f810e61b97eec866aa14c6`，解引用目标为 PR 合并提交 `a0ce7c5bdbedd903ec2f027b7041939f2b6242d7`；reviewed head、合并提交与 tag 的 tree 一致。
+- 已发布非 Draft 的 GitHub Pre-release，共 17 项资产。公开反向下载后，资产名称和 `uploaded` 状态为 17/17，GitHub API SHA-256 与下载字节为 17/17；重建 GitHub 扁平化的 HTB 逻辑目录后，`SHA256SUMS` 中 15 项运行资产全部通过。
+- 公开 `install.sh` 与 `SHA256SUMS` 直连下载最终均为 HTTP 200；SHA-256 分别为 `1aef3822996421b05e5055d87289502c0ddb01149454aa3ba27a825d40ecf909` 和 `4449dc8fe73e23020c8b2d38066435d7c3429ad821f43beac9ac8b965f1241de`。发布页正文与仓库发布说明一致，验证临时目录已清理。
+
+### 未完成门禁
+
+- 本次发布证明源码、生成资产、fixture、PR/CI、tag、Release 元数据和公开资产字节完整性；不证明 rc.14 在目标 VPS 上的首次安装、rc.13→rc.14 迁移、同值/100→200/200→500/500→200 重配置、故障恢复、重启持久性或真实代理链路。
+- TcpQuality、真实 HTB 窗口和性能改善仍未取得 rc.14 最终哈希绑定的目标环境证据；Pre-release 发布不得替代这些运行与业务层门禁。
+- GitHub Actions 成功作业对 `actions/checkout@v4` 报告 Node.js 20 弃用告警，并说明当前由 runner 强制使用 Node.js 24。该告警未造成 rc.14 CI 失败，但 workflow 依赖升级尚未评估或实施。
+
+### 延期事项变化
+
+- 新增“CI 依赖维护”延期候选：后续独立核对 `actions/checkout` 当前受支持 major、迁移影响和供应链边界；本轮不为消除非阻断告警临时改变已经通过并发布的 workflow。
+- 网络安全专项、全面生产加固和复杂测试工程的既有延期状态不变；无其他新增延期事项。
+
+### 当前成熟度判断
+
+rc.14 的本地、Linux CI、PR/评审、完整性链和公开 Pre-release 发布闭环已经完成；项目仍处于验证和文档闭环阶段。当前主要缺口是目标 VPS 生命周期、重配置/恢复、重启持久性和真实业务链路，不满足阶段切换条件。
+
 ## 本轮记录：2026-08-28（验证与文档闭环工作指南）
 
 ### 已完成及证据
@@ -49,6 +74,7 @@
 | 网络安全专项 | 对 installer、Release 供应链、受管状态与恢复证据开展独立威胁建模和专项审计 | 当前项目已有固定摘要、文件所有权和事务恢复控制，但尚无独立安全专项结论 | 不直接阻断当前 rc.14 验证与文档闭环，展开后会改变工作重心 | 当前发布验证闭合，或发现可复现的供应链/权限/恢复安全缺陷 | 延期候选，未授权 |
 | 全面生产加固 | 评估 SSH、主机防火墙、入侵防护、面板暴露面、备份与救援通道等生产基线 | 这些控制依赖实际服务商、网络拓扑、面板和运维边界，不属于现有调优 profile 的已批准管理面 | 需要独立威胁边界和目标环境授权，不能由调优项目顺带接管 | 用户决定进入生产加固阶段并提供目标边界与授权 | 延期候选，未授权 |
 | 复杂测试工程 | 评估跨 Linux 环境的 root lifecycle 自动化、进程中断/掉电故障注入和真实 VPS 编排框架 | 当前已有静态与 fixture 门禁，但最终仍依赖 Linux root、目标 VPS 和重启后的分层证据 | 新建测试基础设施超出当前最小闭环；本阶段先完成已有门禁和人工目标机矩阵 | 现有验证矩阵基本闭合，且重复人工验证成本或遗漏风险成为主要瓶颈 | 延期候选，未授权 |
+| CI 依赖维护 | 评估并升级 `actions/checkout@v4` 到当前受支持 major | rc.14 的 `master` 与 tag CI 成功，但 GitHub runner 报告 Node.js 20 弃用并临时强制使用 Node.js 24 | 不阻断当前候选，版本选择和迁移影响需依据届时官方 Action 文档独立核对 | GitHub 不再兼容当前版本、告警升级为失败，或进入下一次 CI 维护窗口 | 延期候选，未授权 |
 
 ### 当前成熟度判断
 
