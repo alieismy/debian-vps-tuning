@@ -2,7 +2,7 @@
 
 状态：实验性、非发布资产、非持久化。
 
-适用基线：Debian 13、`debian13-1c1g`/`debian13-1c2g`、rc.13 schema 4、
+适用基线：Debian 13、`debian13-1c1g`/`debian13-1c2g`、rc.14 schema 4、
 `VERIFIED`、200 Mbps、静态根 `fq`。
 
 目标：先用重复 HTB200 reference 判断额定端口附近的测量与重传是否稳定；只有人工确认仍需
@@ -48,7 +48,7 @@ receiver goodput 只作交叉核对。
 
 只有全部满足才继续：
 
-1. 已冻结 rc.13 apply、重启后 verify 和幂等证据；managed state 仍为 schema 4、
+1. 已冻结 rc.14 apply、重启后 verify 和幂等证据；managed state 仍为 schema 4、
    `VERIFIED`、200 Mbps，profile 为 `debian13-1c1g` 或 `debian13-1c2g`。
 2. v0.4.0 `htb-aggregate-experiment` 已按对应 SOP 完成固定 hash 校验、preflight 和
    10 秒 smoke-test；当前工具 SHA-256 以仓库和上传时现场计算结果为准。
@@ -143,7 +143,7 @@ sha256sum \
 `preflight` 中隐式安装或替换执行器。活动实验期间禁止替换该文件。
 
 实际 profile 路径按目标机调整，但必须是与管理状态相符、固定 hash、root 所有且不能被
-group/world 写入的 rc.13 standalone profile。runner 会在流量前执行该 profile 的只读
+group/world 写入的 rc.14 standalone profile。runner 会在流量前执行该 profile 的只读
 `verify`，并冻结 managed profile/version/state/port/state SHA-256；每个 benchmark 的
 `benchmark-meta.json` 必须再次匹配该绑定。不要使用可变分支 URL 直接执行脚本。
 

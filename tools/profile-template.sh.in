@@ -7,7 +7,7 @@ IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 
-SCRIPT_VERSION='0.1.0-rc.13'
+SCRIPT_VERSION='0.1.0-rc.14'
 STATE_SCHEMA_VERSION=4
 LEGACY_STATE_SCHEMA_VERSION=3
 NAMESPACE='proxy-vps'
@@ -39,6 +39,7 @@ FSTAB_FILE='/etc/fstab'
 
 PORT_SPEED_MBPS_INPUT="${PORT_SPEED_MBPS:-}"
 BUFFER_TARGET_RTT_MS_INPUT="${BUFFER_TARGET_RTT_MS:-}"
+BUF_MAX_ENV_WAS_SET="${BUF_MAX+x}"
 BUF_MAX_INPUT="${BUF_MAX:-auto}"
 ENABLE_SWAP="${ENABLE_SWAP:-1}"
 SWAP_MB_INPUT="${SWAP_MB:-$DEFAULT_SWAP_MB}"
@@ -76,6 +77,9 @@ XUI_NOFILE_LIMIT=65536
 STATE_DIR="/var/lib/${NAMESPACE}-tuning"
 STATE_FILE="${STATE_DIR}/state.json"
 QDISC_STATE_FILE="${STATE_DIR}/qdisc-original.json"
+RECONFIGURE_STATE_BACKUP="${STATE_DIR}/reconfigure-state.previous.json"
+RECONFIGURE_SYSCTL_BACKUP="${STATE_DIR}/reconfigure-sysctl.previous.conf"
+RECONFIGURE_FAILURE_EVIDENCE="${STATE_DIR}/reconfigure-last-failure.json"
 LOCK_FILE="/run/lock/${NAMESPACE}-tuning.lock"
 
 EXIT_USAGE=2
@@ -85,6 +89,9 @@ EXIT_VERIFY=5
 EXIT_ROLLBACK=6
 WARNINGS=0
 APPLY_ACTIVE=0
+RECONFIGURE_ACTIVE=0
+RECONFIGURE_STATE_BACKUP_SHA256=''
+RECONFIGURE_SYSCTL_BACKUP_SHA256=''
 PROVIDER_SYSCTL_TRANSFER_REQUIRED=0
 
 PROFILE_SYSCTL_KEYS=(
@@ -256,11 +263,11 @@ check_resource_profile() {
 
 state_exists() { [ -f "$STATE_FILE" ]; }
 
-state_file_is_valid() {
-  local result
-  [ -f "$STATE_FILE" ] && [ ! -L "$STATE_FILE" ] || return 1
-  [ "$(stat -c '%u' "$STATE_FILE" 2>/dev/null || true)" = '0' ] || return 1
-  [ -s "$STATE_FILE" ] || return 1
+state_file_path_is_valid() {
+  local candidate="$1" result
+  [ -f "$candidate" ] && [ ! -L "$candidate" ] || return 1
+  [ "$(stat -c '%u' "$candidate" 2>/dev/null || true)" = '0' ] || return 1
+  [ -s "$candidate" ] || return 1
   result="$(jq -c -e -s --argjson schema "$STATE_SCHEMA_VERSION" \
     --argjson legacy_schema "$LEGACY_STATE_SCHEMA_VERSION" --argjson update_preflight "$UPDATE_PREFLIGHT" \
     --arg version "$SCRIPT_VERSION" --arg profile "$PROFILE_ID" \
@@ -318,9 +325,11 @@ state_file_is_valid() {
           (.provider_sysctl_transfer.keys | length == 0)
         end)
       else true end))
-  ' "$STATE_FILE" 2>/dev/null)" || return 1
+  ' "$candidate" 2>/dev/null)" || return 1
   [ "$result" = 'true' ]
 }
+
+state_file_is_valid() { state_file_path_is_valid "$STATE_FILE"; }
 
 validate_state_file() {
   state_exists || return 0
@@ -418,10 +427,19 @@ check_preflight_state() {
   fi
   case "$phase" in
     VERIFIED | APPLIED)
-      die "$EXIT_CONFLICT" "检测到现有管理状态 ${phase}；已安装配置请执行 verify。确需更改参数时，请用 PURGE_CREATED_SWAP=1 执行 rollback，重启后再用新参数执行 preflight/apply。"
+      die "$EXIT_CONFLICT" "检测到现有管理状态 ${phase}；已安装配置请执行 verify。仅变更服务商端口带宽时请使用 reconfigure；其他参数仍需用 PURGE_CREATED_SWAP=1 执行 rollback，重启后再用新参数执行 preflight/apply。"
       ;;
     SWAP_RETAINED)
       die "$EXIT_CONFLICT" '检测到 SWAP_RETAINED；重新应用前请用 PURGE_CREATED_SWAP=1 执行 rollback。'
+      ;;
+    RECONFIGURING)
+      die "$EXIT_CONFLICT" '检测到未完成的带宽重配置事务；请先执行 recover，不要直接 apply。'
+      ;;
+    DEGRADED)
+      if jq -e '.reconfigure | type == "object"' "$STATE_FILE" >/dev/null 2>&1; then
+        die "$EXIT_CONFLICT" '检测到带宽重配置恢复失败后的 DEGRADED 状态；请先执行 recover，不要直接 apply。'
+      fi
+      die "$EXIT_CONFLICT" '检测到 DEGRADED；请先按现有版本执行 rollback，不要直接 apply。'
       ;;
     *)
       die "$EXIT_CONFLICT" "检测到未完成的事务状态 ${phase}；请先执行 rollback，不要直接 apply。"
@@ -836,8 +854,8 @@ refresh_managed_files() {
   state_file_is_valid || { error 'managed_files 更新后状态校验失败。'; return 1; }
 }
 
-write_sysctl_profile() {
-  write_managed_file "$SYSCTL_FILE" 0644 <<EOF_SYSCTL || return 1
+render_sysctl_profile() {
+  cat <<EOF_SYSCTL
 ${MANAGED_MARKER}
 # ${PROFILE_LABEL}; provider cap ${PORT_SPEED_MBPS} Mbps; target RTT ${BUFFER_TARGET_RTT_MS} ms.
 net.core.default_qdisc = fq
@@ -858,6 +876,10 @@ net.ipv4.tcp_keepalive_intvl = 30
 net.ipv4.tcp_keepalive_probes = 5
 vm.swappiness = 20
 EOF_SYSCTL
+}
+
+write_sysctl_profile() {
+  render_sysctl_profile | write_managed_file "$SYSCTL_FILE" 0644
 }
 
 write_journal_profile() {
@@ -1090,6 +1112,20 @@ normalize_sysctl_value() {
   awk '{$1=$1; print}' <<<"$1"
 }
 
+managed_sysctl_value() {
+  local key="$1"
+  awk -F= -v k="$key" '{
+    name=$1
+    gsub(/^[[:space:]]+|[[:space:]]+$/, "", name)
+    if (name == k) {
+      value=$2
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+      print value
+      exit
+    }
+  }' "$SYSCTL_FILE"
+}
+
 verify_current_qdiscs() {
   local iface root_kind bad failures=0
   while IFS= read -r iface; do
@@ -1144,19 +1180,15 @@ verify_provider_sysctl_transfer() {
   [ "$failures" -eq 0 ]
 }
 
-verify_settings() {
+verify_settings_common() {
   local failures=0 key expected actual qhash unit_path
-  state_exists || { error '当前主机尚未安装本项目配置；请先执行 preflight，确认通过后再执行 apply。'; return 1; }
-  validate_state_file || return 1
-  [ "$(state_get '.state')" = 'APPLIED' ] || [ "$(state_get '.state')" = 'VERIFIED' ] || {
-    error "当前状态不允许 verify：$(state_get '.state')"; return 1; }
   verify_provider_sysctl_transfer || failures=$((failures + 1))
   if ! report_sysctl_conflicts; then
     error '检测到本项目以外的重复 sysctl 配置归属；verify 拒绝通过。'
     failures=$((failures + 1))
   fi
   for key in "${PROFILE_SYSCTL_KEYS[@]}"; do
-    expected="$(awk -F= -v k="$key" '{name=$1; gsub(/^[[:space:]]+|[[:space:]]+$/, "", name); if(name==k){v=$2; gsub(/^[[:space:]]+|[[:space:]]+$/, "", v); print v; exit}}' "$SYSCTL_FILE")"
+    expected="$(managed_sysctl_value "$key")"
     actual="$(sysctl -n "$key" 2>/dev/null || true)"
     expected="$(normalize_sysctl_value "$expected")"
     actual="$(normalize_sysctl_value "$actual")"
@@ -1178,7 +1210,330 @@ verify_settings() {
   verify_proxy_services || failures=$((failures + 1))
   show_xray_socket_options
   [ "$failures" -eq 0 ] || return 1
+}
+
+verify_settings() {
+  local phase verify_state_file="${1:-$STATE_FILE}"
+  local STATE_FILE="$verify_state_file"
+  state_exists || { error '当前主机尚未安装本项目配置；请先执行 preflight，确认通过后再执行 apply。'; return 1; }
+  validate_state_file || return 1
+  phase="$(state_get '.state')"
+  [ "$phase" = 'APPLIED' ] || [ "$phase" = 'VERIFIED' ] || {
+    error "当前状态不允许 verify：${phase}"; return 1; }
+  if jq -e '.reconfigure | type == "object"' "$STATE_FILE" >/dev/null 2>&1; then
+    error '当前状态仍包含未完成的带宽重配置事务；请先执行 recover。'
+    return 1
+  fi
+  verify_settings_common || return 1
   info "验证通过；警告数：${WARNINGS}。"
+}
+
+reconfigure_source_state_is_valid() {
+  jq -e --arg path "$SYSCTL_FILE" --argjson min_buf "$MIN_BUF_MAX" --argjson max_buf "$MAX_BUF_MAX" \
+    --argjson numerator "$BUFFER_TARGET_NUMERATOR" --argjson denominator "$BUFFER_TARGET_DENOMINATOR" '
+    def valid_integer($minimum; $maximum):
+      type == "number" and . == floor and . >= $minimum and . <= $maximum;
+    .state == "VERIFIED" and
+    ((.reconfigure? // null) == null) and
+    (.network | type == "object") and
+    (.network.port_speed_mbps | valid_integer(100; 1000)) and
+    (.network.target_rtt_ms | valid_integer(20; 500)) and
+    (.network.buffer_target_numerator == $numerator) and
+    (.network.buffer_target_denominator == $denominator) and
+    (.network.buffer_max_bytes | valid_integer($min_buf; $max_buf)) and
+    (.network.buffer_mode | IN("auto", "auto-clamped", "explicit")) and
+    ([.managed_files[] | select(.path == $path)] | length == 1)
+  ' "$STATE_FILE" >/dev/null
+}
+
+sysctl_profile_matches_network() {
+  local port="$1" rtt="$2" buf="$3"
+  grep -Fqx "# ${PROFILE_LABEL}; provider cap ${port} Mbps; target RTT ${rtt} ms." "$SYSCTL_FILE" || return 1
+  [ "$(normalize_sysctl_value "$(managed_sysctl_value net.core.rmem_max)")" = "$buf" ] || return 1
+  [ "$(normalize_sysctl_value "$(managed_sysctl_value net.core.wmem_max)")" = "$buf" ] || return 1
+  [ "$(normalize_sysctl_value "$(managed_sysctl_value net.ipv4.tcp_rmem)")" = "4096 131072 ${buf}" ] || return 1
+  [ "$(normalize_sysctl_value "$(managed_sysctl_value net.ipv4.tcp_wmem)")" = "4096 65536 ${buf}" ] || return 1
+}
+
+reconfigure_metadata_file_is_valid() {
+  local candidate="$1"
+  jq -e --arg state_backup "$RECONFIGURE_STATE_BACKUP" \
+    --arg sysctl_backup "$RECONFIGURE_SYSCTL_BACKUP" --arg sysctl_path "$SYSCTL_FILE" \
+    --argjson min_buf "$MIN_BUF_MAX" --argjson max_buf "$MAX_BUF_MAX" \
+    --argjson numerator "$BUFFER_TARGET_NUMERATOR" --argjson denominator "$BUFFER_TARGET_DENOMINATOR" '
+    def valid_hash: type == "string" and test("^[0-9a-f]{64}$");
+    def valid_integer($minimum; $maximum):
+      type == "number" and . == floor and . >= $minimum and . <= $maximum;
+    def valid_network:
+      type == "object" and
+      (.port_speed_mbps | valid_integer(100; 1000)) and
+      (.target_rtt_ms | valid_integer(20; 500)) and
+      (.buffer_target_numerator == $numerator) and
+      (.buffer_target_denominator == $denominator) and
+      (.buffer_max_bytes | valid_integer($min_buf; $max_buf)) and
+      (.buffer_mode | IN("auto", "auto-clamped", "explicit"));
+    (.state | IN("RECONFIGURING", "DEGRADED")) and
+    (.reconfigure | type == "object") and
+    (.reconfigure.schema_version == 1) and
+    (.reconfigure.old_network | valid_network) and
+    (.reconfigure.target_network | valid_network) and
+    (.reconfigure.old_network.port_speed_mbps != .reconfigure.target_network.port_speed_mbps) and
+    (.reconfigure.old_network.target_rtt_ms == .reconfigure.target_network.target_rtt_ms) and
+    (.reconfigure.old_network.buffer_target_numerator == .reconfigure.target_network.buffer_target_numerator) and
+    (.reconfigure.old_network.buffer_target_denominator == .reconfigure.target_network.buffer_target_denominator) and
+    (.reconfigure.sysctl_values_changed ==
+      (.reconfigure.old_network.buffer_max_bytes != .reconfigure.target_network.buffer_max_bytes)) and
+    (.reconfigure.state_backup_path == $state_backup) and
+    (.reconfigure.sysctl_backup_path == $sysctl_backup) and
+    (.reconfigure.state_backup_sha256 | valid_hash) and
+    (.reconfigure.sysctl_backup_sha256 | valid_hash) and
+    ((.reconfigure.candidate_sysctl_sha256 == null) or
+      (.reconfigure.candidate_sysctl_sha256 | valid_hash)) and
+    (.reconfigure.started_at | type == "string" and length > 0) and
+    ([.managed_files[] | select(.path == $sysctl_path)] | length == 1) and
+    (if .reconfigure.candidate_sysctl_sha256 == null then
+      .network == .reconfigure.old_network and
+      ([.managed_files[] | select(.path == $sysctl_path)][0].sha256 == .reconfigure.sysctl_backup_sha256)
+    else
+      .network == .reconfigure.target_network and
+      ([.managed_files[] | select(.path == $sysctl_path)][0].sha256 == .reconfigure.candidate_sysctl_sha256)
+    end)
+  ' "$candidate" >/dev/null
+}
+
+reconfigure_candidate_is_valid() {
+  local expected actual
+  reconfigure_metadata_file_is_valid "$STATE_FILE" || return 1
+  expected="$(jq -er '.reconfigure.candidate_sysctl_sha256 | select(type == "string")' "$STATE_FILE")" || return 1
+  actual="$(sha256sum "$SYSCTL_FILE" | awk '{print $1}')" || return 1
+  [ "$actual" = "$expected" ]
+}
+
+prepare_reconfigure_backups() {
+  local state_hash sysctl_hash path
+  for path in "$RECONFIGURE_STATE_BACKUP" "$RECONFIGURE_SYSCTL_BACKUP"; do
+    if [ -e "$path" ] || [ -L "$path" ]; then
+      error "带宽重配置备份路径已存在：${path}"
+      return 1
+    fi
+  done
+  if ! install -o root -g root -m 0600 "$STATE_FILE" "$RECONFIGURE_STATE_BACKUP"; then
+    return 1
+  fi
+  if ! install -o root -g root -m 0600 "$SYSCTL_FILE" "$RECONFIGURE_SYSCTL_BACKUP"; then
+    rm -f -- "$RECONFIGURE_STATE_BACKUP"
+    return 1
+  fi
+  if ! state_hash="$(sha256sum "$RECONFIGURE_STATE_BACKUP" | awk '{print $1}')" ||
+    ! sysctl_hash="$(sha256sum "$RECONFIGURE_SYSCTL_BACKUP" | awk '{print $1}')"; then
+    rm -f -- "$RECONFIGURE_STATE_BACKUP" "$RECONFIGURE_SYSCTL_BACKUP"
+    return 1
+  fi
+  if [ "$state_hash" != "$(sha256sum "$STATE_FILE" | awk '{print $1}')" ] ||
+    [ "$sysctl_hash" != "$(sha256sum "$SYSCTL_FILE" | awk '{print $1}')" ]; then
+    error '带宽重配置备份哈希与原文件不一致。'
+    rm -f -- "$RECONFIGURE_STATE_BACKUP" "$RECONFIGURE_SYSCTL_BACKUP"
+    return 1
+  fi
+  RECONFIGURE_STATE_BACKUP_SHA256="$state_hash"
+  RECONFIGURE_SYSCTL_BACKUP_SHA256="$sysctl_hash"
+}
+
+cleanup_reconfigure_backups() {
+  local path
+  for path in "$RECONFIGURE_STATE_BACKUP" "$RECONFIGURE_SYSCTL_BACKUP"; do
+    [ -e "$path" ] || [ -L "$path" ] || continue
+    [ -f "$path" ] && [ ! -L "$path" ] &&
+      [ "$(stat -c '%u' "$path" 2>/dev/null || true)" = '0' ] || {
+        error "拒绝清理类型或所有权异常的带宽重配置备份：${path}"
+        return 1
+      }
+  done
+  rm -f -- "$RECONFIGURE_STATE_BACKUP" "$RECONFIGURE_SYSCTL_BACKUP"
+}
+
+begin_reconfigure_transaction() {
+  local target_network="$1" values_changed="$2" tmp now
+  now="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+  tmp="$(mktemp "${STATE_FILE}.tmp.XXXXXX")" || return 1
+  if ! jq --argjson target "$target_network" --argjson values_changed "$values_changed" \
+    --arg state_backup "$RECONFIGURE_STATE_BACKUP" --arg sysctl_backup "$RECONFIGURE_SYSCTL_BACKUP" \
+    --arg state_hash "$RECONFIGURE_STATE_BACKUP_SHA256" --arg sysctl_hash "$RECONFIGURE_SYSCTL_BACKUP_SHA256" \
+    --arg now "$now" '
+      .state="RECONFIGURING" |
+      .reconfigure={schema_version:1,old_network:.network,target_network:$target,
+        sysctl_values_changed:$values_changed,state_backup_path:$state_backup,
+        sysctl_backup_path:$sysctl_backup,state_backup_sha256:$state_hash,
+        sysctl_backup_sha256:$sysctl_hash,candidate_sysctl_sha256:null,started_at:$now} |
+      .timestamps.last_update=$now
+    ' "$STATE_FILE" >"$tmp" || ! chmod 0600 "$tmp" || ! chown root:root "$tmp" ||
+    ! state_file_path_is_valid "$tmp" || ! reconfigure_metadata_file_is_valid "$tmp" ||
+    ! atomic_json_commit "$STATE_FILE" "$tmp"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+}
+
+update_reconfigure_candidate_state() {
+  local sysctl_hash tmp now
+  sysctl_hash="$(sha256sum "$SYSCTL_FILE" | awk '{print $1}')" || return 1
+  now="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+  tmp="$(mktemp "${STATE_FILE}.tmp.XXXXXX")" || return 1
+  if ! jq --arg path "$SYSCTL_FILE" --arg hash "$sysctl_hash" --arg now "$now" '
+      .network=.reconfigure.target_network |
+      .managed_files=(.managed_files | map(if .path == $path then .sha256=$hash else . end)) |
+      .reconfigure.candidate_sysctl_sha256=$hash |
+      .timestamps.last_update=$now
+    ' "$STATE_FILE" >"$tmp" || ! chmod 0600 "$tmp" || ! chown root:root "$tmp" ||
+    ! state_file_path_is_valid "$tmp" || ! reconfigure_metadata_file_is_valid "$tmp" ||
+    ! atomic_json_commit "$STATE_FILE" "$tmp"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+}
+
+finalize_reconfigure_state() {
+  local tmp now
+  now="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+  tmp="$(mktemp "${STATE_FILE}.tmp.XXXXXX")" || return 1
+  if ! jq --arg now "$now" '
+      .state="VERIFIED" |
+      .timestamps.last_reconfigured=$now |
+      .timestamps.last_update=$now |
+      del(.reconfigure)
+    ' "$STATE_FILE" >"$tmp" || ! chmod 0600 "$tmp" || ! chown root:root "$tmp" ||
+    ! state_file_path_is_valid "$tmp" ||
+    ! jq -e '.state == "VERIFIED" and ((.reconfigure? // null) == null)' "$tmp" >/dev/null ||
+    ! atomic_json_commit "$STATE_FILE" "$tmp"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+}
+
+write_reconfigure_failure_evidence() {
+  local transaction_json="$1" trigger="$2" original_rc="$3" recovered="$4" stage="$5" tmp
+  tmp="$(mktemp "${RECONFIGURE_FAILURE_EVIDENCE}.tmp.XXXXXX")" || return 1
+  if ! jq -n --arg trigger "$trigger" --arg stage "$stage" --arg now "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+    --argjson original_rc "$original_rc" --argjson recovered "$recovered" --argjson transaction "$transaction_json" '
+      {schema_version:1,trigger:$trigger,stage:$stage,original_exit_code:$original_rc,
+       recovered:$recovered,recorded_at:$now,reconfigure:$transaction}
+    ' >"$tmp" || ! atomic_json_commit "$RECONFIGURE_FAILURE_EVIDENCE" "$tmp"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+}
+
+restore_reconfigure_sysctl_backup() {
+  local tmp
+  tmp="$(mktemp "${SYSCTL_FILE}.reconfigure-restore.XXXXXX")" || return 1
+  if ! install -o root -g root -m 0644 "$RECONFIGURE_SYSCTL_BACKUP" "$tmp" ||
+    ! mv -f -- "$tmp" "$SYSCTL_FILE"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+}
+
+restore_reconfigure_state_backup() {
+  local tmp
+  tmp="$(mktemp "${STATE_FILE}.tmp.XXXXXX")" || return 1
+  if ! cp -- "$RECONFIGURE_STATE_BACKUP" "$tmp" || ! chmod 0600 "$tmp" || ! chown root:root "$tmp" ||
+    ! state_file_path_is_valid "$tmp" || ! jq -e '.state == "VERIFIED" and ((.reconfigure? // null) == null)' "$tmp" >/dev/null ||
+    ! atomic_json_commit "$STATE_FILE" "$tmp"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+}
+
+reconfigure_backups_are_valid() {
+  local state_hash sysctl_hash path
+  reconfigure_metadata_file_is_valid "$STATE_FILE" || return 1
+  for path in "$RECONFIGURE_STATE_BACKUP" "$RECONFIGURE_SYSCTL_BACKUP"; do
+    [ -f "$path" ] && [ ! -L "$path" ] || return 1
+    [ "$(stat -c '%u' "$path" 2>/dev/null || true)" = '0' ] || return 1
+    [ "$(stat -c '%a' "$path" 2>/dev/null || true)" = '600' ] || return 1
+  done
+  state_hash="$(sha256sum "$RECONFIGURE_STATE_BACKUP" | awk '{print $1}')" || return 1
+  sysctl_hash="$(sha256sum "$RECONFIGURE_SYSCTL_BACKUP" | awk '{print $1}')" || return 1
+  [ "$state_hash" = "$(jq -r '.reconfigure.state_backup_sha256' "$STATE_FILE")" ] || return 1
+  [ "$sysctl_hash" = "$(jq -r '.reconfigure.sysctl_backup_sha256' "$STATE_FILE")" ] || return 1
+  state_file_path_is_valid "$RECONFIGURE_STATE_BACKUP" || return 1
+  jq -e --arg path "$SYSCTL_FILE" --arg sysctl_hash "$sysctl_hash" --slurpfile current "$STATE_FILE" '
+    .state == "VERIFIED" and
+    ((.reconfigure? // null) == null) and
+    .network == $current[0].reconfigure.old_network and
+    ([.managed_files[] | select(.path == $path and .sha256 == $sysctl_hash)] | length == 1)
+  ' "$RECONFIGURE_STATE_BACKUP" >/dev/null || return 1
+  grep -Fq "$MANAGED_MARKER" "$RECONFIGURE_SYSCTL_BACKUP"
+}
+
+record_reconfigure_recovery_failure() {
+  local transaction_json="$1" trigger="$2" original_rc="$3" stage="$4"
+  state_set_phase 'DEGRADED' || error '无法把失败的带宽重配置事务标记为 DEGRADED。'
+  write_reconfigure_failure_evidence "$transaction_json" "$trigger" "$original_rc" false "$stage" ||
+    error "无法写入带宽重配置失败证据：${RECONFIGURE_FAILURE_EVIDENCE}"
+  return 0
+}
+
+recover_incomplete_reconfigure() {
+  local trigger="${1:-manual-recover}" original_rc="${2:-0}" phase transaction_json stage='metadata-validation'
+  state_exists || { error '没有需要恢复的带宽重配置事务。'; return 1; }
+  state_file_is_valid || { error 'state.json 无法通过当前版本校验；拒绝猜测恢复。'; return 1; }
+  phase="$(state_get '.state')"
+  case "$phase" in RECONFIGURING | DEGRADED) ;; *) error "当前状态 ${phase} 不是可恢复的带宽重配置事务。"; return 1 ;; esac
+  transaction_json="$(jq -c '.reconfigure | select(type == "object")' "$STATE_FILE" 2>/dev/null || true)"
+  [ -n "$transaction_json" ] || { error '状态中缺少带宽重配置恢复元数据。'; return 1; }
+  if ! reconfigure_backups_are_valid; then
+    error '带宽重配置备份或其哈希无效；拒绝覆盖当前配置。'
+    record_reconfigure_recovery_failure "$transaction_json" "$trigger" "$original_rc" "$stage"
+    return 1
+  fi
+
+  stage='restore-sysctl-file'
+  if ! restore_reconfigure_sysctl_backup; then
+    error '无法原子恢复重配置前的 sysctl 管理文件。'
+    record_reconfigure_recovery_failure "$transaction_json" "$trigger" "$original_rc" "$stage"
+    return 1
+  fi
+  stage='apply-restored-sysctl'
+  if ! sysctl -p "$SYSCTL_FILE" >/dev/null; then
+    error '已恢复旧 sysctl 文件，但无法重新应用其参数。'
+    record_reconfigure_recovery_failure "$transaction_json" "$trigger" "$original_rc" "$stage"
+    return 1
+  fi
+  stage='verify-restored-configuration'
+  if ! verify_settings "$RECONFIGURE_STATE_BACKUP" >/dev/null; then
+    error '旧 sysctl 已恢复，但按旧状态执行完整验证失败。'
+    record_reconfigure_recovery_failure "$transaction_json" "$trigger" "$original_rc" "$stage"
+    return 1
+  fi
+  stage='restore-state'
+  if ! restore_reconfigure_state_backup; then
+    error '旧配置验证通过，但无法原子恢复旧 state.json。'
+    record_reconfigure_recovery_failure "$transaction_json" "$trigger" "$original_rc" "$stage"
+    return 1
+  fi
+  write_reconfigure_failure_evidence "$transaction_json" "$trigger" "$original_rc" true 'recovered' ||
+    warn "旧配置已恢复，但无法写入失败证据：${RECONFIGURE_FAILURE_EVIDENCE}"
+  cleanup_reconfigure_backups || warn '旧配置已恢复，但事务备份未能清理；后续重配置会先拒绝覆盖这些路径。'
+  info '带宽重配置失败事务已恢复到原 VERIFIED 配置。'
+}
+
+verify_reconfigure_candidate() {
+  local target_port target_rtt target_buf
+  state_exists || { error '带宽重配置候选缺少管理状态。'; return 1; }
+  validate_state_file || return 1
+  [ "$(state_get '.state')" = 'RECONFIGURING' ] || {
+    error "当前状态不是 RECONFIGURING：$(state_get '.state')"; return 1; }
+  reconfigure_candidate_is_valid || { error '带宽重配置候选状态、管理文件或哈希不一致。'; return 1; }
+  target_port="$(state_get '.network.port_speed_mbps')"
+  target_rtt="$(state_get '.network.target_rtt_ms')"
+  target_buf="$(state_get '.network.buffer_max_bytes')"
+  sysctl_profile_matches_network "$target_port" "$target_rtt" "$target_buf" || {
+    error '带宽重配置候选 sysctl 文件与目标端口、RTT 或 buffer 语义不一致。'
+    return 1
+  }
+  verify_settings_common || return 1
+  info "带宽重配置候选验证通过；警告数：${WARNINGS}。"
 }
 
 restore_fq_codel() {
@@ -1528,6 +1883,10 @@ rollback_internal() {
   local force_purge="$1" path failures=0 phase
   validate_state_file || return 1
   phase="$(state_get '.state')"
+  if [ "$phase" = 'RECONFIGURING' ] || jq -e '.reconfigure | type == "object"' "$STATE_FILE" >/dev/null 2>&1; then
+    error '检测到未完成的带宽重配置事务；普通 rollback 不会越过该事务，请先执行 recover。'
+    return 1
+  fi
   if [ "$phase" = 'SWAP_RETAINED' ]; then
     if [ "$force_purge" = '1' ] || [ "$PURGE_CREATED_SWAP" = '1' ]; then
       purge_owned_swap || { state_set_phase 'DEGRADED' || true; return 1; }
@@ -1618,6 +1977,120 @@ rollback_internal() {
   fi
 }
 
+reconfigure_failure_handler() {
+  local rc="$1"
+  trap - EXIT ERR INT TERM
+  [ "$RECONFIGURE_ACTIVE" -eq 1 ] || exit "$rc"
+  error "带宽重配置中断或失败（exit=${rc}）。"
+  if recover_incomplete_reconfigure 'automatic-failure' "$rc"; then
+    error '已自动恢复到重配置前的 VERIFIED 配置。'
+  else
+    error "自动恢复不完整；请保留 ${STATE_DIR} 并执行 status，再使用 recover 重试。"
+  fi
+  exit "$rc"
+}
+
+reconfigure_port_settings() {
+  local requested_port old_port old_rtt old_buf old_mode target_network values_changed=false
+  [ -n "$PORT_SPEED_MBPS_INPUT" ] ||
+    die "$EXIT_USAGE" 'reconfigure 必须显式提供 PORT_SPEED_MBPS；通过总控请使用 dvt reconfigure --port <MBPS>。'
+  [ -z "$BUFFER_TARGET_RTT_MS_INPUT" ] ||
+    die "$EXIT_USAGE" 'reconfigure 只允许改变服务商端口带宽，不接受 BUFFER_TARGET_RTT_MS。'
+  [ -z "$BUF_MAX_ENV_WAS_SET" ] ||
+    die "$EXIT_USAGE" 'reconfigure 只允许改变服务商端口带宽，不接受 BUF_MAX；显式 buffer 将从现有状态保留。'
+  [ "$UPDATE_PREFLIGHT" = '0' ] ||
+    die "$EXIT_USAGE" 'reconfigure 不接受 UPDATE_PREFLIGHT=1；升级只读检查与带宽重配置是两个独立操作。'
+  [[ "$PORT_SPEED_MBPS_INPUT" =~ ^[0-9]{3,4}$ ]] ||
+    die "$EXIT_USAGE" 'PORT_SPEED_MBPS 必须是 100–1000 的整数。'
+  requested_port=$((10#$PORT_SPEED_MBPS_INPUT))
+  if [ "$requested_port" -lt 100 ] || [ "$requested_port" -gt 1000 ]; then
+    die "$EXIT_USAGE" 'PORT_SPEED_MBPS 必须在 100–1000 之间。'
+  fi
+
+  ensure_required_tools
+  check_supported_os
+  check_resource_profile
+  state_exists || die "$EXIT_CONFLICT" '当前主机没有本项目管理状态；请先执行 preflight/apply，而不是 reconfigure。'
+  validate_state_file
+  [ "$(state_get '.state')" = 'VERIFIED' ] || {
+    if jq -e '.reconfigure | type == "object"' "$STATE_FILE" >/dev/null 2>&1; then
+      die "$EXIT_CONFLICT" '检测到未完成的带宽重配置事务；请先执行 recover。'
+    fi
+    die "$EXIT_CONFLICT" "reconfigure 只接受 VERIFIED；当前状态为 $(state_get '.state')。"
+  }
+  reconfigure_source_state_is_valid ||
+    die "$EXIT_CONFLICT" '现有 VERIFIED 状态缺少有效网络字段、sysctl 唯一所有权或当前 profile 的缓冲参数契约。'
+
+  old_port="$(state_get '.network.port_speed_mbps')"
+  old_rtt="$(state_get '.network.target_rtt_ms')"
+  old_buf="$(state_get '.network.buffer_max_bytes')"
+  old_mode="$(state_get '.network.buffer_mode')"
+
+  PORT_SPEED_MBPS_INPUT="$old_port"
+  BUFFER_TARGET_RTT_MS_INPUT="$old_rtt"
+  if [ "$old_mode" = 'explicit' ]; then BUF_MAX_INPUT="$old_buf"; else BUF_MAX_INPUT='auto'; fi
+  validate_inputs
+  if [ "$PORT_SPEED_MBPS" != "$old_port" ] || [ "$BUFFER_TARGET_RTT_MS" != "$old_rtt" ] ||
+    [ "$BUF_MAX" != "$old_buf" ] || [ "$BUF_MAX_MODE" != "$old_mode" ]; then
+    die "$EXIT_CONFLICT" '现有状态中的自动/显式缓冲结果不符合当前 profile 推导规则；拒绝重配置。'
+  fi
+  verify_settings || die "$EXIT_VERIFY" '重配置前完整验证失败；没有写入任何配置。'
+  sysctl_profile_matches_network "$old_port" "$old_rtt" "$old_buf" ||
+    die "$EXIT_CONFLICT" '现有 sysctl 管理文件与状态中的端口、RTT 或 buffer 语义不一致；拒绝重配置。'
+
+  if [ "$requested_port" -eq "$old_port" ]; then
+    info "端口带宽已经是 ${old_port} Mbps；完整验证通过，无需写入。"
+    return 0
+  fi
+
+  if [ -e "$RECONFIGURE_STATE_BACKUP" ] || [ -L "$RECONFIGURE_STATE_BACKUP" ] ||
+    [ -e "$RECONFIGURE_SYSCTL_BACKUP" ] || [ -L "$RECONFIGURE_SYSCTL_BACKUP" ]; then
+    cleanup_reconfigure_backups ||
+      die "$EXIT_CONFLICT" '检测到无法安全清理的旧重配置备份；拒绝覆盖。'
+    info '已清理上一笔成功事务遗留的固定重配置备份。'
+  fi
+
+  PORT_SPEED_MBPS_INPUT="$requested_port"
+  BUFFER_TARGET_RTT_MS_INPUT="$old_rtt"
+  if [ "$old_mode" = 'explicit' ]; then BUF_MAX_INPUT="$old_buf"; else BUF_MAX_INPUT='auto'; fi
+  validate_inputs
+  target_network="$(jq -cn --argjson port "$PORT_SPEED_MBPS" --argjson rtt "$BUFFER_TARGET_RTT_MS" \
+    --argjson numerator "$BUFFER_TARGET_NUMERATOR" --argjson denominator "$BUFFER_TARGET_DENOMINATOR" \
+    --argjson buf "$BUF_MAX" --arg mode "$BUF_MAX_MODE" \
+    '{port_speed_mbps:$port,target_rtt_ms:$rtt,buffer_target_numerator:$numerator,
+      buffer_target_denominator:$denominator,buffer_max_bytes:$buf,buffer_mode:$mode}')" ||
+    die "$EXIT_CONFLICT" '无法构造带宽重配置目标状态。'
+  if [ "$BUF_MAX" != "$old_buf" ]; then values_changed=true; fi
+
+  prepare_reconfigure_backups || die "$EXIT_CONFLICT" '无法建立并校验带宽重配置备份。'
+  if ! begin_reconfigure_transaction "$target_network" "$values_changed"; then
+    cleanup_reconfigure_backups || true
+    die "$EXIT_CONFLICT" '无法原子记录 RECONFIGURING；原配置未写入。'
+  fi
+  RECONFIGURE_ACTIVE=1
+  trap 'rc=$?; [ "$rc" -eq 0 ] || reconfigure_failure_handler "$rc"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+
+  write_sysctl_profile || die "$EXIT_CONFLICT" '无法原子写入新的 sysctl 管理文件。'
+  if [ "$values_changed" = true ]; then
+    sysctl -p "$SYSCTL_FILE" >/dev/null || die "$EXIT_CONFLICT" '无法应用新的 socket buffer 参数。'
+  fi
+  update_reconfigure_candidate_state || die "$EXIT_CONFLICT" '无法记录带宽重配置候选状态和管理文件哈希。'
+  verify_reconfigure_candidate || die "$EXIT_VERIFY" '带宽重配置候选完整验证失败。'
+  finalize_reconfigure_state || die "$EXIT_CONFLICT" '候选验证通过，但无法原子提交 VERIFIED 状态。'
+
+  RECONFIGURE_ACTIVE=0
+  trap - EXIT ERR INT TERM
+  cleanup_reconfigure_backups || warn '重配置已提交，但固定事务备份未能清理；下次重配置会先安全检查这些路径。'
+  if [ "$values_changed" = true ]; then
+    info "端口带宽已从 ${old_port} Mbps 重配置为 ${PORT_SPEED_MBPS} Mbps；socket buffer 已从 ${old_buf} 更新为 ${BUF_MAX} 字节。"
+  else
+    info "端口带宽已从 ${old_port} Mbps 重配置为 ${PORT_SPEED_MBPS} Mbps；有效 sysctl 值不变，未重写运行时参数。"
+  fi
+  info '未重建 qdisc、未修改 swap/journald/NOFILE。建议在后续维护窗口重启并再次执行 verify。'
+}
+
 apply_failure_handler() {
   local rc="$1"
   trap - EXIT ERR INT TERM
@@ -1681,7 +2154,16 @@ show_status() {
   check_supported_os
   if ! state_exists; then info 'State: UNMANAGED'; return 0; fi
   validate_state_file
-  jq '{script_version,state,profile,network,swap,timestamps,managed_files}' "$STATE_FILE"
+  jq '{script_version,state,profile,network,reconfigure,swap,timestamps,managed_files}' "$STATE_FILE"
+  if [ -e "$RECONFIGURE_FAILURE_EVIDENCE" ] || [ -L "$RECONFIGURE_FAILURE_EVIDENCE" ]; then
+    if [ -f "$RECONFIGURE_FAILURE_EVIDENCE" ] && [ ! -L "$RECONFIGURE_FAILURE_EVIDENCE" ] &&
+      [ "$(stat -c '%u' "$RECONFIGURE_FAILURE_EVIDENCE" 2>/dev/null || true)" = '0' ] &&
+      jq -e 'type == "object" and .schema_version == 1' "$RECONFIGURE_FAILURE_EVIDENCE" >/dev/null 2>&1; then
+      jq '{last_reconfigure_failure:.}' "$RECONFIGURE_FAILURE_EVIDENCE"
+    else
+      warn "带宽重配置失败证据类型、所有权或 JSON 无效：${RECONFIGURE_FAILURE_EVIDENCE}"
+    fi
+  fi
   printf '[runtime] congestion_control=%s default_qdisc=%s\n' \
     "$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || true)" \
     "$(sysctl -n net.core.default_qdisc 2>/dev/null || true)"
@@ -2556,10 +3038,10 @@ run_network_benchmark() {
 
 usage() {
   cat <<EOF_USAGE
-Usage: $0 {preflight|apply|verify|status|diagnose|benchmark|rollback|recover}
+Usage: $0 {preflight|apply|reconfigure|verify|status|diagnose|benchmark|rollback|recover}
 
 Environment:
-  PORT_SPEED_MBPS=100..1000       default 200
+  PORT_SPEED_MBPS=100..1000       default 200; reconfigure requires an explicit value
   BUFFER_TARGET_RTT_MS=20..500    default 200
   BUF_MAX=auto|262144..${MAX_BUF_MAX}   default auto; profile memory cap
   ENABLE_SWAP=0|1                 default 1
@@ -2593,6 +3075,9 @@ main() {
     apply)
       need_root; acquire_lock; apply_settings
       ;;
+    reconfigure)
+      need_root; acquire_lock; reconfigure_port_settings
+      ;;
     verify)
       need_root; acquire_lock
       state_exists || die "$EXIT_VERIFY" '当前主机尚未安装本项目配置；请先执行 preflight，确认通过后再执行 apply。'
@@ -2616,7 +3101,16 @@ main() {
       ;;
     recover)
       need_root; acquire_lock; ensure_required_tools; check_supported_os
-      recover_empty_legacy_state
+      if state_exists && state_file_is_valid; then
+        if jq -e '(.state == "RECONFIGURING" or .state == "DEGRADED") and (.reconfigure | type == "object")' \
+          "$STATE_FILE" >/dev/null 2>&1; then
+          recover_incomplete_reconfigure || die "$EXIT_ROLLBACK" '带宽重配置恢复不完整；状态和备份已保留。'
+        else
+          die "$EXIT_CONFLICT" "有效状态 $(state_get '.state') 不属于 recover；普通配置回退请使用 rollback。"
+        fi
+      else
+        recover_empty_legacy_state
+      fi
       ;;
     -h | --help | help) usage ;;
     *) usage >&2; exit "$EXIT_USAGE" ;;

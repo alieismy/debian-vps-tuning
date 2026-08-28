@@ -107,10 +107,10 @@ for invalid_port in 99 1001 20000 abc 20.0 ''; do
   fi
 done
 
-release_is_newer v0.1.0-rc.13 0.1.0-rc.12 || fail 'rc.13 was not newer than rc.12'
+release_is_newer v0.1.0-rc.14 0.1.0-rc.13 || fail 'rc.14 was not newer than rc.13'
 release_is_newer v0.1.0 0.1.0-rc.999999999 || fail 'stable release was not newer than prerelease'
 release_is_newer v0.2.0-rc.1 0.1.9 || fail 'minor release comparison failed'
-if release_is_newer v0.1.0-rc.12 0.1.0-rc.13; then
+if release_is_newer v0.1.0-rc.13 0.1.0-rc.14; then
   fail 'downgrade tag was considered newer'
 fi
 if parse_release_version latest >/dev/null 2>&1; then
@@ -126,6 +126,7 @@ release_fixture="$test_root/releases.json"
 cat >"$release_fixture" <<'EOF_RELEASES'
 [
   {"tag_name":"v0.1.0-rc.9","draft":false},
+  {"tag_name":"v0.1.0-rc.14","draft":false},
   {"tag_name":"v0.1.0-rc.13","draft":false},
   {"tag_name":"v0.1.0-rc.12","draft":false},
   {"tag_name":"v0.1.0-rc.10","draft":false},
@@ -138,9 +139,9 @@ EOF_RELEASES
 # The Windows Git Bash test environment does not provide jq. This fixture
 # isolates semantic version selection; JSON validation is exercised on VPS.
 jq() {
-  printf '%s\n' v0.1.0-rc.9 v0.1.0-rc.13 v0.1.0-rc.12 v0.1.0-rc.10 v0.2.0 v1.0.0 nightly
+  printf '%s\n' v0.1.0-rc.9 v0.1.0-rc.14 v0.1.0-rc.13 v0.1.0-rc.12 v0.1.0-rc.10 v0.2.0 v1.0.0 nightly
 }
-[ "$(select_highest_release_tag "$release_fixture" 0.1.0-rc.12)" = 'v0.1.0-rc.13' ] ||
+[ "$(select_highest_release_tag "$release_fixture" 0.1.0-rc.13)" = 'v0.1.0-rc.14' ] ||
   fail 'rc channel did not select its highest prerelease'
 unset -f jq
 jq() {
@@ -183,10 +184,25 @@ PORT_SPEED_MBPS_SELECTED=''
 select_port_speed
 [ "$PORT_SPEED_MBPS_SELECTED" -eq 1000 ] || fail '--port did not override the installed value'
 
+set +e
+( ACTION=reconfigure; ACTION_FROM_MENU=0; CLI_PORT_SPEED_MBPS=''; PORT_SPEED_MBPS=200; PORT_SPEED_MBPS_SELECTED=''; select_port_speed ) >/dev/null 2>&1
+rc=$?
+set -e
+[ "$rc" -eq "$EXIT_USAGE" ] || fail "reconfigure without explicit --port returned ${rc}, expected ${EXIT_USAGE}"
+
+ACTION=reconfigure
+ACTION_FROM_MENU=0
+CLI_PORT_SPEED_MBPS=500
+PORT_SPEED_MBPS_SELECTED=''
+select_port_speed
+[ "$PORT_SPEED_MBPS_SELECTED" -eq 500 ] || fail 'reconfigure did not accept its explicit --port value'
+
 # shellcheck disable=SC2034  # Consumed by sourced select_port_speed.
 CLI_PORT_SPEED_MBPS=''
 # shellcheck disable=SC2034  # Consumed by sourced select_port_speed.
 PORT_SPEED_MBPS=100
+ACTION=apply
+ACTION_FROM_MENU=0
 PORT_SPEED_MBPS_SELECTED=''
 select_port_speed
 [ "$PORT_SPEED_MBPS_SELECTED" -eq 100 ] || fail 'PORT_SPEED_MBPS did not override the installed value'
@@ -209,6 +225,13 @@ if [ "$ACTION" != update ] || [ "$ACTION_FROM_MENU" -ne 1 ]; then
 fi
 
 ACTION=''
+ACTION_FROM_MENU=0
+choose_action_interactively <<<'11' >/dev/null
+if [ "$ACTION" != reconfigure ] || [ "$ACTION_FROM_MENU" -ne 1 ]; then
+  fail 'menu option 11 did not select reconfigure'
+fi
+
+ACTION=''
 ACTION_ARGS=()
 parse_arguments probe --host probe.example --rate-cap 200 --yes
 if [ "$ACTION" != probe ] || [ "${#ACTION_ARGS[@]}" -ne 5 ] ||
@@ -220,9 +243,16 @@ fi
 
 ACTION=''
 CLI_UPDATE_TAG=''
-parse_arguments update --target v0.1.0-rc.13
-if [ "$ACTION" != update ] || [ "$CLI_UPDATE_TAG" != v0.1.0-rc.13 ]; then
+parse_arguments update --target v0.1.0-rc.14
+if [ "$ACTION" != update ] || [ "$CLI_UPDATE_TAG" != v0.1.0-rc.14 ]; then
   fail 'update --target parsing failed'
+fi
+
+ACTION=''
+CLI_PORT_SPEED_MBPS=''
+parse_arguments reconfigure --port 500
+if [ "$ACTION" != reconfigure ] || [ "$CLI_PORT_SPEED_MBPS" != 500 ]; then
+  fail 'reconfigure --port parsing failed'
 fi
 
 PORT_SPEED_MBPS_SELECTED=''
@@ -270,6 +300,8 @@ PROFILE_PATH="$runner"
 PORT_SPEED_MBPS_SELECTED=200
 run_profile preflight
 [ "$(<"$capture")" = '200|preflight' ] || fail 'preflight dispatch lost port/action'
+run_profile reconfigure
+[ "$(<"$capture")" = '200|reconfigure' ] || fail 'reconfigure dispatch lost port/action'
 run_profile verify
 [ "$(<"$capture")" = 'unset|verify' ] || fail 'verify dispatch unexpectedly injected a port'
 run_profile diagnose
@@ -413,7 +445,7 @@ exit 0
 EOF_TARGET_RUNNER
 chmod 0700 "$source_runner" "$target_runner"
 export UPDATE_TEST_LOG="$update_log"
-resolve_update_release() { UPDATE_TAG_SELECTED='v0.1.0-rc.13'; }
+resolve_update_release() { UPDATE_TAG_SELECTED='v0.1.0-rc.14'; }
 resolve_installed_profile() { SOURCE_PROFILE_PATH="$source_runner"; SOURCE_PROFILE_SHA256='source-hash'; }
 resolve_update_controller() { UPDATE_CONTROLLER_PATH="$target_runner"; UPDATE_CONTROLLER_SHA256='target-hash'; }
 STATE_PROFILE='debian12-1c1g'

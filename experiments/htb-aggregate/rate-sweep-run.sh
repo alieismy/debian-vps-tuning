@@ -8,7 +8,7 @@ IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 
 RUNNER_VERSION='0.3.0'
-EXPECTED_TUNING_VERSION='0.1.0-rc.13'
+EXPECTED_TUNING_VERSION='0.1.0-rc.14'
 MANAGED_STATE_FILE='/var/lib/proxy-vps-tuning/state.json'
 RUNTIME_STATE_DIR='/run/htb-aggregate-experiment'
 RUNTIME_STATE_FILE="${RUNTIME_STATE_DIR}/active.json"
@@ -88,7 +88,7 @@ capture_managed_binding() {
     ((.profile.id == "debian13-1c1g") or (.profile.id == "debian13-1c2g")) and
     .network.port_speed_mbps == 200
   ' "$MANAGED_STATE_FILE" >/dev/null ||
-    die 'managed state 不是 rc.13 schema-4 VERIFIED/debian13-1c1g-or-1c2g/200-Mbps 基线。'
+    die 'managed state 不是 rc.14 schema-4 VERIFIED/debian13-1c1g-or-1c2g/200-Mbps 基线。'
   managed_profile_id="$(jq -r '.profile.id' "$MANAGED_STATE_FILE")"
   managed_script_version="$(jq -r '.script_version' "$MANAGED_STATE_FILE")"
   managed_state_sha256_frozen="$(sha256sum "$MANAGED_STATE_FILE" | awk '{print $1}')"

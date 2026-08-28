@@ -1,7 +1,7 @@
 # VMISS 1C2G / 200 Mbps 临时 HTB A/B/A 实验 SOP
 
 状态：待目标机执行  
-适用版本：`debian-vps-tuning 0.1.0-rc.13`、HTB 执行器 `0.4.0`
+适用版本：`debian-vps-tuning 0.1.0-rc.14`、HTB 执行器 `0.4.0`
 
 目标：比较根 `fq` 基线（A）与 `HTB 190 Mbit/s + fq` 聚合整形（B）对吞吐、重传和时延的影响。  
 边界：只改变 `eth0` 出站 qdisc；不改 sysctl、路由、防火墙、代理服务或持久化配置。
@@ -13,13 +13,13 @@ reference 可比较且经人工复核的候选速率。本文件当前固定候�
 
 ## 1. 已冻结基线与证据边界
 
-本 SOP 只适用于已经完成 rc.13 生命周期验证的以下目标类别：
+本 SOP 只适用于先在目标机另行完成 rc.14 生命周期验证的以下目标类别；当前文档状态仍为待目标机执行，不把 rc.12/rc.13 运行记录继承为 rc.14 通过：
 
 - Debian 13.6（trixie），Linux `6.12.101+deb13-cloud-amd64`，KVM；
 - 1 vCPU、约 1974 MiB RAM、15 GB ext4；
 - 套餐上限 200 Mbps，默认路由接口唯一且为 `eth0`；
 - `/var/lib/proxy-vps-tuning/state.json` 为 schema 4、`VERIFIED`、
-  `script_version=0.1.0-rc.13`、`profile.id=debian13-1c2g`、
+  `script_version=0.1.0-rc.14`、`profile.id=debian13-1c2g`、
   `network.port_speed_mbps=200`；
 - 运行态为 BBR、根 `fq`、`tcp_rmem=4096 131072 16777216`、
   `tcp_wmem=4096 65536 16777216`，且 `proxy-vps-fq.service` active。
@@ -51,7 +51,7 @@ install -o root -g root -m 0755 \
   /root/htb-aggregate-experiment.sh \
   /usr/local/sbin/htb-aggregate-experiment
 
-EXPECTED_HTB_SHA256='04f79a62b0c12187e36fe797bc7388c4a46250adc7c045450f2377aad50aaf11'
+EXPECTED_HTB_SHA256='49a1dbcbe10575831f9498e04db9a7e3e3b5ea7026a2a0b8beda9f42e9dc9f14'
 printf '%s  %s\n' "$EXPECTED_HTB_SHA256" \
   /usr/local/sbin/htb-aggregate-experiment | sha256sum -c -
 
@@ -117,7 +117,7 @@ smoke-test 只证明短时切换、watchdog 和恢复链路通过，不证明性
 
 ## 6. A1/B1/A2 执行函数
 
-使用 rc.13 `tcpquality-evidence.sh`，不要再直接运行旧 `/root/tcpquality/runTcpQuality`。执行前按
+使用 rc.14 `tcpquality-evidence.sh`，不要再直接运行旧 `/root/tcpquality/runTcpQuality`。执行前按
 README 准备并校验固定 TcpQuality `v1.00013`、commit 和 rootfs。HTB watchdog 为 40 分钟，
 历史单次 TcpQuality 约 22 分钟，因此每个 stage 必须显式使用 `TCPQUALITY_RUNS=1`；需要提高
 重复性时重复完整窗口，不能在一个 B stage 中连续三轮。
