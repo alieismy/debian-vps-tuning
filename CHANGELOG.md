@@ -4,6 +4,28 @@
 
 ## [Unreleased]
 
+## [0.1.0-rc.14] - 2026-08-28
+
+### Added
+
+- 新增显式 `dvt reconfigure --port <MBPS>`。它只接受同版本、同 profile、完整验证通过的 `VERIFIED` 状态，保留 RTT 和显式 buffer，只在自动模式下按新端口重新推导 buffer。
+- 新增 `RECONFIGURING` 事务状态、root-only state/sysctl 备份、候选完整验证、失败证据及 `dvt recover` 恢复路径；中断、sysctl 应用失败或候选验证失败时优先恢复旧配置，恢复失败保留 `DEGRADED` 和备份。
+
+### Changed
+
+- 100→200 Mbps 等有效 sysctl 值不变的带宽变化只更新受管 sysctl 注释、哈希和状态；2 GiB 档 200→500 Mbps 等实质变化只通过本项目 sysctl 文件更新相关 buffer，不重建 qdisc。
+- 总控、六份 profile、installer、TcpQuality 工具版本和 HTB managed-state 绑定同步为 `0.1.0-rc.14`；状态 schema 仍为 4。
+
+### Safety
+
+- 普通 `apply` 的参数不一致门禁保持不变；`verify`、`rollback`、`preflight` 和 `apply` 不会越过未完成的重配置事务。重配置不修改 qdisc、swap、journald、NOFILE、路由、防火墙、DNS、MTU、代理服务或持久 HTB。
+- rc.14 不直接接管 rc.13 状态；跨版本仍使用固定 Release 的只读 `update` 和人工 rollback/reapply 流程。已发布 rc.13 的 tag、Release、资产和发布说明保持不变。
+
+### Validation
+
+- 新增缺失 `--port`、无状态、非 `VERIFIED`、跨版本/profile、同值幂等、等价值升级、实质升降级、显式 buffer 保留、外部修改、备份哈希异常、sysctl/候选失败、自动恢复和恢复失败门禁 fixture。
+- 本地候选不等于目标 VPS 验收；真实 rc.14 安装、迁移、重配置、故障恢复、重启持久性、代理链路与性能仍需独立验证。
+
 ## [0.1.0-rc.13] - 2026-08-24
 
 ### Changed

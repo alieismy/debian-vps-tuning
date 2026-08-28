@@ -66,7 +66,7 @@ if [ "$(od -An -tx1 -N3 "$tcpquality_tool" | tr -d ' \n')" = 'efbbbf' ]; then
   printf 'UTF-8 BOM detected: %s\n' "$tcpquality_tool" >&2
   exit 1
 fi
-grep -Fq "TOOL_VERSION='0.1.0-rc.13'" "$tcpquality_tool"
+grep -Fq "TOOL_VERSION='0.1.0-rc.14'" "$tcpquality_tool"
 grep -Fq "SUPPORTED_RELEASE_TAG='v1.00013'" "$tcpquality_tool"
 grep -Fq "SUPPORTED_COMMIT='73606e2460bde21bb2e253842971f8ca8c9eb51c'" "$tcpquality_tool"
 grep -Fq "SUPPORTED_ROOTFS_MANIFEST_SHA256='555a53df40cbdd2778771c089d1bc2c2e1c0a52b5565ad15d2e01d52b90dd0f6'" "$tcpquality_tool"
@@ -108,7 +108,7 @@ expected_keys=17
 for script in "${scripts[@]}"; do
   actual="$(awk '/^PROFILE_SYSCTL_KEYS=\(/,/^\)/ {if ($1 ~ /^(net\.|vm\.)/) count++} END {print count+0}' "$script")"
   [ "$actual" -eq "$expected_keys" ] || { printf 'unexpected managed-key count: %s (%s)\n' "$script" "$actual" >&2; exit 1; }
-  grep -Fq "SCRIPT_VERSION='0.1.0-rc.13'" "$script"
+  grep -Fq "SCRIPT_VERSION='0.1.0-rc.14'" "$script"
   grep -Eq '^STATE_SCHEMA_VERSION=4$' "$script"
   grep -Eq '^LEGACY_STATE_SCHEMA_VERSION=3$' "$script"
   grep -Fq 'PROFILE_CPU_MIN=' "$script"
@@ -202,7 +202,7 @@ for script in "${scripts[@]}"; do
   grep -Fq "SWAP_CREATE_ALLOWED='0'" "$script"
   grep -Fq '当前主机尚未安装本项目配置' "$script"
   # shellcheck disable=SC2016  # Intentionally match literal shell source.
-  grep -Fq '检测到未完成的事务状态 ${phase}；请先执行 rollback，不要直接 apply。' "$script"
+  grep -Fq '检测到未完成的带宽重配置事务；请先执行 recover，不要直接 apply。' "$script"
   # shellcheck disable=SC2016  # Intentionally match literal shell source.
   grep -Fq '检测到现有管理状态 ${phase}；已安装配置请执行 verify' "$script"
   # shellcheck disable=SC2016  # Intentionally match literal shell source.
@@ -230,6 +230,12 @@ for script in "${scripts[@]}"; do
   grep -Fq '本次 apply 尚未写入配置' "$script"
   grep -Fq 'PURGE_CREATED_SWAP=1 执行 rollback' "$script"
   grep -Fq '升级配置必须先 rollback' "$script"
+  grep -Fq 'reconfigure_port_settings' "$script"
+  grep -Fq 'reconfigure 必须显式提供 PORT_SPEED_MBPS' "$script"
+  grep -Fq "state_set_phase 'DEGRADED'" "$script"
+  grep -Fq '普通 rollback 不会越过该事务，请先执行 recover' "$script"
+  grep -Fq '有效 sysctl 值不变，未重写运行时参数' "$script"
+  grep -Fq '未重建 qdisc、未修改 swap/journald/NOFILE' "$script"
   [ "$(grep -Fc 'remove_fstab_swap_line || return 1' "$script")" -eq 2 ] || {
     printf 'fstab removal failure is not propagated by both swap purge paths: %s\n' "$script" >&2
     exit 1
@@ -257,8 +263,8 @@ for script in "${scripts[@]}"; do
     printf 'qdisc post-restore verification must precede state cleanup: %s\n' "$script" >&2
     exit 1
   fi
-  applying_line="$(grep -nF "state_set_phase 'APPLYING'" "$script" | head -n1 | cut -d: -f1)"
-  first_write_line="$(grep -nF '  write_sysctl_profile' "$script" | head -n1 | cut -d: -f1)"
+  applying_line="$(awk '/^apply_settings\(\) \{/,/^}/ {if (/state_set_phase '\''APPLYING'\''/) {print NR; exit}}' "$script")"
+  first_write_line="$(awk '/^apply_settings\(\) \{/,/^}/ {if (/^  write_sysctl_profile/) {print NR; exit}}' "$script")"
   if [ -z "$applying_line" ] || [ -z "$first_write_line" ] || [ "$applying_line" -ge "$first_write_line" ]; then
     printf 'APPLYING phase must be committed before the first system write: %s\n' "$script" >&2
     exit 1
@@ -281,8 +287,8 @@ for script in "${scripts[@]}"; do
   }
 done
 
-grep -Fq "CONTROLLER_VERSION='0.1.0-rc.13'" "$controller"
-grep -Fq "RELEASE_TAG='v0.1.0-rc.13'" "$controller"
+grep -Fq "CONTROLLER_VERSION='0.1.0-rc.14'" "$controller"
+grep -Fq "RELEASE_TAG='v0.1.0-rc.14'" "$controller"
 grep -Fq "DEFAULT_PORT_SPEED_MBPS=200" "$controller"
 grep -Fq 'verify_profile_contract' "$controller"
 grep -Fq 'debian12-1c512m-vps-tuning.sh' "$controller"
@@ -293,6 +299,8 @@ grep -Fq 'probe（重复、限速、advisory-only；需已授权 iperf3）' "$co
 grep -Fq 'benchmark（高级单次证据入口；需 BENCHMARK_HOST）' "$controller"
 grep -Fq 'HTB 实验（仅 Debian 13 / 200 Mbps / 非持久化）' "$controller"
 grep -Fq 'update（只读检查并生成升级计划）' "$controller"
+grep -Fq 'reconfigure（重配置服务商端口带宽）' "$controller"
+grep -Fq 'reconfigure 必须显式使用 --port' "$controller"
 grep -Fq 'resolve_companion_assets' "$controller"
 grep -Fq 'ACTION_ARGS=("$@")' "$controller"
 grep -Fq 'env UPDATE_PREFLIGHT=1 PORT_SPEED_MBPS=' "$controller"
@@ -308,7 +316,7 @@ if grep -Eq 'raw\.githubusercontent\.com|/master/|/main/|releases/latest|http://
   exit 1
 fi
 
-grep -Fq "RELEASE_TAG='v0.1.0-rc.13'" "$installer"
+grep -Fq "RELEASE_TAG='v0.1.0-rc.14'" "$installer"
 grep -Eq "EXPECTED_MANIFEST_SHA256='[0-9a-f]{64}'" "$installer"
 if grep -Fq "EXPECTED_MANIFEST_SHA256='0000000000000000000000000000000000000000000000000000000000000000'" "$installer"; then
   printf 'installer manifest digest placeholder was not finalized\n' >&2
@@ -321,7 +329,7 @@ manifest_hash="$(sha256sum SHA256SUMS | awk '{print $1}')"
 grep -Fq "EXPECTED_MANIFEST_SHA256='${manifest_hash}'" "$installer"
 installer_hash="$(sha256sum "$installer" | awk '{print $1}')"
 grep -Fq "$installer_hash" README.md
-grep -Fq "$manifest_hash" docs/releases/v0.1.0-rc.13.md
+grep -Fq "$manifest_hash" docs/releases/v0.1.0-rc.14.md
 if grep -Eq 'raw\.githubusercontent\.com|/master/|/main/|releases/latest|http://' "$installer"; then
   printf 'mutable or insecure installer download source detected\n' >&2
   exit 1
@@ -1153,7 +1161,7 @@ EXIT_USAGE=2
 EXIT_UNSUPPORTED=3
 EXIT_CONFLICT=4
 EXIT_VERIFY=5
-SCRIPT_VERSION='0.1.0-rc.13'
+SCRIPT_VERSION='0.1.0-rc.14'
 PROFILE_ID='debian13-1c1g'
 STATE_FILE="$test_root/no-state.json"
 ensure_required_tools() { :; }
@@ -1340,7 +1348,7 @@ PACKET_SIZE=0
 PARALLEL=16
 ROOTFS_SHA256='c624b5cc611b7177c42608110024764e59dfd0a88150257137ae4e6d7f9f9d18'
 GET_NODES_URL='https://nodes.example.test/getNodes'
-TOOL_VERSION='0.1.0-rc.13'
+TOOL_VERSION='0.1.0-rc.14'
 MODE='local-evidence'
 mkdir "$EVIDENCE_DIR" "$PIN_DIR"
 : >"$PIN_DIR/SHA256SUMS"
@@ -1363,7 +1371,7 @@ cross_version_apply_test="$tmp_dir/cross-version-apply-test.sh"
   awk '/^apply_settings\(\)/,/^}/' "${scripts[0]}"
   cat <<'EOF_CROSS_VERSION_APPLY_TEST'
 EXIT_CONFLICT=4
-SCRIPT_VERSION='0.1.0-rc.13'
+SCRIPT_VERSION='0.1.0-rc.14'
 PORT_SPEED_MBPS=200
 BUFFER_TARGET_RTT_MS=200
 BUF_MAX=16777216
@@ -1394,7 +1402,7 @@ parameter_mismatch_apply_test="$tmp_dir/parameter-mismatch-apply-test.sh"
   awk '/^apply_settings\(\)/,/^}/' "${scripts[0]}"
   cat <<'EOF_PARAMETER_MISMATCH_APPLY_TEST'
 EXIT_CONFLICT=4
-SCRIPT_VERSION='0.1.0-rc.13'
+SCRIPT_VERSION='0.1.0-rc.14'
 PORT_SPEED_MBPS=100
 BUFFER_TARGET_RTT_MS=200
 BUF_MAX=16777216
@@ -1424,14 +1432,505 @@ EOF_PARAMETER_MISMATCH_APPLY_TEST
 } >"$parameter_mismatch_apply_test"
 bash "$parameter_mismatch_apply_test"
 
+reconfigure_orchestrator_test="$tmp_dir/reconfigure-orchestrator-test.sh"
+{
+  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  awk '/^validate_inputs\(\)/,/^}/' "${scripts[2]}"
+  awk '/^reconfigure_failure_handler\(\)/,/^}/' "${scripts[2]}"
+  awk '/^reconfigure_port_settings\(\)/,/^}/' "${scripts[2]}"
+  cat <<'EOF_RECONFIGURE_ORCHESTRATOR_TEST'
+test_root="$(mktemp -d)"
+trap 'rm -rf -- "$test_root"' EXIT
+STATE_FILE="$test_root/state.json"
+LOG_FILE="$test_root/operations.log"
+EXIT_USAGE=2
+EXIT_UNSUPPORTED=3
+EXIT_CONFLICT=4
+EXIT_VERIFY=5
+DEFAULT_BUFFER_TARGET_RTT_MS=200
+BUFFER_TARGET_NUMERATOR=3
+BUFFER_TARGET_DENOMINATOR=2
+MIN_BUF_MAX=262144
+MAX_BUF_MAX=67108864
+PROFILE_LABEL='Debian 13 / 1–2 vCPU / 2 GiB'
+PROFILE_ID='debian13-1c2g'
+ENABLE_SWAP=1
+PURGE_CREATED_SWAP=0
+REQUIRE_PROXY_SERVICE=0
+SWAP_MB_INPUT=1024
+SWAP_MAX_MIB=2048
+WARNINGS=0
+STATE_DIR="$test_root/state"
+SYSCTL_FILE="$test_root/sysctl.conf"
+RECONFIGURE_STATE_BACKUP="$STATE_DIR/reconfigure-state.previous.json"
+RECONFIGURE_SYSCTL_BACKUP="$STATE_DIR/reconfigure-sysctl.previous.conf"
+RECONFIGURE_ACTIVE=0
+BUF_MAX=''
+BUF_MAX_MODE=''
+BUFFER_BDP_BYTES=''
+BUFFER_TARGET_BYTES=''
+BUFFER_COVERAGE_MS=''
+BUFFER_CLAMPED=0
+PORT_SPEED_MBPS=''
+BUFFER_TARGET_RTT_MS=''
+
+info() { :; }
+warn() { WARNINGS=$((WARNINGS + 1)); }
+error() { :; }
+die() { local code="$1"; shift; printf '%s\n' "$*" >&2; exit "$code"; }
+is_bool() { [ "$1" = 0 ] || [ "$1" = 1 ]; }
+ensure_required_tools() { :; }
+check_supported_os() { :; }
+check_resource_profile() { :; }
+state_exists() { [ "${STATE_PRESENT:-1}" = 1 ]; }
+validate_state_file() { :; }
+state_get() { command jq -er "$1" "$STATE_FILE"; }
+reconfigure_source_state_is_valid() { [ "${SOURCE_STATE_VALID:-1}" = 1 ]; }
+verify_settings() { [ "${SOURCE_VERIFY_FAIL:-0}" = 0 ]; }
+sysctl_profile_matches_network() { [ "${SOURCE_SEMANTIC_VALID:-1}" = 1 ]; }
+cleanup_reconfigure_backups() { printf 'cleanup\n' >>"$LOG_FILE"; }
+prepare_reconfigure_backups() { printf 'prepare\n' >>"$LOG_FILE"; }
+begin_reconfigure_transaction() {
+  printf 'begin:port=%s:buf=%s:changed=%s\n' \
+    "$(command jq -r '.port_speed_mbps' <<<"$1")" \
+    "$(command jq -r '.buffer_max_bytes' <<<"$1")" "$2" >>"$LOG_FILE"
+}
+write_sysctl_profile() { printf 'write-sysctl\n' >>"$LOG_FILE"; }
+sysctl() {
+  printf 'sysctl:%s\n' "$*" >>"$LOG_FILE"
+  [ "${SYSCTL_APPLY_FAIL:-0}" = 0 ]
+}
+update_reconfigure_candidate_state() { printf 'candidate-state\n' >>"$LOG_FILE"; }
+verify_reconfigure_candidate() {
+  printf 'candidate-verify\n' >>"$LOG_FILE"
+  [ "${CANDIDATE_VERIFY_FAIL:-0}" = 0 ]
+}
+finalize_reconfigure_state() { printf 'finalize\n' >>"$LOG_FILE"; }
+recover_incomplete_reconfigure() {
+  printf 'recover:%s:%s\n' "$1" "$2" >>"$LOG_FILE"
+  [ "${RECOVER_FAIL:-0}" = 0 ]
+}
+
+write_state() {
+  local phase="$1" port="$2" buf="$3" mode="$4"
+  command jq -n --arg phase "$phase" --argjson port "$port" --argjson buf "$buf" --arg mode "$mode" \
+    '{state:$phase,network:{port_speed_mbps:$port,target_rtt_ms:200,
+      buffer_target_numerator:3,buffer_target_denominator:2,
+      buffer_max_bytes:$buf,buffer_mode:$mode}}' >"$STATE_FILE"
+}
+
+run_case() {
+  local name="$1" expected_rc="$2" requested="$3" phase="$4" old_port="$5" old_buf="$6" old_mode="$7"
+  shift 7
+  : >"$LOG_FILE"
+  write_state "$phase" "$old_port" "$old_buf" "$old_mode"
+  set +e
+  (
+    STATE_PRESENT=1
+    SOURCE_STATE_VALID=1
+    SOURCE_VERIFY_FAIL=0
+    SOURCE_SEMANTIC_VALID=1
+    SYSCTL_APPLY_FAIL=0
+    CANDIDATE_VERIFY_FAIL=0
+    RECOVER_FAIL=0
+    PORT_SPEED_MBPS_INPUT="$requested"
+    BUFFER_TARGET_RTT_MS_INPUT=''
+    BUF_MAX_ENV_WAS_SET=''
+    BUF_MAX_INPUT='auto'
+    UPDATE_PREFLIGHT=0
+    RECONFIGURE_ACTIVE=0
+    for assignment in "$@"; do export "$assignment"; done
+    reconfigure_port_settings
+  ) >"$test_root/${name}.out" 2>&1
+  rc=$?
+  set -e
+  [ "$rc" -eq "$expected_rc" ] || {
+    cat "$test_root/${name}.out" >&2
+    printf 'reconfigure case %s returned %s, expected %s\n' "$name" "$rc" "$expected_rc" >&2
+    exit 1
+  }
+}
+
+run_case missing-port 2 '' VERIFIED 200 16777216 auto
+grep -Fq '必须显式提供 PORT_SPEED_MBPS' "$test_root/missing-port.out"
+
+run_case rtt-not-allowed 2 500 VERIFIED 200 16777216 auto BUFFER_TARGET_RTT_MS_INPUT=250
+run_case buffer-not-allowed 2 500 VERIFIED 200 16777216 auto BUF_MAX_ENV_WAS_SET=x
+run_case update-preflight-not-allowed 2 500 VERIFIED 200 16777216 auto UPDATE_PREFLIGHT=1
+[ ! -s "$LOG_FILE" ] || { printf 'forbidden reconfigure input reached write path\n' >&2; exit 1; }
+
+: >"$LOG_FILE"
+write_state VERIFIED 200 16777216 auto
+set +e
+(STATE_PRESENT=0 PORT_SPEED_MBPS_INPUT=500 BUFFER_TARGET_RTT_MS_INPUT='' BUF_MAX_ENV_WAS_SET='' BUF_MAX_INPUT=auto UPDATE_PREFLIGHT=0 reconfigure_port_settings) \
+  >"$test_root/no-state.out" 2>&1
+rc=$?
+set -e
+[ "$rc" -eq 4 ]
+grep -Fq '没有本项目管理状态' "$test_root/no-state.out"
+
+run_case non-verified 4 500 APPLIED 200 16777216 auto
+grep -Fq '只接受 VERIFIED' "$test_root/non-verified.out"
+
+run_case external-managed-edit 5 500 VERIFIED 200 16777216 auto SOURCE_VERIFY_FAIL=1
+[ ! -s "$LOG_FILE" ] || { printf 'pre-transaction verify failure reached write path\n' >&2; exit 1; }
+
+run_case semantic-mismatch 4 500 VERIFIED 200 16777216 auto SOURCE_SEMANTIC_VALID=0
+[ ! -s "$LOG_FILE" ] || { printf 'state/sysctl semantic mismatch reached write path\n' >&2; exit 1; }
+
+run_case same-value 0 200 VERIFIED 200 16777216 auto
+[ ! -s "$LOG_FILE" ] || { printf 'same-value reconfigure performed a write\n' >&2; exit 1; }
+
+run_case equivalent-upgrade 0 200 VERIFIED 100 16777216 auto
+grep -Fq 'begin:port=200:buf=16777216:changed=false' "$LOG_FILE"
+grep -Fq 'write-sysctl' "$LOG_FILE"
+if grep -Fq 'sysctl:-p' "$LOG_FILE"; then
+  printf 'equivalent 100-to-200 reconfigure rewrote runtime sysctls\n' >&2
+  exit 1
+fi
+grep -Fq 'candidate-verify' "$LOG_FILE"
+grep -Fq 'finalize' "$LOG_FILE"
+
+run_case material-upgrade 0 500 VERIFIED 200 16777216 auto
+grep -Fq 'begin:port=500:buf=33554432:changed=true' "$LOG_FILE"
+grep -Fq "sysctl:-p $SYSCTL_FILE" "$LOG_FILE"
+
+run_case material-downgrade 0 200 VERIFIED 500 33554432 auto
+grep -Fq 'begin:port=200:buf=16777216:changed=true' "$LOG_FILE"
+grep -Fq "sysctl:-p $SYSCTL_FILE" "$LOG_FILE"
+
+run_case explicit-preserved 0 500 VERIFIED 200 20000000 explicit
+grep -Fq 'begin:port=500:buf=20000000:changed=false' "$LOG_FILE"
+if grep -Fq 'sysctl:-p' "$LOG_FILE"; then
+  printf 'explicit-buffer reconfigure unexpectedly rewrote runtime sysctls\n' >&2
+  exit 1
+fi
+
+run_case sysctl-apply-failure 4 500 VERIFIED 200 16777216 auto SYSCTL_APPLY_FAIL=1
+grep -Fq 'recover:automatic-failure:4' "$LOG_FILE"
+if grep -Fq 'finalize' "$LOG_FILE"; then
+  printf 'failed sysctl application reached final commit\n' >&2
+  exit 1
+fi
+
+run_case candidate-verify-failure 5 500 VERIFIED 200 16777216 auto CANDIDATE_VERIFY_FAIL=1
+grep -Fq 'recover:automatic-failure:5' "$LOG_FILE"
+if grep -Fq 'finalize' "$LOG_FILE"; then
+  printf 'failed candidate verification reached final commit\n' >&2
+  exit 1
+fi
+
+run_case recovery-failure 4 500 VERIFIED 200 16777216 auto SYSCTL_APPLY_FAIL=1 RECOVER_FAIL=1
+grep -Fq 'recover:automatic-failure:4' "$LOG_FILE"
+EOF_RECONFIGURE_ORCHESTRATOR_TEST
+} >"$reconfigure_orchestrator_test"
+bash "$reconfigure_orchestrator_test"
+
+reconfigure_metadata_test="$tmp_dir/reconfigure-metadata-test.sh"
+{
+  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  awk '/^reconfigure_metadata_file_is_valid\(\)/,/^}/' "${scripts[2]}"
+  cat <<'EOF_RECONFIGURE_METADATA_TEST'
+test_root="$(mktemp -d)"
+trap 'rm -rf -- "$test_root"' EXIT
+STATE_FILE="$test_root/state.json"
+SYSCTL_FILE='/etc/sysctl.d/90-proxy-vps.conf'
+RECONFIGURE_STATE_BACKUP='/var/lib/proxy-vps-tuning/reconfigure-state.previous.json'
+RECONFIGURE_SYSCTL_BACKUP='/var/lib/proxy-vps-tuning/reconfigure-sysctl.previous.conf'
+MIN_BUF_MAX=262144
+MAX_BUF_MAX=67108864
+BUFFER_TARGET_NUMERATOR=3
+BUFFER_TARGET_DENOMINATOR=2
+old_network='{"port_speed_mbps":200,"target_rtt_ms":200,"buffer_target_numerator":3,"buffer_target_denominator":2,"buffer_max_bytes":16777216,"buffer_mode":"auto"}'
+target_network='{"port_speed_mbps":500,"target_rtt_ms":200,"buffer_target_numerator":3,"buffer_target_denominator":2,"buffer_max_bytes":33554432,"buffer_mode":"auto"}'
+state_hash="$(printf 'a%.0s' {1..64})"
+sysctl_hash="$(printf 'b%.0s' {1..64})"
+candidate_hash="$(printf 'c%.0s' {1..64})"
+
+command jq -n --argjson old "$old_network" --argjson target "$target_network" \
+  --arg state_backup "$RECONFIGURE_STATE_BACKUP" --arg sysctl_backup "$RECONFIGURE_SYSCTL_BACKUP" \
+  --arg state_hash "$state_hash" --arg sysctl_hash "$sysctl_hash" --arg path "$SYSCTL_FILE" '
+  {state:"RECONFIGURING",network:$old,managed_files:[{path:$path,sha256:$sysctl_hash}],
+   reconfigure:{schema_version:1,old_network:$old,target_network:$target,sysctl_values_changed:true,
+    state_backup_path:$state_backup,sysctl_backup_path:$sysctl_backup,
+    state_backup_sha256:$state_hash,sysctl_backup_sha256:$sysctl_hash,
+    candidate_sysctl_sha256:null,started_at:"2026-08-28T00:00:00Z"}}
+' >"$STATE_FILE"
+reconfigure_metadata_file_is_valid "$STATE_FILE"
+
+command jq '.reconfigure.target_network.target_rtt_ms=250' "$STATE_FILE" >"$STATE_FILE.bad"
+if reconfigure_metadata_file_is_valid "$STATE_FILE.bad"; then
+  printf 'reconfigure metadata accepted an RTT change\n' >&2
+  exit 1
+fi
+
+command jq --arg hash "$candidate_hash" '
+  .network=.reconfigure.target_network |
+  .managed_files[0].sha256=$hash |
+  .reconfigure.candidate_sysctl_sha256=$hash
+' "$STATE_FILE" >"$STATE_FILE.candidate"
+reconfigure_metadata_file_is_valid "$STATE_FILE.candidate"
+
+command jq '.managed_files[0].sha256="dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"' \
+  "$STATE_FILE.candidate" >"$STATE_FILE.bad"
+if reconfigure_metadata_file_is_valid "$STATE_FILE.bad"; then
+  printf 'reconfigure metadata accepted a candidate managed-hash mismatch\n' >&2
+  exit 1
+fi
+
+command jq '.reconfigure.sysctl_values_changed=false' "$STATE_FILE" >"$STATE_FILE.bad"
+if reconfigure_metadata_file_is_valid "$STATE_FILE.bad"; then
+  printf 'reconfigure metadata accepted an incorrect sysctl change classification\n' >&2
+  exit 1
+fi
+EOF_RECONFIGURE_METADATA_TEST
+} >"$reconfigure_metadata_test"
+bash "$reconfigure_metadata_test"
+
+reconfigure_candidate_verify_test="$tmp_dir/reconfigure-candidate-verify-test.sh"
+{
+  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  awk '/^verify_reconfigure_candidate\(\)/,/^}/' "${scripts[2]}"
+  cat <<'EOF_RECONFIGURE_CANDIDATE_VERIFY_TEST'
+test_root="$(mktemp -d)"
+trap 'rm -rf -- "$test_root"' EXIT
+LOG_FILE="$test_root/candidate.log"
+WARNINGS=0
+state_exists() { return 0; }
+validate_state_file() { return 0; }
+state_get() {
+  case "$1" in
+    .state) printf 'RECONFIGURING\n' ;;
+    .network.port_speed_mbps) printf '500\n' ;;
+    .network.target_rtt_ms) printf '200\n' ;;
+    .network.buffer_max_bytes) printf '33554432\n' ;;
+  esac
+}
+reconfigure_candidate_is_valid() { return 0; }
+sysctl_profile_matches_network() {
+  printf 'semantic:%s:%s:%s\n' "$1" "$2" "$3" >>"$LOG_FILE"
+  [ "${SEMANTIC_VALID:-1}" = 1 ]
+}
+verify_settings_common() { printf 'common\n' >>"$LOG_FILE"; }
+error() { :; }
+info() { :; }
+
+: >"$LOG_FILE"
+SEMANTIC_VALID=1 verify_reconfigure_candidate
+[ "$(<"$LOG_FILE")" = $'semantic:500:200:33554432\ncommon' ] || {
+  printf 'candidate verification did not bind target sysctl semantics before common verification\n' >&2
+  exit 1
+}
+
+: >"$LOG_FILE"
+if SEMANTIC_VALID=0 verify_reconfigure_candidate; then
+  printf 'candidate verification accepted target sysctl semantic mismatch\n' >&2
+  exit 1
+fi
+grep -Fq 'semantic:500:200:33554432' "$LOG_FILE"
+if grep -Fq 'common' "$LOG_FILE"; then
+  printf 'candidate semantic mismatch reached common verification\n' >&2
+  exit 1
+fi
+EOF_RECONFIGURE_CANDIDATE_VERIFY_TEST
+} >"$reconfigure_candidate_verify_test"
+bash "$reconfigure_candidate_verify_test"
+
+reconfigure_backup_hash_test="$tmp_dir/reconfigure-backup-hash-test.sh"
+{
+  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  awk '/^reconfigure_metadata_file_is_valid\(\)/,/^}/' "${scripts[2]}"
+  awk '/^reconfigure_backups_are_valid\(\)/,/^}/' "${scripts[2]}"
+  cat <<'EOF_RECONFIGURE_BACKUP_HASH_TEST'
+test_root="$(mktemp -d)"
+trap 'rm -rf -- "$test_root"' EXIT
+STATE_FILE="$test_root/state.json"
+SYSCTL_FILE="$test_root/90-proxy-vps.conf"
+RECONFIGURE_STATE_BACKUP="$test_root/reconfigure-state.previous.json"
+RECONFIGURE_SYSCTL_BACKUP="$test_root/reconfigure-sysctl.previous.conf"
+MIN_BUF_MAX=262144
+MAX_BUF_MAX=67108864
+BUFFER_TARGET_NUMERATOR=3
+BUFFER_TARGET_DENOMINATOR=2
+MANAGED_MARKER='# Managed by debian-vps-tuning; namespace=proxy-vps'
+old_network='{"port_speed_mbps":200,"target_rtt_ms":200,"buffer_target_numerator":3,"buffer_target_denominator":2,"buffer_max_bytes":16777216,"buffer_mode":"auto"}'
+target_network='{"port_speed_mbps":500,"target_rtt_ms":200,"buffer_target_numerator":3,"buffer_target_denominator":2,"buffer_max_bytes":33554432,"buffer_mode":"auto"}'
+printf '%s\n' "$MANAGED_MARKER" 'net.core.rmem_max = 16777216' >"$RECONFIGURE_SYSCTL_BACKUP"
+sysctl_hash="$(sha256sum "$RECONFIGURE_SYSCTL_BACKUP" | awk '{print $1}')"
+command jq -n --argjson network "$old_network" --arg path "$SYSCTL_FILE" --arg hash "$sysctl_hash" \
+  '{state:"VERIFIED",network:$network,managed_files:[{path:$path,sha256:$hash}]}' >"$RECONFIGURE_STATE_BACKUP"
+state_hash="$(sha256sum "$RECONFIGURE_STATE_BACKUP" | awk '{print $1}')"
+command jq -n --argjson old "$old_network" --argjson target "$target_network" \
+  --arg state_backup "$RECONFIGURE_STATE_BACKUP" --arg sysctl_backup "$RECONFIGURE_SYSCTL_BACKUP" \
+  --arg state_hash "$state_hash" --arg sysctl_hash "$sysctl_hash" --arg path "$SYSCTL_FILE" '
+  {state:"RECONFIGURING",network:$old,managed_files:[{path:$path,sha256:$sysctl_hash}],
+   reconfigure:{schema_version:1,old_network:$old,target_network:$target,sysctl_values_changed:true,
+    state_backup_path:$state_backup,sysctl_backup_path:$sysctl_backup,
+    state_backup_sha256:$state_hash,sysctl_backup_sha256:$sysctl_hash,
+    candidate_sysctl_sha256:null,started_at:"2026-08-28T00:00:00Z"}}
+' >"$STATE_FILE"
+state_file_path_is_valid() { return 0; }
+stat() {
+  case "$2" in '%u') printf '0\n' ;; '%a') printf '600\n' ;; *) command stat "$@" ;; esac
+}
+reconfigure_backups_are_valid
+printf '%s\n' '# tamper' >>"$RECONFIGURE_SYSCTL_BACKUP"
+if reconfigure_backups_are_valid; then
+  printf 'reconfigure backup validator accepted a tampered sysctl backup\n' >&2
+  exit 1
+fi
+EOF_RECONFIGURE_BACKUP_HASH_TEST
+} >"$reconfigure_backup_hash_test"
+bash "$reconfigure_backup_hash_test"
+
+reconfigure_recovery_test="$tmp_dir/reconfigure-recovery-test.sh"
+{
+  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  awk '/^record_reconfigure_recovery_failure\(\)/,/^}/' "${scripts[2]}"
+  awk '/^recover_incomplete_reconfigure\(\)/,/^}/' "${scripts[2]}"
+  cat <<'EOF_RECONFIGURE_RECOVERY_TEST'
+test_root="$(mktemp -d)"
+trap 'rm -rf -- "$test_root"' EXIT
+STATE_FILE="$test_root/state.json"
+SYSCTL_FILE="$test_root/sysctl.conf"
+RECONFIGURE_STATE_BACKUP="$test_root/state.previous.json"
+RECONFIGURE_SYSCTL_BACKUP="$test_root/sysctl.previous.conf"
+RECONFIGURE_FAILURE_EVIDENCE="$test_root/failure.json"
+LOG_FILE="$test_root/recovery.log"
+command jq -n '{state:"RECONFIGURING",reconfigure:{schema_version:1}}' >"$STATE_FILE"
+state_exists() { return 0; }
+state_file_is_valid() { return 0; }
+state_get() { command jq -er "$1" "$STATE_FILE"; }
+reconfigure_backups_are_valid() { [ "${BACKUPS_VALID:-1}" = 1 ]; }
+restore_reconfigure_sysctl_backup() { printf 'restore-sysctl\n' >>"$LOG_FILE"; [ "${RESTORE_SYSCTL_FAIL:-0}" = 0 ]; }
+sysctl() { printf 'apply-sysctl\n' >>"$LOG_FILE"; [ "${RESTORED_SYSCTL_APPLY_FAIL:-0}" = 0 ]; }
+verify_settings() { printf 'verify-old\n' >>"$LOG_FILE"; [ "${VERIFY_OLD_FAIL:-0}" = 0 ]; }
+restore_reconfigure_state_backup() { printf 'restore-state\n' >>"$LOG_FILE"; [ "${RESTORE_STATE_FAIL:-0}" = 0 ]; }
+cleanup_reconfigure_backups() { printf 'cleanup\n' >>"$LOG_FILE"; }
+write_reconfigure_failure_evidence() { printf 'evidence:recovered=%s:stage=%s\n' "$4" "$5" >>"$LOG_FILE"; }
+state_set_phase() { printf 'phase:%s\n' "$1" >>"$LOG_FILE"; }
+error() { :; }
+warn() { :; }
+info() { :; }
+
+: >"$LOG_FILE"
+BACKUPS_VALID=1 recover_incomplete_reconfigure manual-recover 7
+expected=$'restore-sysctl\napply-sysctl\nverify-old\nrestore-state\nevidence:recovered=true:stage=recovered\ncleanup'
+[ "$(<"$LOG_FILE")" = "$expected" ] || {
+  printf 'unexpected successful recovery sequence:\n%s\n' "$(<"$LOG_FILE")" >&2
+  exit 1
+}
+
+: >"$LOG_FILE"
+set +e
+BACKUPS_VALID=0 recover_incomplete_reconfigure manual-recover 7
+rc=$?
+set -e
+[ "$rc" -ne 0 ]
+grep -Fq 'phase:DEGRADED' "$LOG_FILE"
+grep -Fq 'evidence:recovered=false:stage=metadata-validation' "$LOG_FILE"
+if grep -Fq 'restore-sysctl' "$LOG_FILE"; then
+  printf 'invalid backup hash reached the restore path\n' >&2
+  exit 1
+fi
+
+: >"$LOG_FILE"
+set +e
+VERIFY_OLD_FAIL=1 recover_incomplete_reconfigure manual-recover 5
+rc=$?
+set -e
+[ "$rc" -ne 0 ]
+grep -Fq 'restore-sysctl' "$LOG_FILE"
+grep -Fq 'apply-sysctl' "$LOG_FILE"
+grep -Fq 'phase:DEGRADED' "$LOG_FILE"
+grep -Fq 'evidence:recovered=false:stage=verify-restored-configuration' "$LOG_FILE"
+EOF_RECONFIGURE_RECOVERY_TEST
+} >"$reconfigure_recovery_test"
+bash "$reconfigure_recovery_test"
+
+reconfigure_phase_guard_test="$tmp_dir/reconfigure-phase-guard-test.sh"
+{
+  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  awk '/^verify_settings\(\)/,/^}/' "${scripts[2]}"
+  awk '/^rollback_internal\(\)/,/^}/' "${scripts[2]}"
+  cat <<'EOF_RECONFIGURE_PHASE_GUARD_TEST'
+test_root="$(mktemp -d)"
+trap 'rm -rf -- "$test_root"' EXIT
+STATE_FILE="$test_root/state.json"
+STATE_DIR="$test_root/state"
+printf '%s\n' '{"state":"RECONFIGURING","reconfigure":{"schema_version":1}}' >"$STATE_FILE"
+EXIT_CONFLICT=4
+PURGE_CREATED_SWAP=0
+state_exists() { return 0; }
+validate_state_file() { :; }
+state_get() { command jq -er "$1" "$STATE_FILE"; }
+verify_settings_common() { printf 'verify crossed RECONFIGURING\n' >&2; exit 91; }
+error() { :; }
+if verify_settings; then
+  printf 'ordinary verify accepted RECONFIGURING\n' >&2
+  exit 1
+fi
+if rollback_internal 0; then
+  printf 'ordinary rollback accepted RECONFIGURING\n' >&2
+  exit 1
+fi
+EOF_RECONFIGURE_PHASE_GUARD_TEST
+} >"$reconfigure_phase_guard_test"
+bash "$reconfigure_phase_guard_test"
+
+verify_settings_override_test="$tmp_dir/verify-settings-override-test.sh"
+{
+  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  awk '/^verify_settings\(\)/,/^}/' "${scripts[2]}"
+  cat <<'EOF_VERIFY_SETTINGS_OVERRIDE_TEST'
+test_root="$(mktemp -d)"
+trap 'rm -rf -- "$test_root"' EXIT
+STATE_FILE="$test_root/current.json"
+backup_state="$test_root/previous.json"
+LOG_FILE="$test_root/verify.log"
+WARNINGS=0
+: >"$STATE_FILE"
+: >"$backup_state"
+state_exists() { printf 'exists:%s\n' "$STATE_FILE" >>"$LOG_FILE"; return 0; }
+validate_state_file() { printf 'validate:%s\n' "$STATE_FILE" >>"$LOG_FILE"; return 0; }
+state_get() {
+  printf 'state-get:%s:%s\n' "$1" "$STATE_FILE" >>"$LOG_FILE"
+  [ "$1" = '.state' ] && printf 'VERIFIED\n'
+}
+jq() { printf 'jq:%s\n' "${!#}" >>"$LOG_FILE"; return 1; }
+verify_settings_common() { printf 'common:%s\n' "$STATE_FILE" >>"$LOG_FILE"; }
+error() { :; }
+info() { :; }
+
+verify_settings "$backup_state"
+for expected in \
+  "exists:$backup_state" "validate:$backup_state" "state-get:.state:$backup_state" \
+  "jq:$backup_state" "common:$backup_state"; do
+  grep -Fqx "$expected" "$LOG_FILE" || {
+    printf 'verify state override did not reach dependency: %s\n' "$expected" >&2
+    exit 1
+  }
+done
+[ "$STATE_FILE" = "$test_root/current.json" ] || {
+  printf 'verify state override leaked outside the function\n' >&2
+  exit 1
+}
+EOF_VERIFY_SETTINGS_OVERRIDE_TEST
+} >"$verify_settings_override_test"
+bash "$verify_settings_override_test"
+
 sysctl_conflict_test="$tmp_dir/sysctl-conflict-test.sh"
 {
   printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
   awk '/^report_sysctl_conflicts\(\)/,/^}/' "${scripts[0]}"
+  awk '/^managed_sysctl_value\(\)/,/^}/' "${scripts[0]}"
+  awk '/^verify_settings_common\(\)/,/^}/' "${scripts[0]}"
   awk '/^verify_settings\(\)/,/^}/' "${scripts[0]}"
   cat <<'EOF_SYSCTL_CONFLICT_TEST'
 test_root="$(mktemp -d)"
 trap 'rm -rf -- "$test_root"' EXIT
+STATE_FILE="$test_root/state.json"
+printf '%s\n' '{}' >"$STATE_FILE"
 SYSCTL_SCAN_ROOT="$test_root/etc"
 mkdir -p "$SYSCTL_SCAN_ROOT/sysctl.d"
 SYSCTL_FILE="$SYSCTL_SCAN_ROOT/sysctl.d/90-proxy-vps.conf"
@@ -1795,6 +2294,7 @@ bash "$fstab_remove_test"
 state_validation_test="$tmp_dir/state-validation-test.sh"
 {
   printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  awk '/^state_file_path_is_valid\(\)/,/^}/' "${scripts[0]}"
   awk '/^state_file_is_valid\(\)/,/^}/' "${scripts[0]}"
   cat <<'EOF_STATE_VALIDATION_TEST'
 test_root="$(mktemp -d)"
@@ -1809,7 +2309,7 @@ STATE_DIR='/var/lib/proxy-vps-tuning'
 SYSCTL_SCAN_ROOT='/etc'
 STATE_SCHEMA_VERSION=4
 LEGACY_STATE_SCHEMA_VERSION=3
-SCRIPT_VERSION='0.1.0-rc.13'
+SCRIPT_VERSION='0.1.0-rc.14'
 PROFILE_ID='debian12-1c1g'
 UPDATE_PREFLIGHT=0
 stat() { printf '%s\n' '0'; }
@@ -1828,8 +2328,21 @@ for fixture in empty whitespace null object multiple; do
   fi
 done
 
-printf '%s\n' '{"schema_version":4,"script_version":"0.1.0-rc.13","profile":{"id":"debian12-1c1g"},"state":"PREPARED","network":{},"original_sysctls":{},"qdisc":{"file":"/tmp/qdisc","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"swap":{},"provider_sysctl_transfer":{"required":false,"source_path":"/etc/sysctl.conf","backup_path":"/var/lib/proxy-vps-tuning/provider-sysctl.conf.original","original_sha256":null,"backup_sha256":null,"transferred_sha256":null,"original_uid":null,"original_gid":null,"original_mode":null,"keys":[],"state":"NOT_REQUIRED"},"managed_files":[],"timestamps":{}}' >"$STATE_FILE"
+printf '%s\n' '{"schema_version":4,"script_version":"0.1.0-rc.14","profile":{"id":"debian12-1c1g"},"state":"PREPARED","network":{},"original_sysctls":{},"qdisc":{"file":"/tmp/qdisc","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"swap":{},"provider_sysctl_transfer":{"required":false,"source_path":"/etc/sysctl.conf","backup_path":"/var/lib/proxy-vps-tuning/provider-sysctl.conf.original","original_sha256":null,"backup_sha256":null,"transferred_sha256":null,"original_uid":null,"original_gid":null,"original_mode":null,"keys":[],"state":"NOT_REQUIRED"},"managed_files":[],"timestamps":{}}' >"$STATE_FILE"
 state_file_is_valid
+
+cp -- "$STATE_FILE" "${STATE_FILE}.valid"
+jq '.script_version="0.1.0-rc.12"' "${STATE_FILE}.valid" >"$STATE_FILE"
+if state_file_is_valid; then
+  printf 'state validator accepted a cross-version current-schema state\n' >&2
+  exit 1
+fi
+jq '.profile.id="debian13-1c1g"' "${STATE_FILE}.valid" >"$STATE_FILE"
+if state_file_is_valid; then
+  printf 'state validator accepted a cross-profile current-schema state\n' >&2
+  exit 1
+fi
+cp -- "${STATE_FILE}.valid" "$STATE_FILE"
 
 jq '.provider_sysctl_transfer.original_uid = 0 | .provider_sysctl_transfer.original_gid = 0 | .provider_sysctl_transfer.original_mode = "000"' \
   "$STATE_FILE" >"${STATE_FILE}.placeholder"
@@ -2016,15 +2529,17 @@ preflight_state_test="$tmp_dir/preflight-state-test.sh"
   cat <<'EOF_PREFLIGHT_STATE_TEST'
 EXIT_CONFLICT=4
 STATE_PRESENT=0
+STATE_FILE='fixture-state.json'
 PHASE=''
 UPDATE_PREFLIGHT=0
 state_exists() { [ "$STATE_PRESENT" -eq 1 ]; }
 state_get() { printf '%s\n' "$PHASE"; }
+jq() { return 1; }
 info() { :; }
 die() { exit "$1"; }
 check_preflight_state
 STATE_PRESENT=1
-for PHASE in VERIFIED APPLIED SWAP_RETAINED DEGRADED ROLLBACK_PENDING; do
+for PHASE in VERIFIED APPLIED SWAP_RETAINED RECONFIGURING DEGRADED ROLLBACK_PENDING; do
   set +e
   (check_preflight_state >/dev/null 2>&1)
   rc=$?
@@ -2041,7 +2556,7 @@ for PHASE in VERIFIED APPLIED; do
     exit 1
   }
 done
-for PHASE in SWAP_RETAINED DEGRADED ROLLBACK_PENDING; do
+for PHASE in SWAP_RETAINED RECONFIGURING DEGRADED ROLLBACK_PENDING; do
   set +e
   (check_preflight_state >/dev/null 2>&1)
   rc=$?
@@ -2166,6 +2681,8 @@ test_root="$(mktemp -d)"
 trap 'rm -rf -- "$test_root"' EXIT
 STATE_DIR="$test_root/state"
 mkdir "$STATE_DIR"
+STATE_FILE="$STATE_DIR/state.json"
+printf '%s\n' '{}' >"$STATE_FILE"
 SYSCTL_FILE="$test_root/sysctl"
 JOURNAL_FILE="$test_root/journal"
 FQ_HELPER="$test_root/helper"
@@ -2183,6 +2700,7 @@ PHASES=''
 validate_state_file() { return 0; }
 state_get() { [ "$1" = '.state' ] && printf '%s\n' 'VERIFIED'; }
 state_set_phase() { PHASES="${PHASES} $1"; }
+jq() { return 1; }
 assert_owned_file() { :; }
 provider_sysctl_transfer_is_restorable() { return 0; }
 restore_provider_sysctl_ownership() { return 0; }

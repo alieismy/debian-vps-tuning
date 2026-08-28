@@ -53,7 +53,7 @@ Scan options:
   --minimum-rate-exposure-percent 90..100
   --minimum-cpu-idle-percent 0..100 --maximum-cpu-steal-percent 0..100
 
-Boundary: this wrapper supports only the existing Debian 13 rc.13, eth0,
+Boundary: this wrapper supports only the existing Debian 13 rc.14, eth0,
 200 Mbps, 1C1G/1C2G experiment contract. It never creates persistent HTB and
 never converts a shortlist into a production recommendation. reference/sweep
 temporarily replace root fq, produce deliberate traffic, and restore fq after

@@ -6,8 +6,8 @@ IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 
-CONTROLLER_VERSION='0.1.0-rc.13'
-RELEASE_TAG='v0.1.0-rc.13'
+CONTROLLER_VERSION='0.1.0-rc.14'
+RELEASE_TAG='v0.1.0-rc.14'
 REPOSITORY='alieismy/debian-vps-tuning'
 RELEASE_BASE_URL="https://github.com/${REPOSITORY}/releases/download/${RELEASE_TAG}"
 
@@ -71,11 +71,12 @@ usage() {
   cat <<'EOF_USAGE'
 Usage:
   debian-vps-tuning.sh
-  debian-vps-tuning.sh {guided|preflight|apply|verify|status|diagnose|probe|benchmark|htb|update|rollback|recover} [options]
+  debian-vps-tuning.sh {guided|preflight|apply|reconfigure|verify|status|diagnose|probe|benchmark|htb|update|rollback|recover} [options]
 
 Options:
-  --port MBPS    provider port cap for guided/preflight/apply; default 200
-  --target TAG    update target, for example v0.1.0-rc.13; default is the
+  --port MBPS    provider port cap for guided/preflight/apply; default 200;
+                 required explicitly by CLI reconfigure
+  --target TAG    update target, for example v0.1.0-rc.14; default is the
                   highest non-draft Release in the installed major.minor line;
                   stable installations ignore prereleases automatically
   -h, --help     show this help
@@ -85,6 +86,9 @@ Behavior:
   - With a terminal and no action, shows an interactive menu.
   - Without a terminal, an explicit action is required.
   - guided runs preflight first and asks before apply.
+  - reconfigure changes only the managed provider port/buffer state. It requires
+    an existing VERIFIED state for the same version/profile and preserves RTT,
+    qdisc, swap, journald and NOFILE configuration.
   - benchmark requires BENCHMARK_HOST and an existing iperf3 server; it changes
     no system configuration but deliberately generates high-bandwidth traffic.
   - probe requires an explicitly authorized iperf3 server, enforces an
@@ -93,8 +97,8 @@ Behavior:
     use "htb --help" for its narrower scope and stage gates.
   - update is read-only: it verifies the source and target Release assets, runs
     source verify and target update-preflight, then prints a manual handoff plan.
-  - recover is an advanced rc.2 empty-state recovery action and is not shown
-    in the normal interactive menu.
+  - recover restores an interrupted reconfigure transaction, or performs the
+    advanced rc.2 empty-state recovery when explicitly acknowledged.
 
 The controller selects Debian 12/13 and supported CPU/RAM combinations
 automatically. It never changes the tuning configuration itself; it invokes
@@ -224,7 +228,7 @@ state_profile_matches_detected() { [ "$1" = "$2" ]; }
 parse_arguments() {
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      guided | preflight | apply | verify | status | diagnose | benchmark | update | rollback | recover)
+      guided | preflight | apply | reconfigure | verify | status | diagnose | benchmark | update | rollback | recover)
         [ -z "$ACTION" ] || die "$EXIT_USAGE" '只能指定一个 action。'
         ACTION="$1"
         ;;
@@ -274,7 +278,8 @@ choose_action_interactively() {
   8) benchmark（高级单次证据入口；需 BENCHMARK_HOST）
   9) HTB 实验（仅 Debian 13 / 200 Mbps / 非持久化）
  10) update（只读检查并生成升级计划）
- 11) rollback
+ 11) reconfigure（重配置服务商端口带宽）
+ 12) rollback
   0) 退出
 EOF_MENU
   printf '\n请选择 [默认 1]：'
@@ -290,7 +295,8 @@ EOF_MENU
     8) ACTION='benchmark' ;;
     9) ACTION='htb' ;;
     10) ACTION='update' ;;
-    11) ACTION='rollback' ;;
+    11) ACTION='reconfigure' ;;
+    12) ACTION='rollback' ;;
     0) exit 0 ;;
     *) die "$EXIT_USAGE" '无效操作选择。' ;;
   esac
@@ -331,12 +337,24 @@ select_port_speed() {
     die "$EXIT_USAGE" '--target 只能与 update 一起使用。'
   fi
   case "$ACTION" in
-    guided | preflight | apply) ;;
+    guided | preflight | apply | reconfigure) ;;
     *)
       [ -z "$CLI_PORT_SPEED_MBPS" ] || die "$EXIT_USAGE" "${ACTION} 不接受 --port；它使用现有状态。"
       return 0
       ;;
   esac
+
+  if [ "$ACTION" = 'reconfigure' ]; then
+    if [ "$ACTION_FROM_MENU" -eq 1 ]; then
+      choose_port_interactively
+    else
+      [ -n "$CLI_PORT_SPEED_MBPS" ] ||
+        die "$EXIT_USAGE" 'reconfigure 必须显式使用 --port <MBPS>；不会采用默认值或 PORT_SPEED_MBPS 环境变量。'
+      validate_port_speed "$CLI_PORT_SPEED_MBPS" || die "$EXIT_USAGE" '带宽必须是 100–1000 的整数。'
+      PORT_SPEED_MBPS_SELECTED=$((10#$CLI_PORT_SPEED_MBPS))
+    fi
+    return 0
+  fi
 
   if [ -n "$CLI_PORT_SPEED_MBPS" ]; then
     validate_port_speed "$CLI_PORT_SPEED_MBPS" || die "$EXIT_USAGE" '带宽必须是 100–1000 的整数。'
@@ -663,6 +681,11 @@ print_execution_plan() {
     guided | preflight | apply)
       printf '  端口带宽：%s Mbps\n' "$PORT_SPEED_MBPS_SELECTED"
       ;;
+    reconfigure)
+      printf '  已安装端口带宽：%s Mbps\n' "${STATE_PORT_SPEED_MBPS:-unknown}"
+      printf '  目标端口带宽：%s Mbps\n' "$PORT_SPEED_MBPS_SELECTED"
+      printf '  变更边界：只更新本项目 sysctl 管理文件、必要的 socket buffer 运行值和状态；不重建 qdisc\n'
+      ;;
   esac
   printf '\n'
 }
@@ -679,7 +702,7 @@ confirm_apply() {
 run_profile() {
   local action="$1"
   case "$action" in
-    preflight | apply)
+    preflight | apply | reconfigure)
       env PORT_SPEED_MBPS="$PORT_SPEED_MBPS_SELECTED" bash "$PROFILE_PATH" "$action"
       ;;
     *) bash "$PROFILE_PATH" "$action" ;;
@@ -744,6 +767,19 @@ dispatch_action() {
         esac
       fi
       run_profile apply
+      ;;
+    reconfigure)
+      if [ "$ACTION_FROM_MENU" -eq 1 ]; then
+        printf '将把已安装端口带宽从 %s Mbps 重配置为 %s Mbps；该操作会事务化更新管理文件和状态。是否继续？[y/N]：' \
+          "${STATE_PORT_SPEED_MBPS:-unknown}" "$PORT_SPEED_MBPS_SELECTED"
+        local answer
+        IFS= read -r answer
+        case "$answer" in
+          y | Y | yes | YES) ;;
+          *) info '已停止；没有执行带宽重配置。'; return 0 ;;
+        esac
+      fi
+      run_profile reconfigure
       ;;
     benchmark)
       if [ "$ACTION_FROM_MENU" -eq 1 ]; then

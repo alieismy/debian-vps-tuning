@@ -31,7 +31,7 @@
 | C12 | 菜单 `apply` | 再次确认；N/Enter 不 apply | 目标 VPS 待测 |
 | C13 | 无 TTY 且无 action | 返回 usage，不等待输入 | 目标 Linux 待测 |
 | C14 | 状态档位与检测档位不一致 | 阻断，不自动换 profile | fixture 通过；目标 VPS 待测 |
-| C15 | 固定 rc.13 Release assets | 外层固定 installer 摘要；installer 固定清单摘要；下载清单、总控、六份 profile、证据/CLI/HTB 资产并逐项通过 SHA-256 | 本地清单、installer 摘要链与静态门禁通过；Release 尚未创建，发布后须从公开地址重下载并复核十七个资产 |
+| C15 | 固定 rc.14 Release assets | 外层固定 installer 摘要；installer 固定清单摘要；下载清单、总控、六份 profile、证据/CLI/HTB 资产并逐项通过 SHA-256 | 本地清单、installer 摘要链与静态门禁待候选收口；Release 尚未创建，发布后须从公开地址重下载并复核十七个资产 |
 | C16 | 已安装状态下无 `--port`/环境变量地重复 `apply` | 复用状态中的端口带宽；显式参数仍优先；无效状态值阻断 | fixture 通过；目标 VPS 待测 |
 | C17 | `diagnose` | 默认 5 秒前后采样；输出 TCP/softnet、整机 CPU、接口和可识别 ethtool 错误增量；只读显示 window scaling、自动接收缓冲、idle 后 slow start、MTU probing、TSQ 与 notsent low-water；读取 qdisc、队列、RPS/XPS/IRQ、Xray sockopt 和代理进程 CPU time/RSS/线程/FD；无系统配置写入、无主动流量、无进程命令行 | CPU/接口增量 fixture，以及两个非受管默认值的正常、异常、不可读和 `slow_start_after_idle=0` 不告警 fixture 通过；目标 VPS 待测 |
 | C18 | `benchmark` 未提供 host、无 iperf3、无效端口/时长/预热/并行/地址族/run ID，或输出目录非绝对路径/已经存在 | 明确拒绝；不覆盖旧证据，不安装软件、不改防火墙、不选择公共服务器 | 参数和输出目录 fixture 通过；目标 VPS 待测 |
@@ -45,10 +45,13 @@
 | C26 | 厂商 `/etc/sysctl.conf` 唯一且相同值的 `fq`/`bbr` 基线 | `preflight` 零写入并报告 `PASS_WITH_PROVIDER_SYSCTL_TRANSFER`；`apply` 提交 schema 4 状态后完整备份并原子迁移；`verify` 校验原始/迁移后哈希；`rollback` 恢复原文件和安装前运行值；外部修改时拒绝覆盖并保留 `DEGRADED` | 只读分类、迁移/恢复、外部修改拒绝和 schema 3 仅限 update-preflight fixture 通过；Debian 12/13 目标 VPS 生命周期待测 |
 | C27 | benchmark 流量预算与 opt-in pacing | 显式 `BENCHMARK_RATE_CAP_MBPS` 优先，否则只使用合法管理状态的端口上限；按 `(seconds+omit)×方向数` 计算 payload 上界并写入元数据；默认只估算，只有 `BENCHMARK_ENFORCE_RATE_CAP=1` 与显式 cap 同时存在时才传递 `iperf3 --bitrate`；并行流按逐流语义等分总 cap 并记录 scope/每流 bps；无可信 cap、缺 cap 强制限速或非法输入均阻断 | 显式 cap、无 cap、非法 cap、单/双方向公式、`--bitrate` 转发和持久化元数据 fixture 通过；计费流量、真实吞吐和实际限速精度不由静态 fixture 证明 |
 | C28 | HTB 实验排程生成器 | 只输出 schema 2 JSON；每次调用必须显式提供安全 `window-id`，且只能生成一个 `aba`（A1/B1/A2）或 `bab`（B2/A3/B3）三阶段窗口；反向窗口必须使用不同 ID、新证据目录和独立 operator invocation；至少 300 秒冷却，候选结论关闭后才可另建低速 A/C/A；不得执行 qdisc、流量或持久化 | `aba`/`bab` 独立窗口、缺少 ID、旧 `--repeat-cycles 2` 拒绝、180 Mbit/s 控制、非法冷却和非法控制速率 fixture 通过；目标机执行仍按独立 SOP 门禁 |
-| C29 | HTB v0.4.0 执行器基线绑定 | 只接受 rc.13 schema 4、`VERIFIED`、200 Mbps 的 Debian 13 1C1G/1C2G；允许临时 100–200 Mbit/s，其中 200 仅用于端口额定 reference；活动状态保存实际 profile 和 managed-state SHA-256；profile/state 漂移、旧版本、超过端口或其他端口必须拒绝继续 | 两个允许 profile、100/200 边界及 profile/schema/version/port/hash/201 负向 fixture 通过；1C2G v0.4.0 目标机 smoke/A/B/A 待执行 |
+| C29 | HTB v0.4.0 执行器基线绑定 | 只接受 rc.14 schema 4、`VERIFIED`、200 Mbps 的 Debian 13 1C1G/1C2G；允许临时 100–200 Mbit/s，其中 200 仅用于端口额定 reference；活动状态保存实际 profile 和 managed-state SHA-256；profile/state 漂移、旧版本、超过端口或其他端口必须拒绝继续 | 两个允许 profile、100/200 边界及 profile/schema/version/port/hash/201 负向 fixture 待 rc.14 最终门禁；1C2G v0.4.0 目标机 smoke/A/B/A 待执行 |
 | C30 | HTB reference/candidate 只读计划 | schema 3；默认 `reference-screen` 只生成 2–5 个 HTB200 样本且拒绝 `--rates`；显式 `candidate-sweep` 必须 ack 并绑定已复核 reference 的 manifest/analysis/completion 摘要，只接受 3–8 个唯一 100–199 Mbit/s 候选，在首尾生成相同 HTB200 reference 并正序/反序扫描；每阶段 `rate_cap_mbit == rate_mbit`，预算按实际 HTB rate/ceil 求和；sender 最低速率暴露比例、CPU idle/steal 和 softnet/interface 零异常要求必须冻结为 plan controls；不读取主机、不执行流量 | 默认 HTB200 reference、带三摘要绑定的 180/190/195 和自定义候选计划、缺失/不完整 reference 绑定拒绝、schema 3、实际 HTB 预算公式、controls 及 mode/端口/重复/越界速率/样本/冷却/暴露/CPU 边界负向 fixture 通过 |
 | C31 | HTB reference/candidate runner | 要求 root 所有且 group/world 不可写的固定计划、profile、稳定路径 HTB 工具和分析器；流量前执行真实 profile 的只读 `verify`，冻结 managed profile/version/state/port/state SHA-256；只对显式 endpoint 执行 upload；每阶段执行 preflight→start→ACTIVE→benchmark→ACTIVE→stop→postflight，benchmark metadata 必须与冻结 profile/script/state 绑定；失败即停并尝试受管恢复；socket 指标脱敏；不安装软件、不持久化 | schema 3 计划、mock HTB200 全生命周期、错误 profile verify 在流量前阻断、benchmark 绑定、managed-state hash、子证据 hash、socket 隐私 fixture 通过；`dvt htb` 稳定执行器同 hash 接受/异 hash 拒绝 fixture 通过；真实 iperf3、信号中断、watchdog 和目标 VPS qdisc 恢复待测 |
 | C32 | HTB reference/candidate 分析 | 校验 source reference 摘要、session managed binding、每阶段 schema 3、COMPLETED、benchmark manifest/result hash、benchmark profile/script/state 绑定和 schema 2 测量窗口；严格拒绝重复、缺失或非数字 CPU/softnet 计数；主吞吐使用 sender Mbit/s，重传使用 sender retransmits/GiB；每个样本必须有正 `overlimits`、达到冻结速率暴露比例、通过 CPU idle/steal、softnet 和接口门禁；任一测量/暴露/资源异常均输出 `REVIEW_BLOCKED` 且 shortlist 为空；有效候选按 median/MAD 描述，不假设 MSS、不计算丢包率、不使用固定全局阈值 | 合成 schema 3 `REVIEW_REQUIRED` shortlist、异常 receiver、零 overlimits、低 offered load、高 CPU steal、畸形 CPU/softnet、benchmark profile mismatch、缺失 COMPLETED 和非法 plan 负向 fixture 通过；真实样本统计解释和跨窗口复验待测 |
+| C33 | 总控 `reconfigure` 参数与分派 | CLI 必须显式提供 `--port 100..1000`；默认值或 `PORT_SPEED_MBPS` 环境变量不能代替目标参数；菜单选项再次确认；只向选定的同版本 profile 透传目标端口和 `reconfigure` action | 参数、菜单和透传 fixture 待最终门禁；目标 VPS 待测 |
+| C34 | profile 带宽重配置语义 | 只接受同一 rc.14/profile 的 `VERIFIED` 状态；先复算旧 buffer 契约并执行完整 verify；同值无写入；自动 buffer 随端口重算，显式 buffer 保留；有效值不变时不执行 `sysctl -p`，有效值变化时只应用项目 sysctl 文件；qdisc/swap/journald/NOFILE 不变 | 无状态、状态不一致、同值、100→200、200→500、500→200、显式 buffer 与候选验证 fixture 待最终门禁；目标 VPS 与重启持久性待测 |
+| C35 | `RECONFIGURING` 事务与恢复 | 旧 state/sysctl 固定 root-only 备份及 SHA-256 有效后才提交事务；候选状态、网络值、managed hash 和变化分类一致；失败自动按旧 sysctl→完整 verify→旧 state 顺序恢复；恢复失败保留 `DEGRADED`、备份和失败证据；普通 `verify`/`rollback`/`preflight`/`apply` 不得越过，手工 `recover` 只处理合法事务 | 元数据、备份篡改、失败注入、自动恢复、恢复失败和阶段门禁 fixture 待最终门禁；目标 VPS 故障注入待测 |
 
 本地检查入口：
 
@@ -95,9 +98,9 @@ bash experiments/htb-aggregate/tests/static-check.sh
 
 T1、T2 必须通过才能发布首个稳定版；T3、T4 是 Debian 13 稳定版门槛；T5、T6 用于确认 100–1000 Mbps 输入边界，不能用 200 Mbps 的结果代替。T7、T8 用于证明同一 `1c2g` 兼容 profile 在 2 vCPU 下的完整生命周期；T9、T10 用于证明 512 MiB 的缓冲截断、journald、swap 和 3X-UI 生命周期。本地 fixture 不能替代目标机证据。
 
-上述目标机结果绑定测试时日志中的具体版本与 SHA-256。rc.13 不改变 rc.12 写入的 sysctl/qdisc/swap/journald/NOFILE 参数，但脚本版本、哈希、只读诊断和 TcpQuality 证据契约已改变，不能继承为 rc.13 目标机通过结论。当前环境没有目标 VPS 的 SSH 凭据，rc.13 最终哈希的生命周期、迁移/回滚、持久化 benchmark 和新版 TcpQuality 工具复核不能由本地 fixture 冒充，作为 Pre-release 的后续确认项保留。
+上述目标机结果绑定测试时日志中的具体版本与 SHA-256。rc.14 不改变 rc.13/rc.12 写入的 17 个 sysctl、qdisc、swap、journald 或 NOFILE 参数，但脚本版本、哈希、带宽重配置事务和恢复契约已改变，不能继承为 rc.14 目标机通过结论。当前环境没有目标 VPS 的 SSH 凭据，rc.14 最终哈希的首次生命周期、rc.13→rc.14 迁移、100→200/200→500/500→200 重配置、故障恢复、重启持久性、真实代理链路、TcpQuality 和 HTB 均不能由本地 fixture 冒充，作为 Pre-release 的后续确认项保留。
 
-## rc.13 自动缓冲矩阵
+## rc.14 自动缓冲矩阵
 
 该矩阵验证的是输入算法和资源上限，不是吞吐结论。目标 RTT 为 200 ms；512M/1G/2G 的自动目标分别为 1×/1.25×/1.5×BDP，再向上取 16/32/64 MiB 档。
 
@@ -108,7 +111,7 @@ T1、T2 必须通过才能发布首个稳定版；T3、T4 是 Debian 13 稳定�
 | 1C2GB/2C2GB | 16 MiB | 16 MiB | 32 MiB | 64 MiB | 200/500/1000 Mbps 通过；100 待补 |
 | 2C2GB | 16 MiB | 16 MiB | 32 MiB | 64 MiB | 与 1C2GB 共用算法；控制器 CPU fixture 通过，目标机待测 |
 
-rc.13 保持 rc.12/rc.11/rc.10 的该矩阵。对 500/1000 Mbps 的 2G 档，rc.10–rc.13 与 rc.9 的配置可能不同，必须先通过只读 update 检查，再人工执行 rollback → reboot → preflight → apply → reboot → verify 建立新状态，不得把旧版本的 verify 结果记作当前版本。200 Mbps 主力档的数值虽不变，rc.13 的结构化 benchmark、TcpQuality 流级证据工具和迁移路径仍需独立运行验证。
+rc.14 保持 rc.13/rc.12/rc.11/rc.10 的该矩阵。跨脚本版本时仍必须先通过只读 update 检查，再人工执行 rollback → reboot → preflight → apply → reboot → verify 建立同版本状态，不得用 `reconfigure` 接管旧版本 state。只有同一 rc.14 profile 的 `VERIFIED` 状态在服务商端口变化后才能重配置：100→200 Mbps 等价于保持 16 MiB；2G 档 200→500 Mbps 变为 32 MiB，500→200 Mbps 恢复 16 MiB。fixture 只验证推导、事务和恢复逻辑，不证明目标 VPS 的实时 sysctl、生效持久性或性能。
 
 ## 每台目标机的生命周期矩阵
 
@@ -132,6 +135,9 @@ rc.13 保持 rc.12/rc.11/rc.10 的该矩阵。对 500/1000 Mbps 的 2G 档，rc.
 | M13 | 授权 iperf3 benchmark | 单流优先；固定服务端、地址族、有效时长、预热、run ID 和新输出目录；上传/下载分别保存原始 JSON、sender 吞吐/重传/每 GiB 重传、host-wide TCP/接口与 qdisc 增量；结果 PASS、`COMPLETED` 存在、`INCOMPLETE` 不存在且两层哈希可复算；确认不当作代理业务结果 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
 | M14 | 固定 Release 安装器 | 外层 installer SHA-256、内置 manifest SHA-256、逐资产哈希均通过；版本化目录为 root-owned 且不可被 group/world 写；`current`/`dvt` 原子切换；安装前后 sysctl/qdisc/state 不变 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
 | M15 | advisory-only `dvt probe` | `--plan-only` 零流量；超预算/无授权 host/无 cap 阻断；实际样本固定单流并记录 `rate_cap_enforced=true`；每个样本及顶层证据哈希通过；只输出 `REVIEW_REQUIRED`/`REVIEW_BLOCKED`，state/sysctl/qdisc 不变 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M16 | 同值或有效值不变的 `reconfigure` | 同值只验证无写入；100→200 等 buffer 档位不变时只更新管理文件注释、哈希和 state，不重写运行时 sysctl；qdisc/swap/journald/NOFILE 不变 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M17 | 有效值变化的 `reconfigure` | 2G 档 200→500 自动 buffer 从 16 MiB 变为 32 MiB；500→200 恢复 16 MiB；只通过项目 sysctl 文件应用；完成态为 `VERIFIED`，重启后再次 verify | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
+| M18 | 重配置失败与 `recover` | 在 sysctl 应用、候选验证和恢复步骤注入失败；可恢复路径回到旧 `VERIFIED` 配置；不可完整恢复时保留 `DEGRADED`、事务备份和失败证据，修复外部原因后 `recover` 成功 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 | 待执行 |
 
 状态初始化还必须覆盖 jq 构造器失败路径：状态 JSON 未成功提交时，不得创建 sysctl、journald、helper、unit 或 x-ui drop-in；脚本应删除本次进程创建的 qdisc 快照、JSON 临时文件和空状态目录，并明确报告“未写入系统配置”。
 
@@ -139,13 +145,15 @@ rc.13 保持 rc.12/rc.11/rc.10 的该矩阵。对 500/1000 Mbps 的 2G 档，rc.
 
 rc.2 空状态的 `recover` 必须拒绝一般损坏 JSON、有效状态、仍存在项目文件、脚本 swap/fstab 行、活动 fq helper 或 qdisc 不一致；成功时只能把状态目录改名隔离，不能删除证据。
 
-已有任何管理状态时，`preflight` 不得输出可直接应用的“通过”：`VERIFIED`/`APPLIED` 应引导执行 `verify` 或先回滚，`SWAP_RETAINED` 应引导显式 purge，其他事务状态应要求先完成 `rollback`。
+已有任何管理状态时，`preflight` 不得输出可直接应用的“通过”：`VERIFIED`/`APPLIED` 应引导执行 `verify` 或先回滚，`SWAP_RETAINED` 应引导显式 purge；`RECONFIGURING` 或带合法 `.reconfigure` 元数据的 `DEGRADED` 必须先执行 `recover`，其他事务状态才要求完成 `rollback`。
 
 独立 `preflight` 的状态阻断不得破坏重复 `apply`：相同参数且状态为 `VERIFIED` 时，`apply` 必须进入验证后无写入返回；参数不同或事务状态不允许时才阻断。
 
 sysctl 校验应比较归一化后的字段值：内核通过 `sysctl -n` 返回的连续空格或制表符只用于显示对齐，不构成配置差异；字段数量或任一字段数值变化仍必须失败。NOFILE 审计必须把 `/proc/<PID>/limits` 的 soft/hard 两列分别输出，不能受脚本全局 `IFS` 影响。未安装 3X-UI 时，已托管 drop-in + 无服务属于正常待安装状态；安装后必须验证 `LimitNOFILESoft`、`LimitNOFILE`、主进程和直接 Xray 子进程，任一运行时 soft 或 hard limit 低于 65536 都失败。
 
 事务阶段顺序必须为 `PREPARED → APPLYING → APPLIED → VERIFIED`。`APPLYING` 必须在首个系统文件写入前提交。`PREPARED`、`ROLLBACK_PENDING` 或 `DEGRADED` 只有在项目文件均不存在、外部 swap 未被脚本接管、当前 qdisc 与快照语义一致且原始 sysctl 已恢复时，才允许直接清理残留状态。
+
+带宽重配置使用独立的 `VERIFIED → RECONFIGURING → VERIFIED` 事务。任何系统文件变化前必须存在可校验的旧 state/sysctl 备份；候选验证未完成前不得删除事务元数据。恢复必须先验证备份路径、类型、所有权、权限、摘要和旧状态语义，再恢复旧 sysctl 文件并应用、按旧状态完整验证，最后原子恢复旧 state。任何一步失败都不得清理恢复证据或把状态报告为 `VERIFIED`。
 
 ## qdisc 回归矩阵
 
@@ -185,7 +193,7 @@ TcpQuality 只作为外部线路观察，不作为 sysctl、qdisc、3X-UI 或代
 - IPv4/IPv6 默认路由、测试开始/结束时间和当前版本 `diagnose` 脱敏日志；
 - 本地 debug archive、指标来源和可获得的机器可读结果；公开模式还要保存报告 ID，并记录报告/debug bundle 的上传边界；只有远程图片时必须标记不可复算。
 
-rc.13 的 `tcpquality-evidence.sh` 必须使用预先固定的本地目录、rootfs SHA-256、显式模式和尚不存在的证据目录；每轮保存唯一 CSV/debug archive、通过固定 schema 校验的 `all`/`tos` 节点前后快照、节点/CSV/debug 哈希、逻辑节点增删、节点 IP 变化、主机状态、`retransmission-evidence.tsv` 和最终 `SHA256SUMS`。只有 `ebpf_*` 或 `tcp_info_*` 来源可用于流级重传比较；`nstat` 回退必须标记为降级，不能用于调优因果判断。旧版整机 `TcpRetransSegs` 裸增量与新版流级百分比不得拼接比较。成功批次必须存在 `COMPLETED` 且不存在 `INCOMPLETE`。节点快照不一致不自动删除证据，但变化节点不得直接进入同节点配对结论；固定本地资产不等于固定远端节点、测速端点、运营商路径或测试时段。
+rc.14 的 `tcpquality-evidence.sh` 沿用 rc.13 的固定 TcpQuality 资产和证据契约，必须使用预先固定的本地目录、rootfs SHA-256、显式模式和尚不存在的证据目录；每轮保存唯一 CSV/debug archive、通过固定 schema 校验的 `all`/`tos` 节点前后快照、节点/CSV/debug 哈希、逻辑节点增删、节点 IP 变化、主机状态、`retransmission-evidence.tsv` 和最终 `SHA256SUMS`。只有 `ebpf_*` 或 `tcp_info_*` 来源可用于流级重传比较；`nstat` 回退必须标记为降级，不能用于调优因果判断。旧版整机 `TcpRetransSegs` 裸增量与新版流级百分比不得拼接比较。成功批次必须存在 `COMPLETED` 且不存在 `INCOMPLETE`。节点快照不一致不自动删除证据，但变化节点不得直接进入同节点配对结论；固定本地资产不等于固定远端节点、测速端点、运营商路径或测试时段。
 
 一次 smoke 或同日配对序列至少重复 3 次；要形成性能结论，同一配置还应覆盖低负载、白天和晚高峰，每个时段至少重复 5 次。比较中位数、P95 和异常节点复现率，不比较单次最佳值；工具 commit、节点集合、参数、VPS、内核、profile 或业务负载任一变化都应开始新的序列。即使固定 commit，远端测试节点和运营商路径仍可能变化，不能把时间先后直接解释为脚本因果。
 
@@ -199,7 +207,7 @@ rc.13 的 `tcpquality-evidence.sh` 必须使用预先固定的本地目录、roo
 
 2026-08-03，Debian 13 1C1G、929 MiB、1000 Mbps、ext4、内核 `6.12.100+deb13-amd64` 的目标机使用固定 `v0.1.0-rc.9` Release 总控入口，自动选择 `debian13-1c1g-vps-tuning.sh`，profile SHA-256 为 `9fd70c593b83d41337c6dfcada737855ce583e8bc3451ee8bb5952db850c81c6`。安全引导、preflight、首次 apply 和立即验证均为退出码 0、警告 0；安装 3X-UI 前重启后联网 verify 通过，`proxy-vps-fq.service` 为 loaded/active/enabled，BBR、默认 fq、`eth0` 实际根 fq 和 1024 MiB `/swapfile-proxy` 均保持。安装 3X-UI 后严格 verify 通过，再次重启后严格 verify 仍通过；新 `x-ui.service` 主进程和直接 Xray 子进程 NOFILE soft/hard 均为 65536/65536。该证据覆盖 T6 的 M2–M5、M7 和固定 Release 真实下载，不覆盖 M0 完整基线、M1、M6、M8–M11，也不证明业务性能。
 
-2026-08-06，一台脱敏的 Debian 13 1C1G、200 Mbps、ext4、内核 `6.12.100+deb13-cloud-amd64` 目标机完成 rc.11 `preflight`、apply 后语义与受管文件哈希门禁、重启后 verify 和重复执行幂等门禁。相同固定 TcpQuality commit/rootfs 和 `-c 30 -s 0 -p 16 --all` 参数下，调优前 S1 与调优后 S2 各保存三轮文本、CSV 和节点快照。该证据证明 rc.11 生命周期与采集流程可执行；由于 S1/S2 时点不同、远端节点可变化且没有同时段随机交错对照，不能把组间差异识别为 rc.11 的因果性能收益，也不能替代 rc.12 或 rc.13 最终哈希验证。
+2026-08-06，一台脱敏的 Debian 13 1C1G、200 Mbps、ext4、内核 `6.12.100+deb13-cloud-amd64` 目标机完成 rc.11 `preflight`、apply 后语义与受管文件哈希门禁、重启后 verify 和重复执行幂等门禁。相同固定 TcpQuality commit/rootfs 和 `-c 30 -s 0 -p 16 --all` 参数下，调优前 S1 与调优后 S2 各保存三轮文本、CSV 和节点快照。该证据证明 rc.11 生命周期与采集流程可执行；由于 S1/S2 时点不同、远端节点可变化且没有同时段随机交错对照，不能把组间差异识别为 rc.11 的因果性能收益，也不能替代 rc.12、rc.13 或 rc.14 最终哈希验证。
 
 2026-08-07，一台脱敏的 Debian 13 1C1G、967 MiB、100 Mbps、10 GB ext4、内核 `6.12.101+deb13-cloud-amd64` 目标机运行 rc.12 本地候选。已有 500 Mbps 状态时，`apply --port 100` 在系统写入前以退出码 4 拒绝；随后普通 rollback 恢复原 qdisc 并保留项目 swap，显式 `PURGE_CREATED_SWAP=1 rollback` 完成清理。按 100 Mbps 重新执行后，重启后 `verify` 与重复 `apply`/`verify` 均返回 0；运行值为 BBR + fq，1024 MiB 项目 swap 活动，失败 unit 为 0。服务商 minimal 镜像原本不存在 `/etc/sysctl.conf`，preflight、apply 和重启均未创建该文件，状态记录迁移为 `NOT_REQUIRED`。该运行暴露了“参数不一致时请先 rollback”提示会诱导不必要普通回滚，以及不存在文件却记录 `0/0/000` 占位所有权的问题；修正会改变 profile 哈希，因此本记录只作为缺陷复现和修正前候选证据，不能替代最终候选的哈希绑定复核。3X-UI 尚未安装，M7/M8 未覆盖。
 

@@ -4,13 +4,13 @@
 
 A conservative host network tuning script for Debian 12/13 small cloud VPS. The project primarily targets natively systemd-deployed **3X-UI, Xray-core, VLESS + REALITY + TCP** scenarios; the current target machine acceptance baseline includes 3X-UI v3.4.2 and Xray-core v26.6.27, but this is not a compatibility guarantee for other versions. The script also provides limited read-only recognition for S-UI, sing-box, and standalone Xray services.
 
-The script uses BBR + fq, controlled TCP buffering, standard queue parameters, emergency swap, and journald space limits, aiming to form a host configuration that is preflight-checkable, verifiable, idempotent/repeatable, and rollable back. It does not configure proxy services, routing, or firewalls, nor does it promise to increase throughput or reduce latency across all routes, virtualization platforms, and loads.
+The script uses BBR + fq, controlled TCP buffering, standard queue parameters, emergency swap, and journald space limits, with explicit `preflight`, `apply`, `reconfigure`, `verify`, and rollback lifecycles. It does not configure proxy services, routing, or firewalls, nor does it promise to increase throughput or reduce latency across all routes, virtualization platforms, and loads.
 
 > **System Selection Summary (as of 2026-08-04):** Newly created 1C1G, 1C2G, and 2C2G VPS instances are recommended to use Debian 13 minimal by default. Debian 13 is the current stable release; Debian 12 has transitioned to LTS and is better suited for retaining existing stable nodes or meeting explicit compatibility constraints. The OS version alone does not guarantee BBR availability, higher performance, or lower idle memory usage; virtualization type, running kernel, and target machine resources must still be verified.
 
-> Current release candidate: `v0.1.0-rc.13`. The following online commands are pinned to this specific RC release and its checksum assets, and will not follow branches or `latest`; do not execute these online commands before the release is published and public assets have been re-downloaded and verified. The official `v0.1.0` still requires completion of [Target VPS Runtime Acceptance](docs/validation.md); do not treat the release candidate as having completed full-platform, full-bandwidth, or performance acceptance.
+> Current release candidate: `v0.1.0-rc.14`. The following online commands are pinned to that exact candidate and must not be executed until the Release is published and all public assets have been reverse-downloaded and verified. The official `v0.1.0` still requires [Target VPS Runtime Acceptance](docs/validation.md); do not treat this candidate as target-host, full-bandwidth, or performance acceptance.
 
-> This English document was originally translated from the rc.11 documentation. Release-critical URLs, hashes, and the rc.12-to-rc.13 boundary have been synchronized for rc.13. The Chinese [README](README.md) and [rc.13 release notes](docs/releases/v0.1.0-rc.13.md) remain authoritative for the complete `dvt` installer, TcpQuality evidence, advisory probe, and non-persistent HTB workflow details.
+> This English document was originally translated from the rc.11 documentation. Release-critical URLs and the rc.13-to-rc.14 boundary are synchronized for rc.14. The Chinese [README](README.md) and [rc.14 release notes](docs/releases/v0.1.0-rc.14.md) remain authoritative for the complete installer, bandwidth-reconfiguration transaction, recovery, TcpQuality evidence, advisory probe, and non-persistent HTB details.
 
 ## Online Installation and Verification
 
@@ -18,7 +18,7 @@ The following commands assume you have entered the VPS root shell (prompt usuall
 
 ### 1. Online Installation
 
-After the rc.13 Release is published and passes public asset verification, it is recommended to execute its pinned main entry point. It will automatically detect Debian 12/13, amd64, CPU, and memory tiers, and will default to running a read-only `preflight` first; `apply` will only be executed if preflight passes and `y` is explicitly entered again:
+After the rc.14 Release is published and passes public asset verification, its pinned main entry can be used. It automatically detects Debian 12/13, amd64, CPU, and memory tiers, runs read-only `preflight` first by default, and executes `apply` only after an explicit `y` confirmation:
 
 ```bash
 (
@@ -33,10 +33,10 @@ After the rc.13 Release is published and passes public asset verification, it is
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.13/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.14/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    '58abd5c5d20b5f3090d96b0ce74d4c1de5c043b3e882ac51ea0817009ebcb7e0' \
+    'ce7668806ee0f3afb58aff18c2d6cdab8df58028d60390ba37e3ddf26b513248' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   bash "$dvt_tmp/debian-vps-tuning.sh"
@@ -74,10 +74,10 @@ Execute after re-logging into the VPS. `verify` is read-only validation and will
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.13/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.14/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    '58abd5c5d20b5f3090d96b0ce74d4c1de5c043b3e882ac51ea0817009ebcb7e0' \
+    'ce7668806ee0f3afb58aff18c2d6cdab8df58028d60390ba37e3ddf26b513248' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   bash "$dvt_tmp/debian-vps-tuning.sh" verify
@@ -105,10 +105,10 @@ The recommended order is to complete tuning and reboot verification first, then 
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.13/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.14/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    '58abd5c5d20b5f3090d96b0ce74d4c1de5c043b3e882ac51ea0817009ebcb7e0' \
+    'ce7668806ee0f3afb58aff18c2d6cdab8df58028d60390ba37e3ddf26b513248' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   env \
@@ -124,9 +124,9 @@ Strict verification requires `x-ui.service` to be active, and checks that the sy
 
 ### 4. Execute Read-Only Upgrade Check from Early rc Versions
 
-VPS instances already managed by rc.9 through rc.12 can download the rc.13 main entry and execute `update`. It will read the resource tier and port bandwidth from the state, verify the current profile, target `SHA256SUMS`, and target main entry script, sequentially execute the current version `verify` and the target version's read-only `update-preflight`, and finally output the fixed URL, SHA-256, and migration order required for the maintenance window. `update` does not perform rollback, purge, apply, or reboot, nor will it replace old Release assets already published.
+After rc.14 is published, VPS instances managed by rc.9 through rc.13 can download its main entry and execute `update`. It reads the resource tier and port bandwidth from state, verifies the current profile, target `SHA256SUMS`, and target main entry, then runs the current version's `verify` and the target's read-only `update-preflight`. The output includes the fixed URLs, SHA-256 values, and migration order required for the maintenance window. `update` does not perform rollback, purge, apply, reconfigure, or reboot, and never replaces previously published assets.
 
-The main entry, `SHA256SUMS`, and profile are treated as an indivisible Release package. **Assets from different versions must not be placed in the same directory.** For example, do not place rc.13 `SHA256SUMS` and profile next to the rc.12 main entry; otherwise, the main entry will refuse to execute per integrity protection rules and will not automatically fall back to online download. The following online commands and subsequent rollback examples all use independent `mktemp -d` directories to avoid version collisions.
+The main entry, `SHA256SUMS`, and profile are an indivisible Release package. **Assets from different versions must not be placed in the same directory.** For example, do not place rc.14 `SHA256SUMS` and profile next to the rc.13 main entry; otherwise integrity checks reject execution without falling back to an online download. Use independent `mktemp -d` directories for each version.
 
 ```bash
 (
@@ -141,17 +141,17 @@ The main entry, `SHA256SUMS`, and profile are treated as an indivisible Release 
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.13/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.14/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    '58abd5c5d20b5f3090d96b0ce74d4c1de5c043b3e882ac51ea0817009ebcb7e0' \
+    'ce7668806ee0f3afb58aff18c2d6cdab8df58028d60390ba37e3ddf26b513248' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   bash "$dvt_tmp/debian-vps-tuning.sh" update
 )
 ```
 
-Specify the target version using `update --target v0.1.0-rc.13`. Auto-discovery does not cross `major.minor` release lines: when on an rc, you can select a higher rc on the same line or the stable release; when on a stable release, prereleases are automatically excluded. Cross-line upgrades must be explicitly specified with `--target`, and downgrades and duplicate upgrades are still rejected. Explicitly specifying a prerelease represents the user's active choice of that target and is not affected by the stable channel auto-exclusion rule.
+Specify the target version using `update --target v0.1.0-rc.14`. Auto-discovery does not cross `major.minor` release lines: when on an rc, it can select a higher rc on the same line or the stable release; stable installations automatically exclude prereleases. Cross-line upgrades require explicit `--target`; downgrades and duplicate upgrades remain rejected.
 
 `update` is only an upgrade compatibility check and plan generator; it will not rewrite old scripts on disk, system tuning configurations, or 3X-UI. A passed check does not mean the upgrade is complete; during the maintenance window, manually execute rollback/purge, reboot, target preflight/apply, reboot again, and verify according to the output and this README. If GitHub API queries fail or are subject to anonymous rate limits, using a reviewed `--target` can skip auto-discovery, but target Release assets will still be verified.
 
@@ -159,9 +159,9 @@ Specify the target version using `update --target v0.1.0-rc.13`. Auto-discovery 
 
 - Only supports vendor minimal Debian 12/13, `x86_64/amd64`, and the four CPU/memory resource tiers listed in the README; other combinations will be rejected;
 - Port bandwidth should be the provider's plan limit, not the link speed shown by the virtual NIC; default is 200 Mbps, allows 100–1000 Mbps;
-- Online entry is pinned to `v0.1.0-rc.13` and will not fall back to `master`, `main`, `latest`, HTTP, or third-party mirrors;
-- The above commands verify the fixed SHA-256 of the rc.13 main entry asset before execution; the main entry subsequently downloads the fixed Release's `SHA256SUMS` and matching profile, and verifies again;
-- Main entry, `SHA256SUMS`, and profile must come from the same Release; use different temporary directories for different versions, do not mix rc.12 and rc.13 assets in `/root` or the same working directory;
+- Online entry is pinned to `v0.1.0-rc.14` and never falls back to `master`, `main`, `latest`, HTTP, or third-party mirrors; it is unavailable until that Release exists;
+- After publication, the commands verify the fixed SHA-256 of the rc.14 main entry before execution; the controller then verifies the Release `SHA256SUMS` and selected profile again;
+- Main entry, `SHA256SUMS`, and profile must come from one Release; do not mix rc.13 and rc.14 assets in `/root` or one working directory;
 - Tags should not be moved or same-named assets replaced after publication; release a new version when defects are found;
 - `update` is a read-only upgrade check and will not automatically migrate configurations; after a passed check, you must still choose another maintenance window to complete manual rollback/apply and two reboots;
 - The script does not configure or allow UFW ports; do not treat UFW status prompts as the firewall being configured; ensure the SSH management port will not be locked out first;
@@ -177,12 +177,12 @@ As of 2026-08-04, the project has obtained the following target machine evidence
 
 | Record | OS & Kernel Series | VPS Config | Storage/Network | Covered Paths | Evidence Boundary |
 |---|---|---|---|---|---|
-| C1 | Debian 13; Linux 6.12 series | 1 vCPU / ~1 GiB; `debian13-1c1g` | ext4; plan limit 1000 Mbps | Fixed rc.9 asset verification, safe boot, `preflight`, `apply`, immediate/post-reboot `verify`, strict verification after 3X-UI installation; BBR, fq, swap, and NOFILE persist after reboot | Only proves the main path for corresponding rc.9 artifacts and this configuration category, not inherited as an rc.10–rc.13 conclusion |
+| C1 | Debian 13; Linux 6.12 series | 1 vCPU / ~1 GiB; `debian13-1c1g` | ext4; plan limit 1000 Mbps | Fixed rc.9 asset verification, safe boot, `preflight`, `apply`, immediate/post-reboot `verify`, strict verification after 3X-UI installation; BBR, fq, swap, and NOFILE persist after reboot | Only proves the main path for corresponding rc.9 artifacts and this configuration category, not inherited as an rc.10–rc.14 conclusion |
 | C2 | Debian 12; Linux 6.1 series | 1 vCPU / ~1 GiB; `debian12-1c1g` | XFS; plan limit 200 Mbps | Completed rc.10 candidate `apply` after exiting rc.8, normal/strict `verify` and repeated `apply` after reboot; repeated execution did not overwrite configuration | Does not replace final Release asset verification, does not prove proxy throughput or line quality |
 | C3 | Debian 12; Linux 6.1 series | 1 vCPU / ~2 GiB; `debian12-1c2g` | XFS; plan limit 200 Mbps | Completed rc.10 candidate `apply` after exiting rc.8, normal/strict `verify` and repeated `apply` after reboot; 3X-UI main process and direct Xray child process NOFILE is 65536/65536 | Does not cover 2C2G, 512 MiB, other filesystems, or final Release assets |
 | C4 | Debian 13; Linux 6.12 series | 1 vCPU / ~1 GiB; `debian13-1c1g` | ext4; plan limit 1000 Mbps | Completed rc.9→rc.10 candidate migration using isolated directory, strict `verify` and repeated `apply` after reboot | This is a migration record, configuration category may overlap with C1; does not represent an additional independent VPS |
 
-The above records are bound to the specific script hashes at the time of testing. If the script content or SHA-256 changes before or after release, evidence must be re-established according to the [Validation Matrix](docs/validation.md); passing conclusions cannot be inherited solely based on version names or identical configuration values. Target VPS lifecycle validation for the final rc.13 hash is still pending.
+The above records are bound to the specific script hashes at the time of testing. If the script content or SHA-256 changes before or after release, evidence must be re-established according to the [Validation Matrix](docs/validation.md); passing conclusions cannot be inherited solely based on version names or identical configuration values. Target VPS lifecycle, bandwidth reconfiguration, recovery, and reboot-persistence validation for the final rc.14 hash are still pending.
 
 ### 1C2G / 200 Mbps Performance Observation Case
 
@@ -200,7 +200,7 @@ In the two time-period samples of the same rc.10 configuration, the zero-retrans
 
 Furthermore, v6 has only one sample and rc.10 only two, which is still insufficient to estimate a stable distribution; TcpQuality uses random built-in packet lengths when `-s` is not specified, and the default `-c` sends only 30 packets per node; TcpQuality directly tests the VPS network stack, without passing through 3X-UI, VLESS, REALITY, or client links. Existing evidence is primarily remote images, lacking machine-readable raw tables sufficient for public recalculation.
 
-Therefore, the project will not roll back rc.10 based on these single reports, modify the 17 managed sysctls retained by rc.13, or add aggressive parameters. Performance acceptance must fix the TcpQuality release/commit, script/rootfs SHA-256, node files, `-c/-s/-p` parameters, and metric source; cover low load, daytime, and evening peaks with repeated sampling; and compare median, P95, and anomaly-node reproduction rates. It must also cover actual VLESS + REALITY + TCP concurrency of 1, 3, 5, and 10. Full pending test items are in the [Validation Matrix](docs/validation.md).
+Therefore, the project will not roll back rc.10 based on these single reports, modify the 17 managed sysctls retained by rc.14, or add aggressive parameters. Performance acceptance must fix the TcpQuality release/commit, script/rootfs SHA-256, node files, `-c/-s/-p` parameters, and metric source; cover low load, daytime, and evening peaks with repeated sampling; and compare median, P95, and anomaly-node reproduction rates. It must also cover actual VLESS + REALITY + TCP concurrency of 1, 3, 5, and 10. Full pending test items are in the [Validation Matrix](docs/validation.md).
 
 ## Local Usage and Command Line Mode
 
@@ -217,17 +217,19 @@ Use command line mode directly:
 ```bash
 bash ./debian-vps-tuning.sh preflight --port 200
 bash ./debian-vps-tuning.sh apply --port 200
+bash ./debian-vps-tuning.sh reconfigure --port 500
 bash ./debian-vps-tuning.sh verify
 bash ./debian-vps-tuning.sh status
 bash ./debian-vps-tuning.sh diagnose
 # benchmark also requires BENCHMARK_HOST, see below
 bash ./debian-vps-tuning.sh benchmark
 bash ./debian-vps-tuning.sh update
-bash ./debian-vps-tuning.sh update --target v0.1.0-rc.13
+bash ./debian-vps-tuning.sh update --target v0.1.0-rc.14
 bash ./debian-vps-tuning.sh rollback
+bash ./debian-vps-tuning.sh recover
 ```
 
-In automated environments without an interactive terminal, the action must be explicitly specified; it will not implicitly enter a menu or auto-apply. `recover` remains as an advanced command for rc.2 empty state, but does not appear in the normal menu.
+In automated environments without an interactive terminal, the action must be explicitly specified; it will not implicitly enter a menu or auto-apply. CLI `reconfigure` requires an explicit `--port`; neither the normal default nor a `PORT_SPEED_MBPS` environment variable can supply the target. `recover` handles an interrupted rc.14 bandwidth-reconfiguration transaction and retains the explicitly acknowledged rc.2 empty-state quarantine branch.
 
 This project does not recommend the following forms as entry points:
 
@@ -558,7 +560,7 @@ env BENCHMARK_HOST='iperf.example.com' \
 
 ### 7. HTB Reference, Candidate Sweep, and Independent A/B/A Windows
 
-The non-persistent HTB workflow is restricted to a Debian 13 rc.13 schema-4
+The non-persistent HTB workflow is restricted to a Debian 13 rc.14 schema-4
 `VERIFIED`, 200-Mbps `debian13-1c1g` or `debian13-1c2g` baseline. The 40-minute
 watchdog requires the executor to run from a stable path. `dvt htb preflight`
 does not install it implicitly; while no HTB transaction is active, install the
@@ -583,7 +585,7 @@ dvt htb smoke --rate 190 --hold-seconds 10
 
 Rate discovery is split into a schema-3 read-only plan, an explicitly invoked
 traffic/qdisc runner, and a read-only analyzer. Before traffic, the runner calls
-the selected rc.13 profile's `verify`, freezes the managed
+the selected rc.14 profile's `verify`, freezes the managed
 profile/version/state/port/state SHA-256, and requires every
 `benchmark-meta.json` to match. Every sample must have a valid measurement
 window, positive HTB `overlimits`, sender goodput of at least the frozen 90%
@@ -661,7 +663,7 @@ env PORT_SPEED_MBPS=1000 \
   bash ./debian13-1c2g-vps-tuning.sh apply
 ```
 
-Any integer within 100–1000 can be used, 500 Mbps is also provided in the main menu. rc.13 maintains rc.12 network parameters: default target RTT is 200 ms, using 1×, 1.25×, 1.5×BDP targets by resource tier, then rounding up to 16/32/64 MiB, constrained by 16/32/64 MiB limits of 512M/1G/2G profiles:
+Any integer within 100–1000 can be used, 500 Mbps is also provided in the main menu. rc.14 maintains the rc.13/rc.12 network parameters: default target RTT is 200 ms, using 1×, 1.25×, 1.5×BDP targets by resource tier, then rounding up to 16/32/64 MiB, constrained by 16/32/64 MiB limits of 512M/1G/2G profiles:
 
 | Resource Tier | BDP Coeff | 100 Mbps | 200 Mbps | 500 Mbps | 1000 Mbps |
 |---|---:|---:|---:|---:|---:|
@@ -708,6 +710,14 @@ State is saved in a root-only JSON:
 When repeatedly executing `apply` with the same script version and parameters, the script first verifies the current configuration; if verification passes, it does not rewrite. When repeatedly executing `apply` via the main entry script without providing `--port` or `PORT_SPEED_MBPS`, it reuses the port bandwidth already installed in the state; explicit parameters still take precedence. If the state version differs from the current script, uses a different resource script, or changes bandwidth/buffer parameters, `apply` will require rollback first, avoiding misreporting "old configuration still verifiable" as "new version already installed".
 
 State updates are first written to a temporary file in the same directory by `jq`, then the command exit code, non-empty, single JSON object, and complete schema are checked; only after all pass is `state.json` atomically replaced. Empty files, blank files, multiple JSON documents, or update failures must not overwrite the previous valid state.
+
+When a provider changes the port limit of an already managed VPS, use `dvt reconfigure --port <MBPS>`. The operation only accepts a `VERIFIED` state owned by the same rc.14 profile, performs a complete pre-change `verify`, keeps the existing target RTT, recalculates automatic buffers for the new bandwidth, and preserves an explicit buffer value. Requesting the currently recorded bandwidth is verification-only and performs no writes. The normal `apply` mismatch gate remains unchanged; do not edit `state.json` manually.
+
+For a real change, rc.14 stores root-only fixed backups of the previous state and managed sysctl file, commits a `RECONFIGURING` transaction, writes the candidate file/state, applies the managed sysctl file only when effective buffer values change, and performs complete candidate verification before atomically returning to `VERIFIED`. It does not rebuild qdisc or change swap, journald, or NOFILE. Any failure attempts to restore the old sysctl and old `VERIFIED` state. If recovery is incomplete, the transaction remains `DEGRADED`; ordinary `verify`, `rollback`, `preflight`, and `apply` refuse to cross it, and `dvt recover` must complete recovery first.
+
+### Upgrading from rc.13 to rc.14
+
+rc.14 does not change the set of 17 managed sysctls, BBR + fq, the automatic buffer matrix, swap, journald, NOFILE, or the schema-4 base structure. It adds the explicit bandwidth-reconfiguration transaction and recovery metadata. Because profile versions and hashes changed, rc.14 must not run `apply` or `reconfigure` over an rc.13 state. After rc.14 is published, first use its `update --target v0.1.0-rc.14` for the read-only compatibility check. During a maintenance window, use the fixed and verified rc.13 Release for `verify`, `PURGE_CREATED_SWAP=1 rollback`, and reboot, then use rc.14 from an independent directory for `preflight`, `apply`, reboot, and strict `verify`. Only after an rc.14 `VERIFIED` state exists should a later provider port change use `reconfigure`.
 
 ### Upgrading from rc.12 to rc.13
 
@@ -761,7 +771,7 @@ Old v5/v6 do not have the same state/ownership contract as rc.8+, rc.10 will not
 
 ### rc.2 Empty State Recovery
 
-Early rc.2 left an empty `state.json` when initial JSON construction failed, but qdisc snapshots still exist. `recover` only handles this known "pre-first system write" legacy scenario and requires explicit confirmation:
+Early rc.2 left an empty `state.json` when initial JSON construction failed, but qdisc snapshots still exist. For a state that is not a valid rc.14 reconfiguration transaction, `recover` only handles this known "pre-first system write" legacy scenario and requires explicit confirmation:
 
 ```bash
 env ALLOW_EMPTY_STATE_RECOVERY=1 \
@@ -809,7 +819,7 @@ The first version primarily validates native systemd deployments. Docker may cha
 - Policy routing, TProxy, gateways, Docker firewalls, and complex qdiscs are out of scope;
 - Performance results are affected by CPU, virtualization overselling, lines, cross-border routing, clients, and encryption overhead.
 - Performance acceptance should separately cover 1, 3, 5, 10 concurrency; the script will not automatically generate proxy traffic.
-- 2C2G remains included in rc.13 resource contracts and local fixtures; real VPS lifecycle results are subject to [Validation Matrix](docs/validation.md).
+- 2C2G remains included in rc.14 resource contracts and local fixtures; real VPS lifecycle results are subject to [Validation Matrix](docs/validation.md).
 
 See [Runtime Acceptance Instructions](docs/validation.md) for details.
 
