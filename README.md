@@ -146,6 +146,13 @@ printf 'strict_verify_after_3xui_exit=%s\n' "$?"
 
 `update` 只检查升级兼容性并生成操作计划，不改写磁盘上的旧脚本、系统配置或 3X-UI。检查通过不表示升级完成。维护窗口内仍需按输出和本文顺序执行 rollback/purge、重启、目标版本的 `preflight`/`apply`、再次重启及 `verify`。GitHub API 查询失败或触发匿名速率限制时，可用已审阅的 `--target` 跳过自动发现；目标 Release 资产仍会接受校验。
 
+跨版本可以采用“清除旧版后安装最新版”，但清除必须由**旧版固定 Release**根据旧状态执行
+`verify → rollback/purge`。不得手工删除 sysctl 文件、unit、状态目录或 swap，也不得让新版
+`apply` 覆盖旧版 state。旧版恢复检查和第一次重启通过后，才进入最新版
+`preflight/apply → reboot → verify`。若旧状态缺失、损坏或来自没有可靠状态契约的早期脚本，
+应先保存只读证据，再使用对应旧版恢复逻辑、经审查的人工清理，或在业务备份和控制台均已
+验证时干净重装 OS。干净重装是独立恢复路径，不等于在原系统手工删除文件。
+
 ### 5. 联网执行注意事项
 
 - 仅支持厂商最小化 Debian 12/13、`x86_64/amd64` 和本文列出的四个 CPU/内存资源档；其他组合会被拒绝；
@@ -161,6 +168,31 @@ printf 'strict_verify_after_3xui_exit=%s\n' "$?"
 - `preflight` 对 `/etc/sysctl.conf` 中唯一且值严格为 `fq`/`bbr` 的厂商基线给出只读迁移计划；`apply` 会先完整备份原文件，再把对应配置归属迁移到项目管理文件。其他重复 sysctl 定义仍会被 `preflight` 和 `verify` 拒绝；不要再运行 3X-UI/X-UI 内置的 BBR 或网络优化菜单，以免重新创建 `99-bbr-x-ui.conf`；
 - `rollback` 会撤销本项目管理的调优配置，应在维护窗口测试；普通 rollback 默认保留脚本创建的 swap；
 - 不要在未阅读脚本和发布说明时使用 `curl ... | bash` 或 `bash <(curl ...)`。
+
+### 厂商已预装 BBR/fq 时的处理
+
+BBR + 根 `fq` 是本项目的目标状态，不代表必须覆盖厂商配置。运行时值也不能证明持久化来源
+和配置所有权。首次安装前先运行 `preflight`，然后按其结果处理：
+
+| 基线 | 默认处理 |
+|---|---|
+| 没有外部冲突 | 由项目写入并成为唯一所有者 |
+| `/etc/sysctl.conf` 中各有一条、值严格为 `bbr`/`fq`、root 所有的普通文件 | 可由项目事务化备份并接管；也可停在 `preflight`，保持厂商配置 |
+| `/etc/sysctl.d/*.conf`、重复定义、符号链接、非 root 文件、值不同或未知组合调优 | `preflight` 阻断；不得自动合并或覆盖 |
+| 已存在其他项目版本的受管状态 | 按跨版本迁移处理，不按厂商基线处理 |
+
+如果只需要 BBR/fq，且厂商已经单一、可靠地持久化，可以不安装本项目。只有需要项目管理
+buffer、swap、journald、NOFILE、状态验证和回滚时，才应接管所有权。不得让厂商文件和项目
+文件长期共同定义同一 sysctl key；厂商品牌不构成 profile 维度。
+
+## 默认低流量验收路径
+
+业务 VPS 的安装、升级和日常验收默认只执行：固定资产校验、`preflight`、`apply`、重启后
+`verify`、严格代理服务验证，以及少量真实客户端业务冒烟。`diagnose` 是无主动流量的首选
+故障入口。`benchmark`、`dvt probe`、TcpQuality、HTB200 reference、candidate sweep 和 A/B/A
+均不是发布迁移或逐机验收门禁。出现可复现症状且预先批准 L3 硬流量预算时，`dvt probe`
+可以在受影响的业务 VPS 上执行；benchmark、TcpQuality 和 HTB 等 L4 研究还必须使用独立
+高额度测试机，并服务于明确的机制决策。
 
 ## 真实环境验证基线
 
@@ -193,7 +225,7 @@ printf 'strict_verify_after_3xui_exit=%s\n' "$?"
 
 样本量同样不足：v6 只有一次，rc.10 只有两次，无法估计稳定分布。TcpQuality 未指定 `-s` 时随机使用内置包长，默认 `-c` 每个节点只发送 30 个包。该工具直接测试 VPS 网络栈，不经过 3X-UI、VLESS、REALITY 或客户端链路。现有证据以远程图片为主，缺少可供公开复算的机器可读原始表格。
 
-这些报告不足以支持回退 rc.10、修改 rc.11–rc.14 的 17 个受管 sysctl，或增加激进参数。性能验收必须固定 TcpQuality commit、脚本 SHA-256、节点文件和 `-c/-s/-p` 参数，在低负载、白天和晚高峰重复采样，并比较中位数、P95 与异常节点复现率。实际 VLESS + REALITY + TCP 链路还需覆盖 1、3、5、10 并发。完整待测项见 [验证矩阵](docs/validation.md)。
+这些报告不足以支持回退 rc.10、修改 rc.11–rc.14 的 17 个受管 sysctl，或增加激进参数。仅当准备形成可发布的性能或永久整形主张时，研究协议才固定 TcpQuality commit、脚本 SHA-256、节点文件和 `-c/-s/-p` 参数，并在受控环境比较中位数、P95 与异常节点复现率。普通业务 VPS 验收只覆盖真实 VLESS + REALITY + TCP 冒烟，不重复全量公网性能矩阵。完整分层见 [验证矩阵](docs/validation.md)。
 
 ## 本地使用与命令行模式
 
@@ -536,34 +568,35 @@ env DIAG_INCLUDE_SOCKET_DETAILS=1 \
   bash ./debian-vps-tuning.sh diagnose
 ```
 
-### 6. Advisory-only `dvt probe`
+### 6. 症状触发、Advisory-only 的 `dvt probe`
 
-`dvt probe` 是推荐的日常主动测量入口。它要求显式提供你控制或明确获准使用的 iperf3 服务端；默认从 `VERIFIED` 管理状态读取 100–1000 Mbps 套餐端口上限，也可用 `--rate-cap` 明确指定。每个方向固定单流，并把该值通过 `iperf3 --bitrate` 实际应用到测试流量，而不只是写入估算。先查看流量预算且不产生流量：
+`dvt probe` 只用于真实业务症状触发后的有预算诊断，不是日常、升级或发布默认门禁。它要求显式提供你控制或明确获准使用的 iperf3 服务端；默认从 `VERIFIED` 管理状态读取 100–1000 Mbps 套餐端口上限，也可用 `--rate-cap` 明确指定。每个方向固定单流，并把该值通过 `iperf3 --bitrate` 实际应用到测试流量，而不只是写入估算。必须先用 `--plan-only` 查看 payload 上界，再显式设置不超过已批准窗口的 `--budget-mib`；计划和工具预算均不含协议开销，也不能替代服务商面板的剩余额度检查：
 
 ```bash
 dvt probe --host iperf.example.com --server-port 5201 --plan-only
 ```
 
-确认 endpoint 授权和预算后，执行三个重复样本：
+确认 endpoint 授权和预算后，执行两个单向短样本；200 Mbps 下计划 payload 上界为
+250,000,000 字节，低于单样本 300 MB 和单窗口 600 MB 的设计上限：
 
 ```bash
 dvt probe \
   --host iperf.example.com \
   --server-port 5201 \
   --rate-cap 200 \
-  --samples 3 \
+  --samples 2 \
   --seconds 5 \
-  --omit 2 \
-  --direction both \
+  --omit 0 \
+  --direction upload \
   --family 4 \
-  --budget-mib 2048 \
+  --budget-mib 300 \
   --output-dir /root/dvt-probe-200m-a1 \
   --yes
 ```
 
 每个样本继续复用 profile 已有的 JSON 窗口校验、精确 sender bytes、重传/GiB、主机 TCP 与 qdisc 增量、`INCOMPLETE → COMPLETED` 和 SHA-256 证据链；顶层结果只给出中位数和 `REVIEW_REQUIRED`/`REVIEW_BLOCKED`。它不探测或改写服务商套餐上限，不修改 sysctl/qdisc，不给出持久化 HTB 速率，也不经过 3X-UI、Xray、订阅客户端或 TUN 链路。公共测速站“可以连通”不等于已获长期或批量测试授权，授权与使用条款必须由执行者另行确认。
 
-### 6A. 高级显式 iperf3 benchmark
+### 6A. 研究专用的高级显式 iperf3 benchmark
 
 `benchmark` 不修改系统配置，但会产生高带宽 TCP 流量。运行前必须准备并获准使用 iperf3 服务端；脚本不安装软件包、不开放端口，也不选择公共服务器。
 
@@ -608,7 +641,7 @@ env BENCHMARK_HOST='iperf.example.com' \
 
 该测试只测量 VPS 与 iperf3 服务端之间的直连 TCP，不经过 VLESS + REALITY + TCP 客户端链路。公共测试点的单次结果不能直接代表代理体验。`BENCHMARK_PARALLEL` 范围为 1–4；1C1G 和 1C2G 基线应先使用 1。iperf3 参数语义见 [ESnet 官方文档](https://software.es.net/iperf/invoking.html)。
 
-### 7. 固定 TcpQuality 证据采集
+### 7. 研究专用的固定 TcpQuality 证据采集
 
 `tcpquality-evidence.sh` 独立于系统调优生命周期，不自动下载“最新”脚本或 rootfs，也不执行 `apply`。rc.14 沿用 rc.13 固定的 TcpQuality release `v1.00013`、commit `73606e2460bde21bb2e253842971f8ca8c9eb51c`、三个脚本、`rootfs-manifest.json` 和 amd64 rootfs。固定目录还必须包含记录 rootfs 内 TCP_INFO helper 与两份 eBPF 脚本审计值的 `PINNED-METADATA.txt`，以及覆盖五个下载资产的 `SHA256SUMS`。
 
@@ -657,7 +690,10 @@ env \
 
 节点变化不会自动使整组测试失效，但比较时必须剔除或单独标注不一致节点。旧 commit 的整机 `TcpRetransSegs` 增量与 v1.00013 的流级百分比属于不同测量基线，不能串接为同一时间序列。包装层自身不写 sysctl/qdisc/systemd/swap，也不调用主机包管理器；固定上游的 `--all` 会访问节点和测速端点、加载临时 eBPF 探针并创建/删除目标计数链，因此不是零内核交互的纯只读操作。
 
-### 8. HTB 候选速率发现与 A/B/A
+### 8. 研究专用的 HTB 候选速率发现与 A/B/A
+
+> 默认不得在有月流量配额的业务 VPS 上执行本节。只有明确要验证聚合出口整形机制、使用
+> 独立高额度测试机、已经批准完整窗口的流量预算和停止条件时，才可进入下列研究流程。
 
 安装后的短命令把原有工具链包装为带阶段门禁的入口。HTB watchdog 要求执行器从稳定路径
 运行；`dvt htb preflight` 不会隐式写入该路径。确认没有活动 HTB 后，先从同一固定 Release

@@ -4,6 +4,7 @@
 > 2026-08 的既有运行。rc.13、`debian13-1c1g` 的新实验必须使用
 > [VMISS Basic 1C1G / 200 Mbps HTB 完整实验 SOP](vmiss-basic-1c1g-200mbps-htb-campaign.md)。
 > 不得把本文命令、哈希、`--repeat-cycles` 排程或结果复制到当前实验。
+> 当前完整 SOP 也已降为研究专用，并非配额业务 VPS 的默认执行授权。
 
 > 适用脚本：`htb-aggregate-experiment.sh` v0.2.1。v0.1.0 在首次 S4 中于 `start` 后自动回滚，但 SOP 没有捕获 stderr 和左侧流水线退出码，导致实际为根 `fq` 的中段被错误地继续命名为 B1。v0.2.0 的 smoke-test 进一步确认 HTB 运行时配置正确，但其 class JSON 校验只识别 `kind/classid`，没有兼容目标 iproute2 的 `class/handle` 字段，因而误判后安全回滚；同版 SOP 的 `set -e` 又在失败检查时终止了交互 shell。旧归档必须保留为失败证据；不得继续使用 v0.1.0、v0.2.0 或原 `S4-HTB` 目录。
 

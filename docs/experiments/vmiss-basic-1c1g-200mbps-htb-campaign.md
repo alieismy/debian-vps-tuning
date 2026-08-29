@@ -1,11 +1,17 @@
 # VMISS Basic 1C1G / 200 Mbps HTB 完整实验 SOP
 
-状态：当前 rc.13 权威执行文档；待目标机运行验证
+状态：研究专用协议；默认不执行；未形成目标机运行结论
 适用版本：`debian-vps-tuning 0.1.0-rc.13`、HTB 执行器 `0.4.0`
 适用套餐：Debian 13、1 vCPU、约 1 GiB RAM、10 GB 系统盘、200 Mbps 端口、500 GB 月流量
 
+> **效力变更：本文不再是业务 VPS 的升级、发布或日常验收入口。** 历史执行已经证明完整
+> TcpQuality/HTB campaign 会消耗远高于普通生命周期验证的流量，且公共路径和时段混杂使
+> 边际因果证据有限。只有明确需要验证聚合出口整形机制、改用独立高额度测试机、已授权
+> endpoint，并在执行前批准完整硬流量预算和停止条件时，才可重新评审本文。不得在当前
+> 配额受限 VMISS Basic 上按本文继续 reference、sweep 或 A/B/A。
+
 本 SOP 把此前分散的 `HTB200 reference → 180/190/195 candidate sweep → A/B/A → 反向窗口`
-合并为一条有阶段门禁的操作链。它是 VMISS Basic 1C1G 后续新实验的唯一当前入口。
+合并为一条有阶段门禁的研究链。它只在研究条件获重新批准后作为该类实验入口。
 [旧版 VMISS Basic HTB A/B/A 文档](vmiss-basic-200mbps-htb-aba.md)只保留 v0.2.1 历史证据，
 不得再用作 rc.13 执行说明。
 

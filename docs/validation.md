@@ -7,9 +7,27 @@
 1. 本地静态检查；
 2. 同源模板与六个操作系统/内存变体的一致性；
 3. 目标 VPS 运行、重启和回滚；
-4. 3X-UI/Xray 与客户端业务连接。
+4. 3X-UI/Xray 与客户端业务连接；
+5. 有预算的性能或网络机制研究。
 
-前三项不能相互替代。静态检查通过不证明 BBR、qdisc、swap、重启持久性或代理连接成功。
+各层不能相互替代。静态检查通过不证明 BBR、qdisc、swap、重启持久性或代理连接成功；
+业务连接通过也不证明公网性能改善；研究样本不自动成为每台 VPS 或每个版本的发布门禁。
+
+## 默认验收路径与研究边界
+
+业务 VPS 的默认安装、升级和日常验收只要求 L0–L2/L3 中与该机相关的确定性门禁：固定资产
+校验、只读基线、`preflight`、`apply`、重启后 `verify`、严格代理服务验证和少量真实客户端
+业务冒烟。无主动流量的 `diagnose` 是症状诊断首选。
+
+`benchmark`、`dvt probe`、TcpQuality、HTB200 reference、candidate sweep、A/B/A 和反向窗口
+属于 L4 研究通道，不是跨版本迁移、每台 VPS 或稳定版的默认必做项。只有同时满足以下条件
+才重新启用：存在可复现业务症状或明确性能主张；实验会改变真实决策；使用独立高额度测试机
+和获授权 endpoint；执行前批准包含协议开销余量的硬流量预算与停止条件。失败不得无条件重试。
+
+厂商预装 BBR/fq 时，运行值、持久化来源和配置所有权分别取证。`preflight` 可作为只读审计：
+兼容的唯一 `/etc/sysctl.conf` 基线可选择由项目事务化接管，也可停在审计后保持厂商配置；
+复杂或重复外部定义必须阻断。跨版本只能由旧版固定资产执行受管 rollback/purge 后重新安装
+最新版，或在备份和控制台均已验证时干净重装；不得由新版覆盖旧 state 或手工删除受管资源。
 
 ## 总控入口验证矩阵
 
@@ -87,8 +105,8 @@ bash experiments/htb-aggregate/tests/static-check.sh
 |---|---|---|---:|---:|---|---|---|
 | T1 | Debian 12 | 1C1G | 10 GB / XFS | 200 Mbps | `6.1.0-51-cloud-amd64` | 主力/首要门槛 | rc.8 退出、rc.10 apply、重启严格 verify、重复 apply 通过；最终修复哈希待目标机复核 |
 | T2 | Debian 12 | 1C2G | 15 GB / XFS | 200 Mbps | `6.1.0-51-cloud-amd64` | 主力/首要门槛 | 旧状态经 rc.8 profile 退出、rc.10 apply、重启严格 verify、重复 apply 通过；最终修复哈希待目标机复核 |
-| T3 | Debian 13 | 1C1G | 约 10 GB / ext4 | 200 Mbps | `6.12.100+deb13-cloud-amd64` | 系统兼容 | rc.11 preflight/apply、立即与重启 verify、幂等门禁及固定 TcpQuality S1/S2 通过；rc.13 Basic HTB200→candidate→双窗口 campaign 仅完成仓库实现和静态验证，目标机尚未执行 |
-| T4 | Debian 13 | 1C2G | 15 GB / ext4 | 200 Mbps | `6.12.101+deb13-cloud-amd64` | 系统兼容 | rc.12 profile 哈希绑定的 preflight/apply、立即与重启后 verify、重复 apply 通过；rc.13 稳定执行器、profile 绑定、TcpQuality 单轮及 HTB 双窗口待目标机执行 |
+| T3 | Debian 13 | 1C1G | 约 10 GB / ext4 | 200 Mbps | `6.12.100+deb13-cloud-amd64` | 系统兼容 | rc.11 preflight/apply、立即与重启 verify、幂等门禁及历史 TcpQuality S1/S2 通过；后续 HTB campaign 已降为研究专用，不再作为该机升级门禁 |
+| T4 | Debian 13 | 1C2G | 15 GB / ext4 | 200 Mbps | `6.12.101+deb13-cloud-amd64` | 系统兼容 | rc.12 profile 哈希绑定的 preflight/apply、立即与重启后 verify、重复 apply 通过；TcpQuality/HTB 双窗口已降为研究专用，不再作为逐机验收门禁 |
 | T5 | Debian 12/13 | 1C1G | 10 GB / XFS 或 ext4 | 100 Mbps | 以实机为准 | 低带宽边界 | Debian 12 v5→rc.10 路径通过；Debian 13 rc.12 本地候选完成错误参数拒绝、purge、apply、重启 verify 和幂等门禁；最终修复哈希及严格代理验证待复核 |
 | T6 | Debian 13 | 1C1G | 容量未采集 / ext4 | 1000 Mbps | `6.12.100+deb13-amd64` | 高带宽边界 | rc.9 完整退出和 swap 所有权迁移、rc.10 apply、重启严格 verify、BBR/fq/swap、重复 apply 通过；最终修复哈希待目标机复核 |
 | T7 | Debian 12 | 2C2G | 以实机为准 | 200 Mbps | `6.1.x`，以实机为准 | 2C2G 资源契约 | 待执行 |
@@ -96,7 +114,7 @@ bash experiments/htb-aggregate/tests/static-check.sh
 | T9 | Debian 12 | 1C512MB | 以实机为准 | 200 Mbps | `6.1.x`，以实机为准 | 最小内存边界 | 待执行 |
 | T10 | Debian 13 | 1C512MB | 以实机为准 | 200 Mbps | `6.12.x`，以实机为准 | 最小内存系统兼容 | 待执行 |
 
-T1、T2 必须通过才能发布首个稳定版；T3、T4 是 Debian 13 稳定版门槛；T5、T6 用于确认 100–1000 Mbps 输入边界，不能用 200 Mbps 的结果代替。T7、T8 用于证明同一 `1c2g` 兼容 profile 在 2 vCPU 下的完整生命周期；T9、T10 用于证明 512 MiB 的缓冲截断、journald、swap 和 3X-UI 生命周期。本地 fixture 不能替代目标机证据。
+T1、T2 必须通过才能发布首个稳定版；T3、T4 是 Debian 13 稳定版门槛；T5、T6 用于确认 100–1000 Mbps 输入边界，不能用 200 Mbps 的结果代替。T7、T8 用于证明同一 `1c2g` 兼容 profile 在 2 vCPU 下的完整生命周期；T9、T10 用于证明 512 MiB 的缓冲截断、journald、swap 和 3X-UI 生命周期。本地 fixture 不能替代目标机证据。这些门槛验证的是生命周期、恢复和业务可用性，不要求在每台目标机重跑 TcpQuality、HTB reference、candidate sweep 或 A/B/A；只有发布说明准备作出相应性能或整形主张时，才另行要求 L4 研究证据。
 
 上述目标机结果绑定测试时日志中的具体版本与 SHA-256。rc.14 不改变 rc.13/rc.12 写入的 17 个 sysctl、qdisc、swap、journald 或 NOFILE 参数，但脚本版本、哈希、带宽重配置事务和恢复契约已改变，不能继承为 rc.14 目标机通过结论。当前环境没有目标 VPS 的 SSH 凭据，rc.14 最终哈希的首次生命周期、rc.13→rc.14 迁移、100→200/200→500/500→200 重配置、故障恢复、重启持久性、真实代理链路、TcpQuality 和 HTB 均不能由本地 fixture 冒充，作为 Pre-release 的后续确认项保留。
 
