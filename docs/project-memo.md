@@ -18,7 +18,7 @@
 - 已按当前 rc.14 源码补充厂商预优化决策：运行时已有 BBR/fq 不等于持久化所有权清晰；对 `/etc/sysctl.conf` 中唯一、严格为 `bbr`/`fq` 的 root 普通文件，现有实现可事务化备份并接管；对 `/etc/sysctl.d`、重复定义、符号链接、非 root 或未知组合调优保持 fail-closed。厂商品牌不成为 profile 维度。
 - 已明确跨版本可采用“受管清除旧版后安装最新版”，但必须由旧版固定 Release 按旧状态执行 verify、rollback/purge 和恢复检查；最新版不直接覆盖旧状态，也不以手工删除配置替代回滚。对可快速恢复且备份已验证的 VPS，干净重装 OS 后直接应用最新版是独立的简化路径。
 - 用户已批准该方案，P0 控制面已实施：中英文 README、`docs/validation.md`、`docs/design-scope.md` 和四份 HTB SOP 已同步为“默认低流量生命周期与业务冒烟、主动性能实验研究专用”。现有 `preflight` 被明确为厂商基线零写入审计点，现有 `update` 保持只读计划入口，没有增加同义 action 或伪自动迁移。
-- `tests/static-check.sh` 已增加文档效力防回退门禁，要求中英文默认路径、旧版固定 Release 清理契约、厂商基线例外和三份当前研究协议的 `研究专用` 标记持续存在，并拒绝恢复旧 Basic “当前权威执行文档”状态。
+- `tests/static-check.sh` 已增加文档效力防回退门禁，要求中英文默认路径、旧版固定 Release 清理契约、厂商基线例外和四份 HTB 研究材料的 `研究专用` 标记持续存在，并拒绝恢复旧 Basic “当前权威执行文档”状态。
 - 最终本地验证通过：`git diff --check`、生成 profile 一致性、15 项 `SHA256SUMS`、controller fixture、HTB fixture、完整 `tests/static-check.sh` 和修改文档本地链接检查均通过。静态测试中的故意畸形 TcpQuality fixture 按预期输出 FAIL 后，整个 suite 以 0 退出。rc.14 总控、profile、伴随工具和 `SHA256SUMS` 均未修改。
 
 ### 未完成门禁

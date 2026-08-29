@@ -22,6 +22,7 @@ strategy_doc='docs/network-tuning-and-test-strategy.md'
 validation_doc='docs/validation.md'
 research_docs=(
   docs/experiments/htb-candidate-rate-sweep.md
+  docs/experiments/vmiss-basic-200mbps-htb-aba.md
   docs/experiments/vmiss-basic-1c1g-200mbps-htb-campaign.md
   docs/experiments/vmiss-1c2g-200mbps-htb-aba.md
 )

@@ -188,7 +188,7 @@ If BBR/fq is all that is required and the provider persists it through one clear
 
 ## Default Low-Traffic Acceptance Path
 
-Installation, upgrades, and routine acceptance on a business VPS default to fixed-asset verification, `preflight`, `apply`, post-reboot `verify`, strict proxy-service verification, and a small real-client business smoke test. `diagnose` is the first troubleshooting entry and generates no active traffic. `benchmark`, `dvt probe`, TcpQuality, HTB200 reference, candidate sweep, and A/B/A are not migration, release, or per-host acceptance gates. They enter the research path only for a reproducible symptom and a concrete mechanism decision, on a separate high-quota test host, with a pre-approved hard traffic budget.
+Installation, upgrades, and routine acceptance on a business VPS default to fixed-asset verification, `preflight`, `apply`, post-reboot `verify`, strict proxy-service verification, and a small real-client business smoke test. `diagnose` is the first troubleshooting entry and generates no active traffic. `benchmark`, `dvt probe`, TcpQuality, HTB200 reference, candidate sweep, and A/B/A are not migration, release, or per-host acceptance gates. A symptom-triggered `dvt probe` may run on the affected business VPS after its L3 hard budget is approved. L4 benchmark, TcpQuality, and HTB research additionally require a separate high-quota test host and a concrete mechanism decision.
 
 ## Real Environment Validation Baseline
 

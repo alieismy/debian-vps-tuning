@@ -190,8 +190,9 @@ buffer、swap、journald、NOFILE、状态验证和回滚时，才应接管所�
 业务 VPS 的安装、升级和日常验收默认只执行：固定资产校验、`preflight`、`apply`、重启后
 `verify`、严格代理服务验证，以及少量真实客户端业务冒烟。`diagnose` 是无主动流量的首选
 故障入口。`benchmark`、`dvt probe`、TcpQuality、HTB200 reference、candidate sweep 和 A/B/A
-均不是发布迁移或逐机验收门禁；只有出现可复现症状、存在明确机制决策、使用独立高额度
-测试机，并预先批准硬流量预算时才进入研究通道。
+均不是发布迁移或逐机验收门禁。出现可复现症状且预先批准 L3 硬流量预算时，`dvt probe`
+可以在受影响的业务 VPS 上执行；benchmark、TcpQuality 和 HTB 等 L4 研究还必须使用独立
+高额度测试机，并服务于明确的机制决策。
 
 ## 真实环境验证基线
 
@@ -575,19 +576,20 @@ env DIAG_INCLUDE_SOCKET_DETAILS=1 \
 dvt probe --host iperf.example.com --server-port 5201 --plan-only
 ```
 
-确认 endpoint 授权和预算后，执行三个重复样本：
+确认 endpoint 授权和预算后，执行两个单向短样本；200 Mbps 下计划 payload 上界为
+250,000,000 字节，低于单样本 300 MB 和单窗口 600 MB 的设计上限：
 
 ```bash
 dvt probe \
   --host iperf.example.com \
   --server-port 5201 \
   --rate-cap 200 \
-  --samples 3 \
+  --samples 2 \
   --seconds 5 \
-  --omit 2 \
-  --direction both \
+  --omit 0 \
+  --direction upload \
   --family 4 \
-  --budget-mib 2048 \
+  --budget-mib 300 \
   --output-dir /root/dvt-probe-200m-a1 \
   --yes
 ```
