@@ -18,6 +18,13 @@ installer='install.sh'
 probe_tool='dvt-probe.sh'
 htb_wrapper='dvt-htb.sh'
 invalid_receiver_fixture='experiments/htb-aggregate/tests/fixtures/iperf3-invalid-receiver-window.json'
+strategy_doc='docs/network-tuning-and-test-strategy.md'
+validation_doc='docs/validation.md'
+research_docs=(
+  docs/experiments/htb-candidate-rate-sweep.md
+  docs/experiments/vmiss-basic-1c1g-200mbps-htb-campaign.md
+  docs/experiments/vmiss-1c2g-200mbps-htb-aba.md
+)
 
 if command -v python3 >/dev/null 2>&1; then
   python_cmd=python3
@@ -32,6 +39,26 @@ bash -n "${scripts[@]}" "$controller" "$tcpquality_tool" "$installer" "$probe_to
   tests/static-check.sh tests/controller-check.sh tests/installer-check.sh
 
 bash tests/controller-check.sh
+
+# Keep quota-heavy public-network experiments outside the default business-VPS
+# lifecycle even when the implementation remains available for explicit research.
+grep -Fq '状态：已批准；P0 控制文档已实施' "$strategy_doc"
+grep -Fq '## 默认低流量验收路径' README.md
+grep -Fq '## Default Low-Traffic Acceptance Path' README.en-US.md
+grep -Fq '## 默认验收路径与研究边界' "$validation_doc"
+grep -Fq '旧版固定 Release' README.md
+grep -Fq 'fixed old Release' README.en-US.md
+grep -Fq '唯一例外是 root 所有的普通 `/etc/sysctl.conf`' docs/design-scope.md
+for research_doc in "${research_docs[@]}"; do
+  grep -Fq '研究专用' "$research_doc" || {
+    printf 'research-only authority marker missing: %s\n' "$research_doc" >&2
+    exit 1
+  }
+done
+if grep -Fq '状态：当前 rc.13 权威执行文档' docs/experiments/vmiss-basic-1c1g-200mbps-htb-campaign.md; then
+  printf 'quota-heavy Basic HTB campaign was restored as a current default entry\n' >&2
+  exit 1
+fi
 
 for script in "${scripts[@]}"; do
   if LC_ALL=C grep -n $'\r' "$script"; then

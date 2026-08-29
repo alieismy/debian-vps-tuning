@@ -24,13 +24,13 @@
 
 唯一命名空间为 `proxy-vps`。状态文件是脚本所有权、资源档位、原始 qdisc、swap 和 managed file 哈希的唯一事实来源。状态文件使用 JSON，不通过 `source` 或 `eval` 解释。
 
-sysctl 配置归属按规范路径去重：项目自己的 `/etc/sysctl.d/90-proxy-vps.conf` 及指向它的符号链接不构成冲突，外部文件及其别名只报告一次。外部文件即使写入与项目相同的值，仍属于第二配置所有者；`preflight`/`apply` 阻断，已安装状态的 `verify` 返回失败，`diagnose` 只读报告。
+sysctl 配置归属按规范路径去重：项目自己的 `/etc/sysctl.d/90-proxy-vps.conf` 及指向它的符号链接不构成冲突，外部文件及其别名只报告一次。唯一例外是 root 所有的普通 `/etc/sysctl.conf` 中各自唯一且值严格为 `fq`/`bbr` 的厂商基线：`preflight` 只读报告可迁移，`apply` 在状态事务内完整备份并转移所有权，`rollback` 恢复原文件。其他外部文件即使写入相同值，仍属于第二配置所有者；`preflight`/`apply` 阻断，已安装状态的 `verify` 返回失败，`diagnose` 只读报告。操作者可停在通过的 `preflight` 并保留厂商配置，但不得在未接管时把项目描述为已安装或已验证。
 
 ## 总控入口与分发边界
 
 `debian-vps-tuning.sh` 是选择器和调用器，不是另一份调优实现。它只允许 Debian 12/13、amd64 下的四个资源档：1C + 384–767 MiB、1C + 768–1535 MiB、1C + 1536–3072 MiB、2C + 1536–3072 MiB。底层共有六个操作系统/内存 profile；1C2GB 和 2C2GB 共用兼容 ID `debian12-1c2g`/`debian13-1c2g`，不建立重复实现或迁移已有状态。2C512MB、2C1GB、3 vCPU 以上及边界外内存拒绝执行。存在可解析状态时，检测档位必须与 `.profile.id` 一致，否则阻断。
 
-`experiments/htb-aggregate` 中的参考筛查和候选速率扫描是独立实验面，不进入六份 profile 的持久配置。总控菜单只通过 `dvt-htb.sh` 暴露受限包装层：只读 preflight、10 秒自动恢复 smoke、status/stop，以及需要显式 endpoint、证据目录和阶段确认的 reference/sweep；不存在持久化 HTB 安装动作。计划生成器只输出 JSON；runner 必须由 root 使用同一固定 Release 中已校验的 profile、HTB v0.4.0 工具和 analyzer，且只对 200 Mbps 的 rc.12 schema 4 `VERIFIED` Debian 13 1C1G/1C2G 基线执行上传测试。默认流程先重复 HTB200 reference；candidate sweep 还必须校验 reference 的 `COMPLETED`、`SHA256SUMS`、`REVIEW_REQUIRED` 和有效窗口，并要求 `--ack-reference-reviewed`，才能生成 180/190/195 候选计划。所有阶段都复用 HTB start/ACTIVE/stop/恢复契约，只改变 class rate/ceil，不创建持久化 qdisc。分析器以通过窗口校验的 sender Mbit/s 和精确 sender bytes 归一化重传形成描述性 shortlist；receiver goodput 只作交叉核对，任一窗口异常都输出 `REVIEW_BLOCKED` 且不排名。它不推算丢包率或自动授权生产速率；候选仍须进入独立 A/B/A 与反序复验。
+`experiments/htb-aggregate` 中的参考筛查和候选速率扫描是独立、研究专用的实验面，不进入六份 profile 的持久配置，也不属于业务 VPS、版本迁移或发布默认门禁。只有需要验证聚合出口整形机制、使用独立高额度测试机且已批准完整流量预算时才进入。总控菜单只通过 `dvt-htb.sh` 暴露受限包装层：只读 preflight、10 秒自动恢复 smoke、status/stop，以及需要显式 endpoint、证据目录和阶段确认的 reference/sweep；不存在持久化 HTB 安装动作。计划生成器只输出 JSON；runner 必须由 root 使用同一固定 Release 中已校验的 profile、HTB v0.4.0 工具和 analyzer，且只对 200 Mbps 的 rc.14 schema 4 `VERIFIED` Debian 13 1C1G/1C2G 基线执行上传测试。candidate sweep 还必须校验 reference 的 `COMPLETED`、`SHA256SUMS`、`REVIEW_REQUIRED` 和有效窗口，并要求 `--ack-reference-reviewed`，才能生成候选计划。所有阶段都复用 HTB start/ACTIVE/stop/恢复契约，只改变 class rate/ceil，不创建持久化 qdisc。分析器只形成描述性 shortlist；任一窗口异常都输出 `REVIEW_BLOCKED` 且不排名，不自动授权生产速率或持久化整形。
 
 总控入口支持交互安全引导和显式 action。带宽只为 `guided`、`preflight`、`apply` 选择，默认 200 Mbps，范围是 100–1000 的任意整数；`apply` 的选择优先级是 `--port`、`PORT_SPEED_MBPS`、已安装状态值、交互选择/默认值，因而无显式值的重复 `apply` 复用已安装带宽；`verify`、`status`、`diagnose`、`probe`、`benchmark`、`htb`、`update`、`rollback` 不通过 `--port` 重写现有状态。安全引导先运行 preflight，只有交互终端再次明确确认才调用 apply。`diagnose` 只读取本机状态并做 1–60 秒增量采样，覆盖 TCP、softnet、整机 CPU、接口/ethtool、qdisc 和代理进程资源，不生成流量或输出进程命令行。`benchmark` 不修改系统配置，但只有用户显式给出 `BENCHMARK_HOST` 且已安装 iperf3 时才产生直连 TCP 测试流量；它允许固定预热、IPv4/IPv6、方向和 run ID，并按方向分离内核计数，仍不代表代理业务测试。分方向摘要校验 sender/receiver 的实际窗口、bytes/seconds/bitrate 算术和跨端字节关系；采集完整仍可能因窗口异常而不可用于分析。测试前的 payload 流量估算只接受显式 `BENCHMARK_RATE_CAP_MBPS` 或合法管理状态中的端口上限，不使用 profile 默认值猜测；旧 `benchmark` 只有同时设置 `BENCHMARK_ENFORCE_RATE_CAP=1` 才启用 `iperf3 --bitrate`，默认行为保持兼容。由于 iperf3 对并行流逐流应用该值，强制模式把总 cap 等分为每流整数 bps，并把 scope 与每流值写入元数据。
 
@@ -40,7 +40,7 @@ sysctl 配置归属按规范路径去重：项目自己的 `/etc/sysctl.d/90-pro
 
 本地模式要求总控脚本、目标 profile 和 `SHA256SUMS` 位于同一目录、来自同一 Release，并在调用前核对唯一清单条目。不同版本必须使用不同目录；总控与同目录清单不匹配时明确提示可能混用 Release，并保持完整性失败，不自动转入远程模式。远程模式只允许 HTTPS，从总控脚本内固定的 GitHub Release tag 下载 `SHA256SUMS` 和目标 profile；HTTP 错误、重定向协议降级、超时、空文件、重复清单条目或哈希不匹配均阻断。下载失败不得回退到可变分支、latest、第三方镜像或另一个 profile。
 
-总控脚本不直接写 sysctl、systemd、qdisc、swap、journald 或状态文件，不捕获后伪造底层成功，不改变底层退出码。`update` 也是只读检查：校验当前 profile 和目标 Release 后，只调用当前 profile 的 `verify` 以及目标总控的 `UPDATE_PREFLIGHT=1 preflight`，复用状态中的端口带宽并输出人工迁移材料；它不得调用 rollback、purge、apply 或 reboot。目标 profile 的 update-preflight 只允许完整且归属校验通过的 `VERIFIED/APPLIED` 状态，未完成或保留 swap 的状态继续阻断。自动发现只在同一 `major.minor` 发布线内选择；rc 通道允许更高 rc 或稳定版，稳定通道排除 prerelease，跨线或主动选择 prerelease 必须显式 `--target`。SHA-256 证明下载内容与同一发布清单一致，不单独证明发布者身份；Release tag、资产不可变性、GitHub API 返回和发布来源仍属于用户信任边界。
+总控脚本不直接写 sysctl、systemd、qdisc、swap、journald 或状态文件，不捕获后伪造底层成功，不改变底层退出码。`update` 也是只读检查：校验当前 profile 和目标 Release 后，只调用当前 profile 的 `verify` 以及目标总控的 `UPDATE_PREFLIGHT=1 preflight`，复用状态中的端口带宽并输出人工迁移材料；它不得调用 rollback、purge、apply 或 reboot。跨版本“清旧装新”必须由旧版固定 Release 根据旧状态执行受管 rollback/purge，完成恢复检查和重启后再运行最新版；新版不得作为旧状态的通用卸载器。状态不可恢复而 VPS 可重建时，可在已验证业务备份和控制台后选择干净重装。目标 profile 的 update-preflight 只允许完整且归属校验通过的 `VERIFIED/APPLIED` 状态，未完成或保留 swap 的状态继续阻断。自动发现只在同一 `major.minor` 发布线内选择；rc 通道允许更高 rc 或稳定版，稳定通道排除 prerelease，跨线或主动选择 prerelease 必须显式 `--target`。SHA-256 证明下载内容与同一发布清单一致，不单独证明发布者身份；Release tag、资产不可变性、GitHub API 返回和发布来源仍属于用户信任边界。
 
 重复 `apply` 的无写入幂等只适用于状态 `script_version` 与当前脚本一致且端口、RTT、缓冲完全相同的 `VERIFIED` 状态。旧版本状态仍可由新脚本 `verify` 或 `rollback`，但不得把旧配置验证通过等同于新版本已安装；跨版本 apply 必须先 rollback。
 

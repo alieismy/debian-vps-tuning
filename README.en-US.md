@@ -155,6 +155,8 @@ Specify the target version using `update --target v0.1.0-rc.14`. Auto-discovery 
 
 `update` is only an upgrade compatibility check and plan generator; it will not rewrite old scripts on disk, system tuning configurations, or 3X-UI. A passed check does not mean the upgrade is complete; during the maintenance window, manually execute rollback/purge, reboot, target preflight/apply, reboot again, and verify according to the output and this README. If GitHub API queries fail or are subject to anonymous rate limits, using a reviewed `--target` can skip auto-discovery, but target Release assets will still be verified.
 
+A cross-version upgrade may remove the old managed version before installing the newest version, but removal must be performed by the **fixed old Release** using its own state through `verify → rollback/purge`. Do not manually delete sysctl files, units, the state directory, or swap, and do not let a new `apply` overwrite old state. Only after restoration checks and the first reboot pass should the newest `preflight/apply → reboot → verify` run. If old state is missing, damaged, or predates a reliable state contract, preserve read-only evidence first and use the matching old recovery logic, reviewed manual cleanup, or a clean OS reinstall when business backups and console access have been verified. A clean reinstall is a separate recovery path, not manual file deletion on the old system.
+
 ### 5. Online Execution Notes
 
 - Only supports vendor minimal Debian 12/13, `x86_64/amd64`, and the four CPU/memory resource tiers listed in the README; other combinations will be rejected;
@@ -170,6 +172,23 @@ Specify the target version using `update --target v0.1.0-rc.14`. Auto-discovery 
 - `verify` and `preflight` will reject duplicate sysctl definitions outside this project, even if the values written by external files are the same as this project; do not run the built-in BBR or network optimization menus of 3X-UI/X-UI again, to avoid recreating `99-bbr-x-ui.conf`;
 - `rollback` reverts tuning configurations managed by this project and should be tested during a maintenance window; normal rollback defaults to keeping the swap created by the script;
 - Do not use `curl ... | bash` or `bash <(curl ...)` without reading the script and release notes.
+
+### When the Provider Already Supplies BBR/fq
+
+BBR plus root `fq` is the target state; it does not mean provider configuration must always be overwritten. Runtime values do not establish persistence or ownership. Run `preflight` before the first installation and follow its classification:
+
+| Baseline | Default handling |
+|---|---|
+| No external conflict | Let the project write the configuration and become the sole owner |
+| Exactly one `bbr` and one `fq` definition in a root-owned regular `/etc/sysctl.conf` | The project may transactionally back up and adopt it, or the operator may stop after `preflight` and keep the provider configuration |
+| Definitions in `/etc/sysctl.d/*.conf`, duplicates, symlinks, non-root files, different values, or unknown tuning combinations | `preflight` blocks; do not merge or overwrite automatically |
+| Managed state from another project version exists | Use cross-version migration, not provider-baseline adoption |
+
+If BBR/fq is all that is required and the provider persists it through one clear owner, this project need not be installed. Adopt ownership only when project-managed buffers, swap, journald, NOFILE, verification, and rollback are required. Provider and project files must not remain concurrent owners of the same sysctl key. Provider brand is not a profile dimension.
+
+## Default Low-Traffic Acceptance Path
+
+Installation, upgrades, and routine acceptance on a business VPS default to fixed-asset verification, `preflight`, `apply`, post-reboot `verify`, strict proxy-service verification, and a small real-client business smoke test. `diagnose` is the first troubleshooting entry and generates no active traffic. `benchmark`, `dvt probe`, TcpQuality, HTB200 reference, candidate sweep, and A/B/A are not migration, release, or per-host acceptance gates. They enter the research path only for a reproducible symptom and a concrete mechanism decision, on a separate high-quota test host, with a pre-approved hard traffic budget.
 
 ## Real Environment Validation Baseline
 
@@ -200,7 +219,7 @@ In the two time-period samples of the same rc.10 configuration, the zero-retrans
 
 Furthermore, v6 has only one sample and rc.10 only two, which is still insufficient to estimate a stable distribution; TcpQuality uses random built-in packet lengths when `-s` is not specified, and the default `-c` sends only 30 packets per node; TcpQuality directly tests the VPS network stack, without passing through 3X-UI, VLESS, REALITY, or client links. Existing evidence is primarily remote images, lacking machine-readable raw tables sufficient for public recalculation.
 
-Therefore, the project will not roll back rc.10 based on these single reports, modify the 17 managed sysctls retained by rc.14, or add aggressive parameters. Performance acceptance must fix the TcpQuality release/commit, script/rootfs SHA-256, node files, `-c/-s/-p` parameters, and metric source; cover low load, daytime, and evening peaks with repeated sampling; and compare median, P95, and anomaly-node reproduction rates. It must also cover actual VLESS + REALITY + TCP concurrency of 1, 3, 5, and 10. Full pending test items are in the [Validation Matrix](docs/validation.md).
+Therefore, the project will not roll back rc.10 based on these single reports, modify the 17 managed sysctls retained by rc.14, or add aggressive parameters. Only a research protocol intended to support a publishable performance or persistent-shaping claim must pin the TcpQuality release/commit, script/rootfs SHA-256, node files, `-c/-s/-p` parameters, and metric source, then compare repeated samples in a controlled environment. Routine business-VPS acceptance uses a real VLESS + REALITY + TCP smoke test and does not repeat the full public-network performance matrix. See the [Validation Matrix](docs/validation.md) for the evidence layers.
 
 ## Local Usage and Command Line Mode
 
@@ -540,7 +559,7 @@ env DIAG_INCLUDE_SOCKET_DETAILS=1 \
   bash ./debian-vps-tuning.sh diagnose
 ```
 
-### 6. Explicit iperf3 Benchmark
+### 6. Research-Only Explicit iperf3 Benchmark
 
 `benchmark` does not change system configurations, but actively generates high-bandwidth TCP traffic. It requires the user to prepare and authorize an iperf3 server themselves; the script will not install packages, open ports, or select public servers. Default sequentially executes upload and download: each direction first does a 3-second warmup excluded from statistics, then records a 10-second valid window; both directions output iperf3 JSON, TCP/softnet/CPU/interface increments, and pre/post qdisc statistics. Run metadata includes UTC time, run ID, script version and SHA-256, profile, boot ID, management status, network parameters, congestion control, default qdisc, and iperf3 version:
 
@@ -558,7 +577,12 @@ env BENCHMARK_HOST='iperf.example.com' \
 
 `BENCHMARK_IP_FAMILY=4` or `6` is used to fix the address family, `auto` continues system resolution and connection selection; when comparing IPv4/IPv6, they must be executed separately and default routes saved. `BENCHMARK_OMIT_SECONDS=0` can be used to deliberately observe short connection experiences including slow start, non-zero values are for steady-state throughput comparison, the two must not be mixed into the same sequence. This result only measures direct TCP from VPS to iperf3 server, without passing through VLESS + REALITY + TCP client links; do not directly judge proxy experience with single results from public test points. `BENCHMARK_PARALLEL` is limited to 1–4, baseline tests for 1C1G/1C2G should use 1 first. iperf3 parameter semantics see [ESnet Official Documentation](https://software.es.net/iperf/invoking.html).
 
-### 7. HTB Reference, Candidate Sweep, and Independent A/B/A Windows
+### 7. Research-Only HTB Reference, Candidate Sweep, and Independent A/B/A Windows
+
+> Do not run this section by default on a quota-limited business VPS. Enter this
+> research workflow only to test an aggregate-egress shaping mechanism on a
+> separate high-quota host, with the full traffic budget and stop conditions
+> approved in advance.
 
 The non-persistent HTB workflow is restricted to a Debian 13 rc.14 schema-4
 `VERIFIED`, 200-Mbps `debian13-1c1g` or `debian13-1c2g` baseline. The 40-minute
