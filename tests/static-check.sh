@@ -48,6 +48,7 @@ grep -Fq '## Default Low-Traffic Acceptance Path' README.en-US.md
 grep -Fq '## 默认验收路径与研究边界' "$validation_doc"
 grep -Fq '旧版固定 Release' README.md
 grep -Fq 'fixed old Release' README.en-US.md
+# shellcheck disable=SC2016  # Match literal Markdown backticks and path text.
 grep -Fq '唯一例外是 root 所有的普通 `/etc/sysctl.conf`' docs/design-scope.md
 for research_doc in "${research_docs[@]}"; do
   grep -Fq '研究专用' "$research_doc" || {
