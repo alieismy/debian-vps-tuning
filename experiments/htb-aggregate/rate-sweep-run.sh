@@ -7,8 +7,8 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 
-RUNNER_VERSION='0.3.0'
-EXPECTED_TUNING_VERSION='0.1.0-rc.14'
+RUNNER_VERSION='0.4.0'
+EXPECTED_TUNING_VERSION='0.1.0-rc.15'
 MANAGED_STATE_FILE='/var/lib/proxy-vps-tuning/state.json'
 RUNTIME_STATE_DIR='/run/htb-aggregate-experiment'
 RUNTIME_STATE_FILE="${RUNTIME_STATE_DIR}/active.json"
@@ -21,6 +21,12 @@ htb_tool=''
 analyzer=''
 benchmark_host=''
 benchmark_port='5201'
+budget_tool=''
+traffic_ledger=''
+traffic_window_id=''
+traffic_budget_bytes=''
+traffic_reservation_id=''
+traffic_reserved=0
 htb_started=0
 current_stage='initialization'
 session_created=0
@@ -88,7 +94,7 @@ capture_managed_binding() {
     ((.profile.id == "debian13-1c1g") or (.profile.id == "debian13-1c2g")) and
     .network.port_speed_mbps == 200
   ' "$MANAGED_STATE_FILE" >/dev/null ||
-    die 'managed state 不是 rc.14 schema-4 VERIFIED/debian13-1c1g-or-1c2g/200-Mbps 基线。'
+    die 'managed state 不是 rc.15 schema-4 VERIFIED/debian13-1c1g-or-1c2g/200-Mbps 基线。'
   managed_profile_id="$(jq -r '.profile.id' "$MANAGED_STATE_FILE")"
   managed_script_version="$(jq -r '.script_version' "$MANAGED_STATE_FILE")"
   managed_state_sha256_frozen="$(sha256sum "$MANAGED_STATE_FILE" | awk '{print $1}')"
@@ -271,6 +277,10 @@ on_exit() {
   if ! attempt_restore; then
     [ "$rc" -ne 0 ] || rc=1
   fi
+  if [ "$traffic_reserved" -eq 1 ]; then
+    bash "$budget_tool" fail --ledger "$traffic_ledger" --reservation-id "$traffic_reservation_id" >/dev/null 2>&1 || true
+    traffic_reserved=0
+  fi
   finish_incomplete "$rc"
   exit "$rc"
 }
@@ -397,6 +407,7 @@ run_stage() {
     BENCHMARK_RATE_CAP_MBPS="$rate_cap" \
     BENCHMARK_RUN_ID="$current_stage" \
     BENCHMARK_OUTPUT_DIR="$benchmark_dir" \
+    DVT_TRAFFIC_BUDGET_BYPASS=1 \
     bash "$tuning_script" benchmark >"${stage_dir}/benchmark.log" 2>&1; then
     benchmark_rc=0
   else
@@ -431,7 +442,7 @@ run_stage() {
 
 main() {
   local parent output_name plan_sha runner_sha htb_sha analyzer_sha
-  local generated_utc stage_json analysis_sha manifest_sha
+  local generated_utc stage_json analysis_sha manifest_sha planned_payload actual_payload
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -442,6 +453,10 @@ main() {
       --analyzer) [ "$#" -ge 2 ] || die '--analyzer 缺少参数。'; analyzer="$2"; shift 2 ;;
       --host) [ "$#" -ge 2 ] || die '--host 缺少参数。'; benchmark_host="$2"; shift 2 ;;
       --port) [ "$#" -ge 2 ] || die '--port 缺少参数。'; benchmark_port="$2"; shift 2 ;;
+      --budget-tool) [ "$#" -ge 2 ] || die '--budget-tool 缺少参数。'; budget_tool="$2"; shift 2 ;;
+      --ledger) [ "$#" -ge 2 ] || die '--ledger 缺少参数。'; traffic_ledger="$2"; shift 2 ;;
+      --window-id) [ "$#" -ge 2 ] || die '--window-id 缺少参数。'; traffic_window_id="$2"; shift 2 ;;
+      --budget-bytes) [ "$#" -ge 2 ] || die '--budget-bytes 缺少参数。'; traffic_budget_bytes="$2"; shift 2 ;;
       -h | --help | help) usage; return 0 ;;
       *) die "未知参数：$1" ;;
     esac
@@ -453,7 +468,9 @@ main() {
     need_command "$command"
   done
   [ -n "$plan_file" ] && [ -n "$output_dir" ] && [ -n "$tuning_script" ] &&
-    [ -n "$htb_tool" ] && [ -n "$analyzer" ] && [ -n "$benchmark_host" ] || {
+    [ -n "$htb_tool" ] && [ -n "$analyzer" ] && [ -n "$benchmark_host" ] &&
+    [ -n "$budget_tool" ] && [ -n "$traffic_ledger" ] && [ -n "$traffic_window_id" ] &&
+    [ -n "$traffic_budget_bytes" ] || {
       usage >&2
       die '缺少必填参数。'
     }
@@ -461,6 +478,7 @@ main() {
   validate_root_owned_file tuning-script "$tuning_script"
   validate_root_owned_file htb-tool "$htb_tool"
   validate_root_owned_file analyzer "$analyzer"
+  validate_root_owned_file budget-tool "$budget_tool"
   validate_root_owned_file runner "${BASH_SOURCE[0]}"
   [[ "$benchmark_host" =~ ^[A-Za-z0-9][A-Za-z0-9._:%-]*$ ]] ||
     die 'host 含不支持的字符。'
@@ -469,6 +487,9 @@ main() {
   [ "$benchmark_port" -ge 1 ] && [ "$benchmark_port" -le 65535 ] ||
     die 'port 必须在 1–65535 之间。'
   validate_plan
+  [[ "$traffic_budget_bytes" =~ ^[0-9]+$ ]] && [ "$((10#$traffic_budget_bytes))" -gt 0 ] ||
+    die 'budget-bytes 必须是正整数。'
+  traffic_budget_bytes=$((10#$traffic_budget_bytes))
 
   [[ "$output_dir" = /* ]] || die 'output-dir 必须是绝对路径。'
   [ ! -e "$output_dir" ] && [ ! -L "$output_dir" ] || die "output-dir 已存在：${output_dir}"
@@ -485,6 +506,13 @@ main() {
   "$htb_tool" preflight >/dev/null
   capture_managed_binding
   tuning_script_sha256="$(sha256sum "$tuning_script" | awk '{print $1}')"
+  planned_payload="$(jq -r '.traffic_budget.payload_upper_bound_bytes' "$plan_file")"
+  traffic_reservation_id="htb-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  bash "$budget_tool" reserve --ledger "$traffic_ledger" --window-id "$traffic_window_id" \
+    --budget-bytes "$traffic_budget_bytes" --tool htb --run-id "$traffic_reservation_id" \
+    --reservation-id "$traffic_reservation_id" --planned-bytes "$planned_payload" >/dev/null ||
+    die 'HTB runner 未能保留完整计划的共享流量预算；没有开始扫描。'
+  traffic_reserved=1
 
   install -d -o root -g root -m 0700 "$output_dir" "${output_dir}/stages"
   session_created=1
@@ -508,6 +536,8 @@ main() {
     --arg managed_state_file "$MANAGED_STATE_FILE" \
     --arg managed_state_sha256 "$managed_state_sha256_frozen" \
     --arg host "$benchmark_host" --argjson port "$benchmark_port" \
+    --arg budget_window "$traffic_window_id" --arg budget_reservation "$traffic_reservation_id" \
+    --argjson budget_bytes "$traffic_budget_bytes" --argjson planned_payload "$planned_payload" \
     '{schema_version:2,runner_version:$version,started_utc:$generated_utc,
       plan_sha256:$plan_sha256,runner_sha256:$runner_sha256,
       tuning_script:{path:$tuning_script,sha256:$tuning_sha256},
@@ -516,8 +546,9 @@ main() {
       managed_binding:{state_file:$managed_state_file,
         profile_id:$managed_profile_id,script_version:$managed_script_version,
         state:"VERIFIED",port_speed_mbps:200,state_sha256:$managed_state_sha256},
-      benchmark_endpoint:{host:$host,port:$port,explicitly_supplied:true},
-      persistent_shaping_authorized:false}' >"${output_dir}/session-meta.json"
+       benchmark_endpoint:{host:$host,port:$port,explicitly_supplied:true},
+       traffic_budget:{window_id:$budget_window,reservation_id:$budget_reservation,budget_bytes:$budget_bytes,planned_payload_bytes:$planned_payload,protocol_overhead_included:false},
+       persistent_shaping_authorized:false}' >"${output_dir}/session-meta.json"
   chmod 0600 "${output_dir}/plan.json" "${output_dir}/session-meta.json"
   printf 'status=INCOMPLETE\nstage=initialization\nutc=%s\n' "$generated_utc" >"${output_dir}/INCOMPLETE"
   chmod 0600 "${output_dir}/INCOMPLETE"
@@ -527,6 +558,12 @@ main() {
   while IFS= read -r stage_json; do
     run_stage "$stage_json"
   done < <(jq -c '.stages[]' "$plan_file")
+
+  current_stage='budget-commit'
+  actual_payload="$(jq -s '[.[].phases.upload.sender.bytes?] | map(select(type=="number")) | add // 0' "${output_dir}"/stages/*/benchmark/benchmark-result.json)"
+  bash "$budget_tool" commit --ledger "$traffic_ledger" --reservation-id "$traffic_reservation_id" \
+    --actual-bytes "$actual_payload" >/dev/null || die 'HTB runner 无法提交共享预算；reservation 保持占用。'
+  traffic_reserved=0
 
   current_stage='analysis'
   "$analyzer" "$output_dir" >"${output_dir}/sweep-analysis.json.tmp"

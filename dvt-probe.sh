@@ -6,7 +6,7 @@ IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 
-PROBE_VERSION='0.1.0'
+PROBE_VERSION='0.2.0'
 DEFAULT_PORT=5201
 DEFAULT_SAMPLES=3
 DEFAULT_SECONDS=5
@@ -14,7 +14,7 @@ DEFAULT_OMIT=2
 DEFAULT_PARALLEL=1
 DEFAULT_DIRECTION='both'
 DEFAULT_FAMILY='auto'
-DEFAULT_BUDGET_MIB=2048
+DEFAULT_BUDGET_MIB=600
 STATE_FILE="${DVT_STATE_FILE:-/var/lib/proxy-vps-tuning/state.json}"
 
 tuning_script=''
@@ -30,6 +30,11 @@ direction="$DEFAULT_DIRECTION"
 family="$DEFAULT_FAMILY"
 budget_mib="$DEFAULT_BUDGET_MIB"
 output_dir=''
+budget_tool=''
+ledger=''
+window_id=''
+reservation_id=''
+budget_reserved=0
 plan_only=0
 assume_yes=0
 probe_created=0
@@ -54,7 +59,9 @@ Options:
   --parallel 1             fixed at 1 so --bitrate remains an aggregate cap
   --direction upload|download|both   default both
   --family auto|4|6        default auto
-  --budget-mib MIB         planned payload guard; default 2048
+  --budget-mib MIB         shared window budget; default 600
+  --ledger /absolute/path  required shared traffic ledger
+  --window-id ID           required stable budget-window identifier
   --output-dir /absolute/new/path
   --plan-only              print the traffic plan and run no traffic
   --yes                    accept the displayed traffic budget non-interactively
@@ -101,6 +108,10 @@ confirm_traffic() {
 
 mark_incomplete() {
   local rc=$?
+  if [ "$budget_reserved" -eq 1 ]; then
+    bash "$budget_tool" fail --ledger "$ledger" --reservation-id "$reservation_id" >/dev/null 2>&1 || true
+    budget_reserved=0
+  fi
   if [ "$probe_created" -eq 1 ] && [ ! -f "${output_dir}/COMPLETED" ]; then
     printf 'status=INCOMPLETE\nstage=%s\nexit_code=%s\nutc=%s\n' \
       "$stage" "$rc" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"${output_dir}/INCOMPLETE.tmp" 2>/dev/null || true
@@ -125,6 +136,9 @@ parse_args() {
       --direction) [ "$#" -ge 2 ] || die '--direction 缺少参数。'; direction="$2"; shift 2 ;;
       --family) [ "$#" -ge 2 ] || die '--family 缺少参数。'; family="$2"; shift 2 ;;
       --budget-mib) [ "$#" -ge 2 ] || die '--budget-mib 缺少参数。'; budget_mib="$2"; shift 2 ;;
+      --budget-tool) [ "$#" -ge 2 ] || die '--budget-tool 缺少参数。'; budget_tool="$2"; shift 2 ;;
+      --ledger) [ "$#" -ge 2 ] || die '--ledger 缺少参数。'; ledger="$2"; shift 2 ;;
+      --window-id) [ "$#" -ge 2 ] || die '--window-id 缺少参数。'; window_id="$2"; shift 2 ;;
       --output-dir) [ "$#" -ge 2 ] || die '--output-dir 缺少参数。'; output_dir="$2"; shift 2 ;;
       --plan-only) plan_only=1; shift ;;
       --yes) assume_yes=1; shift ;;
@@ -136,7 +150,7 @@ parse_args() {
 
 main() {
   local payload_bytes budget_bytes direction_count=1 sample sample_dir phase
-  local result_file rows_file manifest_sha result_sha parent output_name
+  local result_file rows_file manifest_sha result_sha parent output_name actual_bytes
   parse_args "$@"
   [ "$(id -u)" -eq 0 ] || die '必须在 root shell 中运行。'
   for command in awk bash chmod date find id jq mkdir mv readlink sha256sum sort stat; do need_command "$command"; done
@@ -179,7 +193,17 @@ main() {
     "$payload_bytes" "$(awk -v b="$payload_bytes" 'BEGIN {printf "%.2f", b/1048576}')"
   printf '  boundary: advisory-only; no sysctl/qdisc/provider-cap/persistent-HTB change\n\n'
   [ "$plan_only" -eq 0 ] || { info 'plan-only 完成；没有创建证据目录，也没有产生流量。'; return 0; }
+  [ -n "$budget_tool" ] && [[ "$budget_tool" = /* ]] && [ -f "$budget_tool" ] && [ ! -L "$budget_tool" ] ||
+    die '缺少经总控校验的 --budget-tool。'
+  [ -n "$ledger" ] && [ -n "$window_id" ] || die '执行 probe 必须显式设置 --ledger 和 --window-id。'
   confirm_traffic
+
+  reservation_id="probe-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  bash "$budget_tool" reserve --ledger "$ledger" --window-id "$window_id" \
+    --budget-bytes "$budget_bytes" --tool probe --run-id "$reservation_id" \
+    --reservation-id "$reservation_id" --planned-bytes "$payload_bytes" >/dev/null ||
+    die '共享窗口剩余额度不足或 ledger 无效；没有开始 probe。'
+  budget_reserved=1
 
   if [ -z "$output_dir" ]; then output_dir="/root/dvt-probe-$(date -u +%Y%m%dT%H%M%SZ)"; fi
   [[ "$output_dir" = /* ]] || die 'output-dir 必须是绝对路径。'
@@ -206,7 +230,8 @@ main() {
       BENCHMARK_SECONDS="$seconds" BENCHMARK_OMIT_SECONDS="$omit" \
       BENCHMARK_PARALLEL="$parallel" BENCHMARK_IP_FAMILY="$family" \
       BENCHMARK_DIRECTION="$direction" BENCHMARK_RUN_ID="dvt-probe-${sample}" \
-      BENCHMARK_OUTPUT_DIR="$sample_dir" bash "$tuning_script" benchmark >/dev/null
+      BENCHMARK_OUTPUT_DIR="$sample_dir" DVT_TRAFFIC_BUDGET_BYPASS=1 \
+      bash "$tuning_script" benchmark >/dev/null
     [ -f "${sample_dir}/COMPLETED" ] && [ ! -e "${sample_dir}/INCOMPLETE" ] || die "${stage} 未形成 COMPLETED。"
     (cd "$sample_dir" && sha256sum -c SHA256SUMS >/dev/null) || die "${stage} SHA256SUMS 校验失败。"
     jq -e --argjson cap "$rate_cap" '
@@ -235,7 +260,7 @@ main() {
   jq -s --arg version "$PROBE_VERSION" --arg utc "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --arg profile "$profile_id" --arg host "$host" --argjson port "$port" \
     --argjson rate_cap "$rate_cap" --argjson planned_bytes "$payload_bytes" \
-    --argjson budget_mib "$budget_mib" '
+    --argjson budget_mib "$budget_mib" --arg window "$window_id" --arg reservation "$reservation_id" '
     def median: sort | if length == 0 then null elif length % 2 == 1 then .[length/2|floor] else (.[length/2-1] + .[length/2])/2 end;
     def stats($rows): {samples:($rows|length),valid_windows:([$rows[]|select(.measurement_window_valid)]|length),
       sender_mbps_median:([$rows[].sender_mbps]|median),receiver_mbps_median:([$rows[].receiver_mbps]|median),
@@ -244,12 +269,17 @@ main() {
     {schema_version:1,probe_version:$version,generated_utc:$utc,status:(if all($rows[];.measurement_window_valid) then "REVIEW_REQUIRED" else "REVIEW_BLOCKED" end),
      advisory_only:true,persistent_shaping_authorized:false,provider_plan_cap_modified:false,
      profile:$profile,endpoint:{host:$host,port:$port,explicitly_supplied:true},
-     traffic_control:{rate_cap_mbps:$rate_cap,enforced:true,method:"iperf3-bitrate",planned_payload_bytes:$planned_bytes,budget_mib:$budget_mib,protocol_overhead_included:false},
+     traffic_control:{rate_cap_mbps:$rate_cap,enforced:true,method:"iperf3-bitrate",planned_payload_bytes:$planned_bytes,window_budget_mib:$budget_mib,window_id:$window,reservation_id:$reservation,protocol_overhead_included:false},
      aggregates:{upload:(if ($up|length)>0 then stats($up) else null end),download:(if ($down|length)>0 then stats($down) else null end)},samples:$rows,
      interpretation:{provider_cap_discovered:false,proxy_business_path_measured:false,production_rate_recommended:false,
        next_gate:"review raw JSON, validated windows, retransmits per exact sender GiB, host counters, qdisc and client business-path evidence"}}
   ' "$rows_file" >"${result_file}.tmp"
   chmod 0600 "${result_file}.tmp"; mv -f "${result_file}.tmp" "$result_file"
+  actual_bytes="$(jq -s '[.[].sender_bytes] | add // 0' "$rows_file")"
+  stage='budget-commit'
+  bash "$budget_tool" commit --ledger "$ledger" --reservation-id "$reservation_id" \
+    --actual-bytes "$actual_bytes" >/dev/null || die 'probe 完成，但共享预算提交失败；reservation 保持占用。'
+  budget_reserved=0
   stage='manifest'
   (cd "$output_dir" && find . -type f ! -name SHA256SUMS ! -name 'SHA256SUMS.tmp' ! -name COMPLETED ! -name INCOMPLETE -print0 |
     sort -z | while IFS= read -r -d '' file; do sha256sum "${file#./}"; done >SHA256SUMS.tmp &&

@@ -7,7 +7,7 @@ IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 
-SCRIPT_VERSION='0.1.0-rc.14'
+SCRIPT_VERSION='0.1.0-rc.15'
 STATE_SCHEMA_VERSION=4
 LEGACY_STATE_SCHEMA_VERSION=3
 NAMESPACE='proxy-vps'
@@ -2814,6 +2814,10 @@ run_network_benchmark() {
   local tmp_dir rc=0 current_rc=0 persistent_output=0 result_tmp manifest_sha result_sha trap_rc=0
   local benchmark_failure_stage='initialization'
   local script_hash state_phase state_network iperf_version boot_id
+  local budget_bypass="${DVT_TRAFFIC_BUDGET_BYPASS:-0}" budget_tool="${DVT_TRAFFIC_BUDGET_TOOL:-}"
+  local budget_ledger="${DVT_TRAFFIC_LEDGER:-}" budget_window="${DVT_TRAFFIC_WINDOW_ID:-}"
+  local budget_bytes="${DVT_TRAFFIC_BUDGET_BYTES:-}" budget_reservation="benchmark-${run_id:-pending}"
+  local budget_reserved=0 planned_payload=0 actual_payload=0
   ensure_required_tools
   check_supported_os
   command -v iperf3 >/dev/null 2>&1 ||
@@ -2928,7 +2932,20 @@ run_network_benchmark() {
     info "benchmark payload 估算上界：$(jq -r '.payload_upper_bound_bytes' <<<"$traffic_estimate") 字节 ($(jq -r '.payload_upper_bound_gib | tostring' <<<"$traffic_estimate") GiB)，依据 $(jq -r '.cap_mbps' <<<"$traffic_estimate") Mbps / $(jq -r '.total_seconds' <<<"$traffic_estimate") 秒 / cap_source=$(jq -r '.cap_source' <<<"$traffic_estimate")。"
     info '该值是按配置带宽上限估算的 iperf payload，不含 TCP/IP/链路层开销；实际计费流量可能不同。'
   else
-    warn '未提供 BENCHMARK_RATE_CAP_MBPS，且管理状态中没有可信 port_speed_mbps；本次无法量化测试流量。'
+    die "$EXIT_USAGE" '未提供 BENCHMARK_RATE_CAP_MBPS，且管理状态中没有可信 port_speed_mbps；rc.15 拒绝无法量化并保留预算的测试。'
+  fi
+  planned_payload="$(jq -r '.payload_upper_bound_bytes' <<<"$traffic_estimate")"
+  budget_reservation="benchmark-${run_id}"
+  if [ "$budget_bypass" != 1 ]; then
+    [ -n "$budget_tool" ] && [[ "$budget_tool" = /* ]] && [ -f "$budget_tool" ] && [ ! -L "$budget_tool" ] ||
+      die "$EXIT_USAGE" 'benchmark 必须通过 DVT_TRAFFIC_BUDGET_TOOL 指定经校验的绝对路径预算工具。'
+    [ -n "$budget_ledger" ] && [ -n "$budget_window" ] && [ -n "$budget_bytes" ] ||
+      die "$EXIT_USAGE" 'benchmark 必须设置 DVT_TRAFFIC_LEDGER、DVT_TRAFFIC_WINDOW_ID 和 DVT_TRAFFIC_BUDGET_BYTES。'
+    bash "$budget_tool" reserve --ledger "$budget_ledger" --window-id "$budget_window" \
+      --budget-bytes "$budget_bytes" --tool benchmark --run-id "$run_id" \
+      --reservation-id "$budget_reservation" --planned-bytes "$planned_payload" >/dev/null ||
+      die "$EXIT_CONFLICT" 'benchmark 未能保留共享流量预算；没有开始网络测试。'
+    budget_reserved=1
   fi
   printf '[benchmark-meta] run_id=%s utc=%s script_version=%s profile=%s script_sha256=%s boot_id=%s state=%s\n' \
     "$run_id" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SCRIPT_VERSION" "$PROFILE_ID" "$script_hash" "${boot_id:-unknown}" "$state_phase"
@@ -2946,7 +2963,8 @@ run_network_benchmark() {
     --argjson seconds "$seconds" --argjson omit_seconds "$omit" --argjson parallel "$parallel" \
     --arg iperf3 "$iperf_version" --argjson traffic_estimate "$traffic_estimate" \
     --argjson rate_cap_enforced "$rate_cap_enforced" --argjson rate_cap_per_stream_bps "$rate_cap_per_stream_bps" \
-    '{schema_version:1,run_id:$run_id,utc:$utc,script_version:$script_version,profile:$profile,script_sha256:$script_sha256,boot_id:$boot_id,state:$state,state_network:$state_network,benchmark:{host:$host,port:$port,family:$family,direction:$direction,seconds:$seconds,omit_seconds:$omit_seconds,parallel:$parallel,iperf3:$iperf3,traffic_estimate:$traffic_estimate,rate_cap_enforced:$rate_cap_enforced,rate_cap_method:(if $rate_cap_enforced then "iperf3-bitrate" else null end),rate_cap_scope:(if $rate_cap_enforced then "aggregate-target-divided-across-streams" else null end),rate_cap_per_stream_bps:(if $rate_cap_enforced then $rate_cap_per_stream_bps else null end)}}' \
+    --arg budget_window "$budget_window" --arg budget_reservation "$budget_reservation" --argjson budget_bypass "$budget_bypass" \
+    '{schema_version:1,run_id:$run_id,utc:$utc,script_version:$script_version,profile:$profile,script_sha256:$script_sha256,boot_id:$boot_id,state:$state,state_network:$state_network,benchmark:{host:$host,port:$port,family:$family,direction:$direction,seconds:$seconds,omit_seconds:$omit_seconds,parallel:$parallel,iperf3:$iperf3,traffic_estimate:$traffic_estimate,rate_cap_enforced:$rate_cap_enforced,rate_cap_method:(if $rate_cap_enforced then "iperf3-bitrate" else null end),rate_cap_scope:(if $rate_cap_enforced then "aggregate-target-divided-across-streams" else null end),rate_cap_per_stream_bps:(if $rate_cap_enforced then $rate_cap_per_stream_bps else null end)},traffic_budget:{parent_reserved:($budget_bypass==1),window_id:(if $budget_window=="" then null else $budget_window end),reservation_id:(if $budget_bypass==1 then null else $budget_reservation end),planned_payload_bytes:$traffic_estimate.payload_upper_bound_bytes,protocol_overhead_included:false}}' \
     >"${tmp_dir}/benchmark-meta.json"
   printf '%s\n' 'null' >"${tmp_dir}/upload.summary.json"
   printf '%s\n' 'null' >"${tmp_dir}/download.summary.json"
@@ -3000,6 +3018,25 @@ run_network_benchmark() {
   else
     rm -f -- "$result_tmp"
     rc="$EXIT_VERIFY"
+  fi
+
+  benchmark_failure_stage='budget-commit'
+  if [ "$budget_reserved" -eq 1 ]; then
+    if [ "$rc" -eq 0 ]; then
+      actual_payload="$(jq '[.phases.upload.sender.bytes?,.phases.download.sender.bytes?] | map(select(type=="number")) | add // 0' "${tmp_dir}/benchmark-result.json")"
+      if ! bash "$budget_tool" commit --ledger "$budget_ledger" --reservation-id "$budget_reservation" --actual-bytes "$actual_payload" >/dev/null; then
+        warn 'benchmark 已完成采集，但预算 actual-byte 提交失败；reservation 保持占用。'
+        rc="$EXIT_VERIFY"
+      else
+        budget_reserved=0
+      fi
+    else
+      if bash "$budget_tool" fail --ledger "$budget_ledger" --reservation-id "$budget_reservation" >/dev/null 2>&1; then
+        budget_reserved=0
+      else
+        warn 'benchmark 失败且预算保守结算失败；reservation 保持占用。'
+      fi
+    fi
   fi
 
   if [ "$persistent_output" -eq 1 ] && [ "$rc" -eq 0 ]; then

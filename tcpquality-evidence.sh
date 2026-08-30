@@ -12,7 +12,7 @@ PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 umask 077
 
-TOOL_VERSION='0.1.0-rc.14'
+TOOL_VERSION='0.1.0-rc.15'
 SUPPORTED_RELEASE_TAG='v1.00013'
 SUPPORTED_COMMIT='73606e2460bde21bb2e253842971f8ca8c9eb51c'
 SUPPORTED_RUN_SHA256='3e9e08792b441d9d74aeb64630a657f6904821dd2a911a379fcea538ebdbd5c2'
@@ -39,6 +39,13 @@ DELAY_SECONDS="${TCPQUALITY_DELAY_SECONDS:-60}"
 COUNT="${TCPQUALITY_COUNT:-30}"
 PACKET_SIZE="${TCPQUALITY_PACKET_SIZE:-0}"
 PARALLEL="${TCPQUALITY_PARALLEL:-16}"
+DVT_TRAFFIC_BUDGET_TOOL="${DVT_TRAFFIC_BUDGET_TOOL:-}"
+DVT_TRAFFIC_LEDGER="${DVT_TRAFFIC_LEDGER:-}"
+DVT_TRAFFIC_WINDOW_ID="${DVT_TRAFFIC_WINDOW_ID:-}"
+DVT_TRAFFIC_BUDGET_BYTES="${DVT_TRAFFIC_BUDGET_BYTES:-}"
+TCPQUALITY_PLANNED_PAYLOAD_BYTES="${TCPQUALITY_PLANNED_PAYLOAD_BYTES:-}"
+TRAFFIC_RESERVATION_ID=''
+TRAFFIC_RESERVED=0
 
 fail() {
   printf '[FAIL] %s\n' "$*" >&2
@@ -59,6 +66,11 @@ validate_integer() {
 
 write_incomplete_marker() {
   local signal="$1"
+  if [ "$TRAFFIC_RESERVED" -eq 1 ]; then
+    bash "$DVT_TRAFFIC_BUDGET_TOOL" fail --ledger "$DVT_TRAFFIC_LEDGER" \
+      --reservation-id "$TRAFFIC_RESERVATION_ID" >/dev/null 2>&1 || true
+    TRAFFIC_RESERVED=0
+  fi
   if [ -n "$EVIDENCE_DIR" ] && [ -d "$EVIDENCE_DIR" ]; then
     printf 'status=INCOMPLETE\nsignal=%s\nutc=%s\n' \
       "$signal" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"${EVIDENCE_DIR}/INCOMPLETE"
@@ -441,6 +453,13 @@ main() {
   validate_integer TCPQUALITY_COUNT "$COUNT" 1 600
   validate_integer TCPQUALITY_PACKET_SIZE "$PACKET_SIZE" 0 65535
   validate_integer TCPQUALITY_PARALLEL "$PARALLEL" 1 31
+  validate_integer TCPQUALITY_PLANNED_PAYLOAD_BYTES "$TCPQUALITY_PLANNED_PAYLOAD_BYTES" 1 1099511627776
+  validate_integer DVT_TRAFFIC_BUDGET_BYTES "$DVT_TRAFFIC_BUDGET_BYTES" 1 1099511627776
+  [ -n "$DVT_TRAFFIC_BUDGET_TOOL" ] && [[ "$DVT_TRAFFIC_BUDGET_TOOL" = /* ]] &&
+    [ -f "$DVT_TRAFFIC_BUDGET_TOOL" ] && [ ! -L "$DVT_TRAFFIC_BUDGET_TOOL" ] ||
+    fail '必须通过 DVT_TRAFFIC_BUDGET_TOOL 指定经校验的预算工具。'
+  [ -n "$DVT_TRAFFIC_LEDGER" ] && [ -n "$DVT_TRAFFIC_WINDOW_ID" ] ||
+    fail '必须设置 DVT_TRAFFIC_LEDGER 和 DVT_TRAFFIC_WINDOW_ID。'
   [[ "$GET_NODES_URL" =~ ^https://[A-Za-z0-9._:-]+(/[A-Za-z0-9._~:/%+-]*)?$ ]] ||
     fail 'TCPQUALITY_GET_NODES_URL 必须是不含查询参数、片段、userinfo 或空白的 HTTPS URL。'
   RUNS=$((10#$RUNS))
@@ -448,6 +467,8 @@ main() {
   COUNT=$((10#$COUNT))
   PACKET_SIZE=$((10#$PACKET_SIZE))
   PARALLEL=$((10#$PARALLEL))
+  TCPQUALITY_PLANNED_PAYLOAD_BYTES=$((10#$TCPQUALITY_PLANNED_PAYLOAD_BYTES))
+  DVT_TRAFFIC_BUDGET_BYTES=$((10#$DVT_TRAFFIC_BUDGET_BYTES))
   [ -f "${PIN_DIR}/SHA256SUMS" ] || fail '固定目录缺少 SHA256SUMS。'
   [ -f "${PIN_DIR}/PINNED-METADATA.txt" ] || fail '固定目录缺少 PINNED-METADATA.txt。'
   [ -f "${PIN_DIR}/rootfs-manifest.json" ] || fail '固定目录缺少 rootfs-manifest.json。'
@@ -488,6 +509,15 @@ main() {
     sha256sum -c -
   (cd "$PIN_DIR" && sha256sum -c SHA256SUMS)
 
+  TRAFFIC_RESERVATION_ID="tcpquality-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  bash "$DVT_TRAFFIC_BUDGET_TOOL" reserve --ledger "$DVT_TRAFFIC_LEDGER" \
+    --window-id "$DVT_TRAFFIC_WINDOW_ID" --budget-bytes "$DVT_TRAFFIC_BUDGET_BYTES" \
+    --tool tcpquality --run-id "$TRAFFIC_RESERVATION_ID" \
+    --reservation-id "$TRAFFIC_RESERVATION_ID" \
+    --planned-bytes "$TCPQUALITY_PLANNED_PAYLOAD_BYTES" >/dev/null ||
+    fail 'TcpQuality 未能保留共享流量预算；没有开始网络测试。'
+  TRAFFIC_RESERVED=1
+
   mkdir -m 0700 -- "$EVIDENCE_DIR"
   printf 'status=INCOMPLETE\nstage=initialization\nutc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"${EVIDENCE_DIR}/INCOMPLETE"
   trap 'write_incomplete_marker ERR' ERR
@@ -507,6 +537,8 @@ main() {
       "$( [ "$MODE" = public-report ] && printf enabled || printf disabled )" \
       "$( [ "$MODE" = public-report ] && printf enabled || printf disabled )"
     printf 'get_nodes_url=%s\nruns=%s\ndelay_seconds=%s\n' "$GET_NODES_URL" "$RUNS" "$DELAY_SECONDS"
+    printf 'traffic_budget_window_id=%s\ntraffic_reservation_id=%s\nplanned_payload_bytes=%s\nprotocol_overhead_included=false\n' \
+      "$DVT_TRAFFIC_WINDOW_ID" "$TRAFFIC_RESERVATION_ID" "$TCPQUALITY_PLANNED_PAYLOAD_BYTES"
     printf 'args=-c %s -s %s -p %s --all --debug%s\n' "$COUNT" "$PACKET_SIZE" "$PARALLEL" \
       "$( [ "$MODE" = local-evidence ] && printf ' --no-rank-upload' || true )"
     printf 'measurement_contract=flow-level when metric_source is ebpf_* or tcp_info_*; nstat is MEASUREMENT_DEGRADED\n'
@@ -533,6 +565,13 @@ main() {
   done
   printf 'successful_runs=%s\nutc_end=%s\nbatch_result=PASS\n' \
     "$successful" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"${EVIDENCE_DIR}/summary.txt"
+  if ! bash "$DVT_TRAFFIC_BUDGET_TOOL" commit-unknown --ledger "$DVT_TRAFFIC_LEDGER" \
+    --reservation-id "$TRAFFIC_RESERVATION_ID" >/dev/null; then
+    write_incomplete_marker budget-commit
+    trap - ERR INT TERM
+    fail 'TcpQuality 完成，但无法保守结算共享预算。'
+  fi
+  TRAFFIC_RESERVED=0
   if ! finalize_manifest; then
     printf 'manifest_result=FAIL\n' >>"${EVIDENCE_DIR}/summary.txt" 2>/dev/null || true
     printf 'status=INCOMPLETE\nstage=manifest\nutc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"${EVIDENCE_DIR}/INCOMPLETE" 2>/dev/null || true
