@@ -17,6 +17,8 @@ tcpquality_tool='tcpquality-evidence.sh'
 installer='install.sh'
 probe_tool='dvt-probe.sh'
 htb_wrapper='dvt-htb.sh'
+traffic_budget_tool='dvt-traffic-budget.sh'
+migration_tool='dvt-migrate.sh'
 invalid_receiver_fixture='experiments/htb-aggregate/tests/fixtures/iperf3-invalid-receiver-window.json'
 strategy_doc='docs/network-tuning-and-test-strategy.md'
 validation_doc='docs/validation.md'
@@ -36,8 +38,9 @@ else
   exit 1
 fi
 "$python_cmd" tools/render_profiles.py --check
-bash -n "${scripts[@]}" "$controller" "$tcpquality_tool" "$installer" "$probe_tool" "$htb_wrapper" tools/profile-template.sh.in \
-  tests/static-check.sh tests/controller-check.sh tests/installer-check.sh
+bash -n "${scripts[@]}" "$controller" "$tcpquality_tool" "$installer" "$probe_tool" "$htb_wrapper" \
+  "$traffic_budget_tool" "$migration_tool" tools/profile-template.sh.in \
+  tests/static-check.sh tests/controller-check.sh tests/installer-check.sh tests/rc15-check.sh
 
 bash tests/controller-check.sh
 
@@ -95,7 +98,7 @@ if [ "$(od -An -tx1 -N3 "$tcpquality_tool" | tr -d ' \n')" = 'efbbbf' ]; then
   printf 'UTF-8 BOM detected: %s\n' "$tcpquality_tool" >&2
   exit 1
 fi
-grep -Fq "TOOL_VERSION='0.1.0-rc.14'" "$tcpquality_tool"
+grep -Fq "TOOL_VERSION='0.1.0-rc.15'" "$tcpquality_tool"
 grep -Fq "SUPPORTED_RELEASE_TAG='v1.00013'" "$tcpquality_tool"
 grep -Fq "SUPPORTED_COMMIT='73606e2460bde21bb2e253842971f8ca8c9eb51c'" "$tcpquality_tool"
 grep -Fq "SUPPORTED_ROOTFS_MANIFEST_SHA256='555a53df40cbdd2778771c089d1bc2c2e1c0a52b5565ad15d2e01d52b90dd0f6'" "$tcpquality_tool"
@@ -137,7 +140,7 @@ expected_keys=17
 for script in "${scripts[@]}"; do
   actual="$(awk '/^PROFILE_SYSCTL_KEYS=\(/,/^\)/ {if ($1 ~ /^(net\.|vm\.)/) count++} END {print count+0}' "$script")"
   [ "$actual" -eq "$expected_keys" ] || { printf 'unexpected managed-key count: %s (%s)\n' "$script" "$actual" >&2; exit 1; }
-  grep -Fq "SCRIPT_VERSION='0.1.0-rc.14'" "$script"
+  grep -Fq "SCRIPT_VERSION='0.1.0-rc.15'" "$script"
   grep -Eq '^STATE_SCHEMA_VERSION=4$' "$script"
   grep -Eq '^LEGACY_STATE_SCHEMA_VERSION=3$' "$script"
   grep -Fq 'PROFILE_CPU_MIN=' "$script"
@@ -316,8 +319,8 @@ for script in "${scripts[@]}"; do
   }
 done
 
-grep -Fq "CONTROLLER_VERSION='0.1.0-rc.14'" "$controller"
-grep -Fq "RELEASE_TAG='v0.1.0-rc.14'" "$controller"
+grep -Fq "CONTROLLER_VERSION='0.1.0-rc.15'" "$controller"
+grep -Fq "RELEASE_TAG='v0.1.0-rc.15'" "$controller"
 grep -Fq "DEFAULT_PORT_SPEED_MBPS=200" "$controller"
 grep -Fq 'verify_profile_contract' "$controller"
 grep -Fq 'debian12-1c512m-vps-tuning.sh' "$controller"
@@ -345,7 +348,7 @@ if grep -Eq 'raw\.githubusercontent\.com|/master/|/main/|releases/latest|http://
   exit 1
 fi
 
-grep -Fq "RELEASE_TAG='v0.1.0-rc.14'" "$installer"
+grep -Fq "RELEASE_TAG='v0.1.0-rc.15'" "$installer"
 grep -Eq "EXPECTED_MANIFEST_SHA256='[0-9a-f]{64}'" "$installer"
 if grep -Fq "EXPECTED_MANIFEST_SHA256='0000000000000000000000000000000000000000000000000000000000000000'" "$installer"; then
   printf 'installer manifest digest placeholder was not finalized\n' >&2
@@ -358,7 +361,7 @@ manifest_hash="$(sha256sum SHA256SUMS | awk '{print $1}')"
 grep -Fq "EXPECTED_MANIFEST_SHA256='${manifest_hash}'" "$installer"
 installer_hash="$(sha256sum "$installer" | awk '{print $1}')"
 grep -Fq "$installer_hash" README.md
-grep -Fq "$manifest_hash" docs/releases/v0.1.0-rc.14.md
+grep -Fq "$manifest_hash" docs/releases/v0.1.0-rc.15.md
 if grep -Eq 'raw\.githubusercontent\.com|/master/|/main/|releases/latest|http://' "$installer"; then
   printf 'mutable or insecure installer download source detected\n' >&2
   exit 1
@@ -505,6 +508,10 @@ if ! (
   # shellcheck disable=SC2034
   tuning_script="$htb_route_fixture/tuning.sh"
   htb_tool="$htb_route_fixture/htb-tool"
+  budget_tool="$htb_route_fixture/budget-tool"
+  ledger="$htb_route_fixture/ledger.json"
+  window_id='fixture-window'
+  budget_mib=1024
   # shellcheck disable=SC2034
   pass_args=(--host 192.0.2.1 --output-dir "$htb_route_fixture/reference-output")
   run_scan reference-screen >/dev/null
@@ -1190,7 +1197,7 @@ EXIT_USAGE=2
 EXIT_UNSUPPORTED=3
 EXIT_CONFLICT=4
 EXIT_VERIFY=5
-SCRIPT_VERSION='0.1.0-rc.14'
+SCRIPT_VERSION='0.1.0-rc.15'
 PROFILE_ID='debian13-1c1g'
 STATE_FILE="$test_root/no-state.json"
 ensure_required_tools() { :; }
@@ -1212,6 +1219,8 @@ sha256sum() {
   if [ "${FAIL_MANIFEST:-0}" = '1' ] && [ "${1:-}" = '-c' ]; then return 9; fi
   command sha256sum "$@"
 }
+DVT_TRAFFIC_BUDGET_BYPASS=1
+export DVT_TRAFFIC_BUDGET_BYPASS
 
 success_dir="$test_root/success"
 BENCHMARK_HOST=example.com BENCHMARK_DIRECTION=upload BENCHMARK_RATE_CAP_MBPS=200 BENCHMARK_ENFORCE_RATE_CAP=1 BENCHMARK_OUTPUT_DIR="$success_dir" run_network_benchmark >/dev/null
@@ -1377,7 +1386,7 @@ PACKET_SIZE=0
 PARALLEL=16
 ROOTFS_SHA256='c624b5cc611b7177c42608110024764e59dfd0a88150257137ae4e6d7f9f9d18'
 GET_NODES_URL='https://nodes.example.test/getNodes'
-TOOL_VERSION='0.1.0-rc.14'
+TOOL_VERSION='0.1.0-rc.15'
 MODE='local-evidence'
 mkdir "$EVIDENCE_DIR" "$PIN_DIR"
 : >"$PIN_DIR/SHA256SUMS"
@@ -1400,7 +1409,7 @@ cross_version_apply_test="$tmp_dir/cross-version-apply-test.sh"
   awk '/^apply_settings\(\)/,/^}/' "${scripts[0]}"
   cat <<'EOF_CROSS_VERSION_APPLY_TEST'
 EXIT_CONFLICT=4
-SCRIPT_VERSION='0.1.0-rc.14'
+SCRIPT_VERSION='0.1.0-rc.15'
 PORT_SPEED_MBPS=200
 BUFFER_TARGET_RTT_MS=200
 BUF_MAX=16777216
@@ -1431,7 +1440,7 @@ parameter_mismatch_apply_test="$tmp_dir/parameter-mismatch-apply-test.sh"
   awk '/^apply_settings\(\)/,/^}/' "${scripts[0]}"
   cat <<'EOF_PARAMETER_MISMATCH_APPLY_TEST'
 EXIT_CONFLICT=4
-SCRIPT_VERSION='0.1.0-rc.14'
+SCRIPT_VERSION='0.1.0-rc.15'
 PORT_SPEED_MBPS=100
 BUFFER_TARGET_RTT_MS=200
 BUF_MAX=16777216
@@ -2338,7 +2347,7 @@ STATE_DIR='/var/lib/proxy-vps-tuning'
 SYSCTL_SCAN_ROOT='/etc'
 STATE_SCHEMA_VERSION=4
 LEGACY_STATE_SCHEMA_VERSION=3
-SCRIPT_VERSION='0.1.0-rc.14'
+SCRIPT_VERSION='0.1.0-rc.15'
 PROFILE_ID='debian12-1c1g'
 UPDATE_PREFLIGHT=0
 stat() { printf '%s\n' '0'; }
@@ -2357,7 +2366,7 @@ for fixture in empty whitespace null object multiple; do
   fi
 done
 
-printf '%s\n' '{"schema_version":4,"script_version":"0.1.0-rc.14","profile":{"id":"debian12-1c1g"},"state":"PREPARED","network":{},"original_sysctls":{},"qdisc":{"file":"/tmp/qdisc","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"swap":{},"provider_sysctl_transfer":{"required":false,"source_path":"/etc/sysctl.conf","backup_path":"/var/lib/proxy-vps-tuning/provider-sysctl.conf.original","original_sha256":null,"backup_sha256":null,"transferred_sha256":null,"original_uid":null,"original_gid":null,"original_mode":null,"keys":[],"state":"NOT_REQUIRED"},"managed_files":[],"timestamps":{}}' >"$STATE_FILE"
+printf '%s\n' '{"schema_version":4,"script_version":"0.1.0-rc.15","profile":{"id":"debian12-1c1g"},"state":"PREPARED","network":{},"original_sysctls":{},"qdisc":{"file":"/tmp/qdisc","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"swap":{},"provider_sysctl_transfer":{"required":false,"source_path":"/etc/sysctl.conf","backup_path":"/var/lib/proxy-vps-tuning/provider-sysctl.conf.original","original_sha256":null,"backup_sha256":null,"transferred_sha256":null,"original_uid":null,"original_gid":null,"original_mode":null,"keys":[],"state":"NOT_REQUIRED"},"managed_files":[],"timestamps":{}}' >"$STATE_FILE"
 state_file_is_valid
 
 cp -- "$STATE_FILE" "${STATE_FILE}.valid"
@@ -2786,12 +2795,13 @@ if [ "${RUN_LOCAL_SHELLCHECK:-0}" = 1 ]; then
     exit 1
   }
   shellcheck -x "${scripts[@]}" "$controller" "$tcpquality_tool" "$installer" "$probe_tool" "$htb_wrapper" \
+    "$traffic_budget_tool" "$migration_tool" \
     experiments/htb-aggregate/experiment-plan.sh \
     experiments/htb-aggregate/htb-aggregate-experiment.sh \
     experiments/htb-aggregate/rate-sweep-plan.sh \
     experiments/htb-aggregate/rate-sweep-run.sh \
     experiments/htb-aggregate/rate-sweep-analyze.sh \
-    tests/static-check.sh tests/controller-check.sh tests/installer-check.sh
+    tests/static-check.sh tests/controller-check.sh tests/installer-check.sh tests/rc15-check.sh
   for helper in "$tmp_dir"/*.helper; do shellcheck -x "$helper"; done
 else
   printf '[INFO] deterministic syntax/fixture checks complete; pinned ShellCheck runs in its dedicated CI step\n' >&2

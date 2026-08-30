@@ -89,7 +89,7 @@ main() {
     (.runner_version | type == "string") and
     (.tuning_script.sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
     .managed_binding.state == "VERIFIED" and
-    .managed_binding.script_version == "0.1.0-rc.14" and
+    .managed_binding.script_version == "0.1.0-rc.15" and
     ((.managed_binding.profile_id == "debian13-1c1g") or
      (.managed_binding.profile_id == "debian13-1c2g")) and
     .managed_binding.port_speed_mbps == 200 and

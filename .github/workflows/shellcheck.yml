@@ -19,7 +19,9 @@ jobs:
           bash experiments/htb-aggregate/tests/static-check.sh
 
       - name: Check verified installer lifecycle
-        run: sudo bash tests/installer-check.sh
+        run: |
+          sudo bash tests/installer-check.sh
+          sudo bash tests/rc15-check.sh
 
       - name: ShellCheck 0.11.0
         run: |
@@ -40,6 +42,8 @@ jobs:
             debian13-1c1g-vps-tuning.sh \
             debian13-1c2g-vps-tuning.sh \
             tcpquality-evidence.sh \
+            dvt-traffic-budget.sh \
+            dvt-migrate.sh \
             install.sh \
             dvt-probe.sh \
             dvt-htb.sh \
@@ -51,5 +55,6 @@ jobs:
             tests/static-check.sh \
             tests/controller-check.sh \
             tests/installer-check.sh \
+            tests/rc15-check.sh \
             experiments/htb-aggregate/tests/static-check.sh \
             .tmp/ci-helpers/*.helper

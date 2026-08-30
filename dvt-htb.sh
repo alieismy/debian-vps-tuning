@@ -9,6 +9,7 @@ export PATH
 bundle_dir=''
 tuning_script=''
 htb_tool=''
+budget_tool=''
 HTB_INSTALL_PATH='/usr/local/sbin/htb-aggregate-experiment'
 command_name=''
 host=''
@@ -25,6 +26,9 @@ family=4
 minimum_rate_exposure_percent=90
 minimum_cpu_idle_percent=5
 maximum_cpu_steal_percent=5
+ledger=''
+window_id=''
+budget_mib=''
 ack_reference_reviewed=0
 declare -a pass_args=()
 
@@ -52,8 +56,9 @@ Scan options:
   --parallel 1..4 --family auto|4|6
   --minimum-rate-exposure-percent 90..100
   --minimum-cpu-idle-percent 0..100 --maximum-cpu-steal-percent 0..100
+  --ledger /absolute/path --window-id ID --budget-mib MIB
 
-Boundary: this wrapper supports only the existing Debian 13 rc.14, eth0,
+Boundary: this wrapper supports only the existing Debian 13 rc.15, eth0,
 200 Mbps, 1C1G/1C2G experiment contract. It never creates persistent HTB and
 never converts a shortlist into a production recommendation. reference/sweep
 temporarily replace root fq, produce deliberate traffic, and restore fq after
@@ -97,6 +102,7 @@ parse_common() {
     case "$1" in
       --bundle-dir) [ "$#" -ge 2 ] || die '--bundle-dir 缺少参数。'; bundle_dir="$2"; shift 2 ;;
       --tuning-script) [ "$#" -ge 2 ] || die '--tuning-script 缺少参数。'; tuning_script="$2"; shift 2 ;;
+      --budget-tool) [ "$#" -ge 2 ] || die '--budget-tool 缺少参数。'; budget_tool="$2"; shift 2 ;;
       preflight | smoke | smoke-test | status | stop | reference | sweep | analyze | plan | aba-plan)
         command_name="$1"; shift; pass_args=("$@"); break ;;
       -h | --help | help) usage; exit 0 ;;
@@ -112,6 +118,9 @@ parse_scan_args() {
       --server-port | --port) [ "$#" -ge 2 ] || die '--server-port 缺少参数。'; port="$2"; shift 2 ;;
       --output-dir) [ "$#" -ge 2 ] || die '--output-dir 缺少参数。'; output_dir="$2"; shift 2 ;;
       --reference-evidence) [ "$#" -ge 2 ] || die '--reference-evidence 缺少参数。'; reference_evidence="$2"; shift 2 ;;
+      --ledger) [ "$#" -ge 2 ] || die '--ledger 缺少参数。'; ledger="$2"; shift 2 ;;
+      --window-id) [ "$#" -ge 2 ] || die '--window-id 缺少参数。'; window_id="$2"; shift 2 ;;
+      --budget-mib) [ "$#" -ge 2 ] || die '--budget-mib 缺少参数。'; budget_mib="$2"; shift 2 ;;
       --ack-reference-reviewed) ack_reference_reviewed=1; shift ;;
       --rates) [ "$#" -ge 2 ] || die '--rates 缺少参数。'; rates="$2"; shift 2 ;;
       --samples) [ "$#" -ge 2 ] || die '--samples 缺少参数。'; samples="$2"; shift 2 ;;
@@ -144,6 +153,9 @@ run_scan() {
   done
   parse_scan_args "${pass_args[@]}"
   [ -n "$host" ] && [ -n "$output_dir" ] || die "${mode} 必须指定 --host 和 --output-dir。"
+  [ -n "$budget_tool" ] && [ -n "$ledger" ] && [ -n "$window_id" ] && [ -n "$budget_mib" ] ||
+    die "${mode} 必须指定 --ledger、--window-id 和 --budget-mib，并通过总控绑定预算工具。"
+  [[ "$budget_mib" =~ ^[0-9]+$ ]] && [ "$((10#$budget_mib))" -ge 1 ] || die '--budget-mib 必须是正整数。'
   [[ "$host" =~ ^[A-Za-z0-9][A-Za-z0-9._:%-]*$ ]] || die 'host 含不支持的字符。'
   if [ "$mode" = candidate-sweep ]; then
     [ "$ack_reference_reviewed" -eq 1 ] || die 'sweep 必须显式添加 --ack-reference-reviewed。'
@@ -192,7 +204,9 @@ run_scan() {
   info "即将运行 ${mode}；这是非持久化 HTB 流量实验。"
   if "$bundle_dir/rate-sweep-run.sh" --plan "$plan_file" --output-dir "$output_dir" \
     --tuning-script "$tuning_script" --htb-tool "$htb_tool" \
-    --analyzer "$bundle_dir/rate-sweep-analyze.sh" --host "$host" --port "$port"; then
+    --analyzer "$bundle_dir/rate-sweep-analyze.sh" --host "$host" --port "$port" \
+    --budget-tool "$budget_tool" --ledger "$ledger" --window-id "$window_id" \
+    --budget-bytes "$((10#$budget_mib * 1024 * 1024))"; then
     run_rc=0
   else
     run_rc=$?

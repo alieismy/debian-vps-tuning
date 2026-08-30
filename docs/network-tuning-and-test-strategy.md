@@ -186,7 +186,7 @@ smoke 通过；HTB200 reference、candidate sweep、A/B/A 和真实代理性能�
 | 当前基线 | 默认处理 | 理由 |
 |---|---|---|
 | 未配置 BBR/fq，且没有外部冲突 | 由项目写入并成为唯一所有者 | 路径清晰，可验证和回滚 |
-| `/etc/sysctl.conf` 中各有一条、值严格为 `bbr`/`fq`、普通 root 文件 | 事务化备份并转移所有权，再由项目持久化 | 当前 rc.14 已支持此窄范围迁移，rollback 可恢复厂商原文件 |
+| `/etc/sysctl.conf` 中各有一条、值严格为 `bbr`/`fq`、普通 root 文件 | 事务化备份并转移所有权，再由项目持久化 | 当前 rc.15 继续支持此窄范围迁移，rollback 可恢复厂商原文件 |
 | 位于 `/etc/sysctl.d/*.conf`、重复定义、符号链接、非 root 文件、值不同或包含未知组合调优 | fail-closed，不自动合并或覆盖 | 无法可靠判断优先级、意图和完整回退边界 |
 | 已存在其他版本的项目受管状态 | 进入跨版本迁移，不按厂商基线处理 | 旧版本状态包含原值、qdisc、swap 和备份所有权 |
 
@@ -241,12 +241,12 @@ NOFILE、状态验证和回滚时，再进行唯一所有权接管。不得让�
 ```
 
 旧版清理是必要的，因为只有旧版脚本理解其状态 schema、原始 sysctl、qdisc 快照、厂商
-配置备份和项目创建的 swap。当前 rc.14 因而有意拒绝直接接管其他版本状态。`purge` 也只应
+配置备份和项目创建的 swap。当前 rc.15 因而有意拒绝直接接管其他版本状态。`purge` 也只应
 删除状态证明由项目创建、且能够安全停用的资源。
 
-这条路径不附带 TcpQuality、HTB reference 或 A/B/A。未来应设计一个带 checkpoint/resume 的
-`migrate` 编排入口，自动完成机器可判定门禁；控制台可用、维护窗口和不可恢复风险仍由人工
-确认。对于一次性或可快速恢复、业务和配置备份已经验证的 VPS，干净重装 OS 后直接执行
+这条路径不附带 TcpQuality、HTB reference 或 A/B/A。rc.15 已实现带 checkpoint/resume 的
+`migrate` 编排入口，自动完成资产、状态、旧版回退、boot ID 和目标生命周期等机器可判定
+门禁；控制台可用、维护窗口和不可恢复风险仍由人工确认。对于一次性或可快速恢复、业务和配置备份已经验证的 VPS，干净重装 OS 后直接执行
 最新版 `preflight/apply` 是更简单的第二条受支持路径。
 
 若旧状态缺失、损坏，或来自没有可靠状态契约的早期脚本，最新版不得充当通用卸载器。此时
@@ -308,7 +308,8 @@ L0 失败即阻断发布，不用目标 VPS 测速弥补。
 - 必须同时记录精确 sender bytes、sender retransmits、吞吐、CPU、接口、softnet 和 qdisc；
 - 结果只回答是否存在明显退化，不自动授权 HTB 或宣称代理业务性能提升。
 
-若工具尚不能跨阶段强制累计预算，则不得在配额业务 VPS 上启用 L3 自动编排。
+rc.15 的四条主动流量入口已接入同一 root-only ledger；仍须先在计划阶段确认协议和服务商
+计费余量，不能把本地 payload 上限解释为服务商面板的精确扣费值。
 
 ### L4：研究级公网实验
 
@@ -383,13 +384,13 @@ HTB 研究顺序仍可采用 reference → candidate → A/B/A → 反向窗口�
 - 停止把 HTB/TcpQuality 作为版本迁移门禁；
 - 当前 VMISS Basic 若继续 rc.11→rc.14，只走跨版本迁移和 L2。
 
-### P1：实现硬预算和统一证据 ledger
+### P1：实现硬预算和统一证据 ledger（rc.15 已实现）
 
 - 为 benchmark、probe、TcpQuality 和 HTB runner 增加共享字节预算；
 - 失败不自动重试，预算不足 fail-closed；
 - 把空目录、缺 manifest、变量未生效和恢复不完整统一标记为 `REVIEW_BLOCKED`。
 
-### P2：简化入口和迁移
+### P2：简化入口和迁移（rc.15 已实现 checkpoint/resume）
 
 - 参数源收敛为声明式资源表，继续从单一模板生成不可变 profile；
 - 增加带 checkpoint/resume 的迁移编排，减少人工微门禁；

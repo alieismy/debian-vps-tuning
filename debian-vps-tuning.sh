@@ -6,8 +6,8 @@ IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 
-CONTROLLER_VERSION='0.1.0-rc.14'
-RELEASE_TAG='v0.1.0-rc.14'
+CONTROLLER_VERSION='0.1.0-rc.15'
+RELEASE_TAG='v0.1.0-rc.15'
 REPOSITORY='alieismy/debian-vps-tuning'
 RELEASE_BASE_URL="https://github.com/${REPOSITORY}/releases/download/${RELEASE_TAG}"
 
@@ -52,6 +52,8 @@ ACTION_ARGS=()
 PROBE_PATH=''
 HTB_WRAPPER_PATH=''
 HTB_BUNDLE_DIR=''
+TRAFFIC_BUDGET_PATH=''
+MIGRATION_PATH=''
 
 info() { printf '[+] %s\n' "$*"; }
 warn() { printf '[!] %s\n' "$*" >&2; }
@@ -71,12 +73,12 @@ usage() {
   cat <<'EOF_USAGE'
 Usage:
   debian-vps-tuning.sh
-  debian-vps-tuning.sh {guided|preflight|apply|reconfigure|verify|status|diagnose|probe|benchmark|htb|update|rollback|recover} [options]
+  debian-vps-tuning.sh {guided|preflight|apply|reconfigure|verify|status|diagnose|probe|benchmark|htb|update|migrate|rollback|recover} [options]
 
 Options:
   --port MBPS    provider port cap for guided/preflight/apply; default 200;
                  required explicitly by CLI reconfigure
-  --target TAG    update target, for example v0.1.0-rc.14; default is the
+  --target TAG    update target, for example v0.1.0-rc.15; default is the
                   highest non-draft Release in the installed major.minor line;
                   stable installations ignore prereleases automatically
   -h, --help     show this help
@@ -97,6 +99,8 @@ Behavior:
     use "htb --help" for its narrower scope and stage gates.
   - update is read-only: it verifies the source and target Release assets, runs
     source verify and target update-preflight, then prints a manual handoff plan.
+  - migrate uses a persistent checkpoint and two explicit reboot gates. Start
+    with "migrate prepare --checkpoint /absolute/new/path".
   - recover restores an interrupted reconfigure transaction, or performs the
     advanced rc.2 empty-state recovery when explicitly acknowledged.
 
@@ -232,7 +236,7 @@ parse_arguments() {
         [ -z "$ACTION" ] || die "$EXIT_USAGE" '只能指定一个 action。'
         ACTION="$1"
         ;;
-      probe | htb)
+      probe | htb | migrate)
         [ -z "$ACTION" ] || die "$EXIT_USAGE" '只能指定一个 action。'
         ACTION="$1"
         shift
@@ -605,8 +609,11 @@ resolve_profile_script() {
 
 resolve_companion_assets() {
   local local_dir local_manifest controller_source manifest logical source target remote_name
-  local -a required=(dvt-probe.sh)
+  local -a required=(dvt-traffic-budget.sh)
+  [ "$ACTION" != probe ] || required=(dvt-traffic-budget.sh dvt-probe.sh)
+  [ "$ACTION" != migrate ] || required=(dvt-migrate.sh)
   [ "$ACTION" != htb ] || required=(
+    dvt-traffic-budget.sh
     dvt-htb.sh
     experiments/htb-aggregate/experiment-plan.sh
     experiments/htb-aggregate/htb-aggregate-experiment.sh
@@ -628,8 +635,10 @@ resolve_companion_assets() {
         die "$EXIT_INTEGRITY" "companion 资产未通过 SHA-256 校验：${logical}"
     done
     PROBE_PATH="${local_dir}/dvt-probe.sh"
+    TRAFFIC_BUDGET_PATH="${local_dir}/dvt-traffic-budget.sh"
     HTB_WRAPPER_PATH="${local_dir}/dvt-htb.sh"
     HTB_BUNDLE_DIR="${local_dir}/experiments/htb-aggregate"
+    MIGRATION_PATH="${local_dir}/dvt-migrate.sh"
     return 0
   fi
 
@@ -651,8 +660,10 @@ resolve_companion_assets() {
     chmod 0700 "$target"
   done
   PROBE_PATH="${TEMP_DIR}/dvt-probe.sh"
+  TRAFFIC_BUDGET_PATH="${TEMP_DIR}/dvt-traffic-budget.sh"
   HTB_WRAPPER_PATH="${TEMP_DIR}/dvt-htb.sh"
   HTB_BUNDLE_DIR="${TEMP_DIR}/experiments/htb-aggregate"
+  MIGRATION_PATH="${TEMP_DIR}/dvt-migrate.sh"
 }
 
 print_environment_summary() {
@@ -705,6 +716,9 @@ run_profile() {
     preflight | apply | reconfigure)
       env PORT_SPEED_MBPS="$PORT_SPEED_MBPS_SELECTED" bash "$PROFILE_PATH" "$action"
       ;;
+    benchmark)
+      env DVT_TRAFFIC_BUDGET_TOOL="$TRAFFIC_BUDGET_PATH" bash "$PROFILE_PATH" "$action"
+      ;;
     *) bash "$PROFILE_PATH" "$action" ;;
   esac
 }
@@ -742,6 +756,31 @@ run_update() {
   printf '  目标总控 SHA-256：%s\n' "$UPDATE_CONTROLLER_SHA256"
   printf '  端口带宽：%s Mbps\n' "$STATE_PORT_SPEED_MBPS"
   printf '请按 README 的人工迁移顺序执行：rollback/purge → reboot → 目标 preflight/apply → reboot → verify。\n'
+}
+
+run_migrate() {
+  local subcommand="${ACTION_ARGS[0]:-}" state_hash
+  case "$subcommand" in
+    prepare)
+      [ -n "$STATE_VERSION" ] || die "$EXIT_CONFLICT" 'migrate prepare 需要现有 managed state。'
+      release_is_newer "$RELEASE_TAG" "$STATE_VERSION" ||
+        die "$EXIT_CONFLICT" "目标 ${RELEASE_TAG} 必须高于已安装版本 ${STATE_VERSION}。"
+      validate_port_speed "$STATE_PORT_SPEED_MBPS" || die "$EXIT_CONFLICT" 'managed state 缺少有效端口带宽。'
+      if [ -z "$UPDATE_TEMP_DIR" ]; then UPDATE_TEMP_DIR="$(mktemp -d)" || die "$EXIT_DOWNLOAD" '无法创建迁移临时目录。'; fi
+      resolve_installed_profile
+      state_hash="$(sha256sum "$STATE_FILE" | awk '{print $1}')"
+      bash "$SOURCE_PROFILE_PATH" verify
+      env UPDATE_PREFLIGHT=1 PORT_SPEED_MBPS="$STATE_PORT_SPEED_MBPS" bash "$PROFILE_PATH" preflight
+      bash "$MIGRATION_PATH" prepare "${ACTION_ARGS[@]:1}" \
+        --source-profile "$SOURCE_PROFILE_PATH" --target-profile "$PROFILE_PATH" \
+        --source-version "$STATE_VERSION" --target-version "$CONTROLLER_VERSION" \
+        --profile-id "$STATE_PROFILE" --port "$STATE_PORT_SPEED_MBPS" --state-sha256 "$state_hash"
+      ;;
+    rollback | continue | status)
+      bash "$MIGRATION_PATH" "${ACTION_ARGS[@]}"
+      ;;
+    *) die "$EXIT_USAGE" 'migrate 需要 prepare、rollback、continue 或 status 子命令。' ;;
+  esac
 }
 
 dispatch_action() {
@@ -794,12 +833,15 @@ dispatch_action() {
       run_profile benchmark
       ;;
     probe)
-      bash "$PROBE_PATH" --tuning-script "$PROFILE_PATH" --profile-id "$DETECTED_PROFILE" "${ACTION_ARGS[@]}"
+      bash "$PROBE_PATH" --tuning-script "$PROFILE_PATH" --profile-id "$DETECTED_PROFILE" \
+        --budget-tool "$TRAFFIC_BUDGET_PATH" "${ACTION_ARGS[@]}"
       ;;
     htb)
-      bash "$HTB_WRAPPER_PATH" --bundle-dir "$HTB_BUNDLE_DIR" --tuning-script "$PROFILE_PATH" "${ACTION_ARGS[@]}"
+      bash "$HTB_WRAPPER_PATH" --bundle-dir "$HTB_BUNDLE_DIR" --tuning-script "$PROFILE_PATH" \
+        --budget-tool "$TRAFFIC_BUDGET_PATH" "${ACTION_ARGS[@]}"
       ;;
     update) run_update ;;
+    migrate) run_migrate ;;
     preflight | verify | status | diagnose | rollback | recover) run_profile "$ACTION" ;;
     *) die "$EXIT_USAGE" "不支持的 action：${ACTION}" ;;
   esac
@@ -824,7 +866,7 @@ main() {
   select_port_speed
   if [ "$ACTION" != 'update' ]; then
     resolve_profile_script
-    case "$ACTION" in probe | htb) resolve_companion_assets ;; esac
+    case "$ACTION" in benchmark | probe | htb | migrate) resolve_companion_assets ;; esac
     print_execution_plan
   fi
   dispatch_action

@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.1.0-rc.15] - 2026-08-30
+
+### Added
+
+- 新增 root-only、原子更新且 fail-closed 的共享流量预算 ledger；benchmark、probe、TcpQuality 与 HTB runner 共用窗口额度，失败按计划上界保守核算。
+- 新增持久化 `migrate` checkpoint/resume，固定旧版/目标版 profile 并强制两次 boot-ID 重启门禁。
+- 新增 Linux root fixture，覆盖超预算拒绝、实际字节提交、失败保守结算、迁移中断续接和两次重启门禁。
+
+### Changed
+
+- 总控、六份生成 profile、installer、TcpQuality 工具和 HTB managed-state 绑定统一升级为 `0.1.0-rc.15`。
+- 无法量化计划 payload 的 benchmark 不再执行；TcpQuality 必须由操作者显式声明计划 payload 上界。
+- P0 低流量验收策略进入实现态；HTB 与多轮 TcpQuality 继续保持研究专用，不属于逐机升级门禁。
+
+### Compatibility and evidence boundary
+
+- 17 个受管 sysctl、BBR + fq、buffer、swap、journald、NOFILE 与 schema 4 未改变；跨版本仍由旧版固定资产清理，不允许 rc.15 覆盖旧状态。
+- 本地和 CI fixture 不等于目标 VPS、重启持久性、控制台恢复、严格代理或真实业务验收；本候选发布不产生公网测速流量。
+
 本项目采用 [Semantic Versioning](https://semver.org/)。
 
 ## [Unreleased]

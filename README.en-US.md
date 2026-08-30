@@ -8,9 +8,9 @@ The script uses BBR + fq, controlled TCP buffering, standard queue parameters, e
 
 > **System Selection Summary (as of 2026-08-04):** Newly created 1C1G, 1C2G, and 2C2G VPS instances are recommended to use Debian 13 minimal by default. Debian 13 is the current stable release; Debian 12 has transitioned to LTS and is better suited for retaining existing stable nodes or meeting explicit compatibility constraints. The OS version alone does not guarantee BBR availability, higher performance, or lower idle memory usage; virtualization type, running kernel, and target machine resources must still be verified.
 
-> Current release candidate: `v0.1.0-rc.14`. The following online commands are pinned to that exact candidate and must not be executed until the Release is published and all public assets have been reverse-downloaded and verified. The official `v0.1.0` still requires [Target VPS Runtime Acceptance](docs/validation.md); do not treat this candidate as target-host, full-bandwidth, or performance acceptance.
+> Current release candidate: `v0.1.0-rc.15`. The following online commands are pinned to that exact candidate and must not be executed until the Release is published and all public assets have been reverse-downloaded and verified. The official `v0.1.0` still requires [Target VPS Runtime Acceptance](docs/validation.md); do not treat this candidate as target-host, full-bandwidth, or performance acceptance.
 
-> This English document was originally translated from the rc.11 documentation. Release-critical URLs and the rc.13-to-rc.14 boundary are synchronized for rc.14. The Chinese [README](README.md) and [rc.14 release notes](docs/releases/v0.1.0-rc.14.md) remain authoritative for the complete installer, bandwidth-reconfiguration transaction, recovery, TcpQuality evidence, advisory probe, and non-persistent HTB details.
+> This English document was originally translated from the rc.11 documentation. Release-critical URLs are synchronized for rc.15. The Chinese [README](README.md) and [rc.15 release notes](docs/releases/v0.1.0-rc.15.md) remain authoritative for the shared traffic-budget ledger, checkpoint/resume migration, installer, TcpQuality evidence, advisory probe, and non-persistent HTB details.
 
 ## Online Installation and Verification
 
@@ -18,7 +18,7 @@ The following commands assume you have entered the VPS root shell (prompt usuall
 
 ### 1. Online Installation
 
-After the rc.14 Release is published and passes public asset verification, its pinned main entry can be used. It automatically detects Debian 12/13, amd64, CPU, and memory tiers, runs read-only `preflight` first by default, and executes `apply` only after an explicit `y` confirmation:
+After the rc.15 Release is published and passes public asset verification, its pinned main entry can be used. It automatically detects Debian 12/13, amd64, CPU, and memory tiers, runs read-only `preflight` first by default, and executes `apply` only after an explicit `y` confirmation:
 
 ```bash
 (
@@ -33,10 +33,10 @@ After the rc.14 Release is published and passes public asset verification, its p
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.14/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.15/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    'ce7668806ee0f3afb58aff18c2d6cdab8df58028d60390ba37e3ddf26b513248' \
+    'b9b183a098f02772019fe73537e0e52ba7d6f14191ea1c3f6574c367dcf3d8a4' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   bash "$dvt_tmp/debian-vps-tuning.sh"
@@ -74,10 +74,10 @@ Execute after re-logging into the VPS. `verify` is read-only validation and will
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.14/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.15/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    'ce7668806ee0f3afb58aff18c2d6cdab8df58028d60390ba37e3ddf26b513248' \
+    'b9b183a098f02772019fe73537e0e52ba7d6f14191ea1c3f6574c367dcf3d8a4' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   bash "$dvt_tmp/debian-vps-tuning.sh" verify
@@ -105,10 +105,10 @@ The recommended order is to complete tuning and reboot verification first, then 
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.14/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.15/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    'ce7668806ee0f3afb58aff18c2d6cdab8df58028d60390ba37e3ddf26b513248' \
+    'b9b183a098f02772019fe73537e0e52ba7d6f14191ea1c3f6574c367dcf3d8a4' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   env \
@@ -141,17 +141,17 @@ The main entry, `SHA256SUMS`, and profile are an indivisible Release package. **
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.14/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.15/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    'ce7668806ee0f3afb58aff18c2d6cdab8df58028d60390ba37e3ddf26b513248' \
+    'b9b183a098f02772019fe73537e0e52ba7d6f14191ea1c3f6574c367dcf3d8a4' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   bash "$dvt_tmp/debian-vps-tuning.sh" update
 )
 ```
 
-Specify the target version using `update --target v0.1.0-rc.14`. Auto-discovery does not cross `major.minor` release lines: when on an rc, it can select a higher rc on the same line or the stable release; stable installations automatically exclude prereleases. Cross-line upgrades require explicit `--target`; downgrades and duplicate upgrades remain rejected.
+Specify the target version using `update --target v0.1.0-rc.15`. Auto-discovery does not cross `major.minor` release lines: when on an rc, it can select a higher rc on the same line or the stable release; stable installations automatically exclude prereleases. Cross-line upgrades require explicit `--target`; downgrades and duplicate upgrades remain rejected.
 
 `update` is only an upgrade compatibility check and plan generator; it will not rewrite old scripts on disk, system tuning configurations, or 3X-UI. A passed check does not mean the upgrade is complete; during the maintenance window, manually execute rollback/purge, reboot, target preflight/apply, reboot again, and verify according to the output and this README. If GitHub API queries fail or are subject to anonymous rate limits, using a reviewed `--target` can skip auto-discovery, but target Release assets will still be verified.
 
@@ -161,7 +161,7 @@ A cross-version upgrade may remove the old managed version before installing the
 
 - Only supports vendor minimal Debian 12/13, `x86_64/amd64`, and the four CPU/memory resource tiers listed in the README; other combinations will be rejected;
 - Port bandwidth should be the provider's plan limit, not the link speed shown by the virtual NIC; default is 200 Mbps, allows 100–1000 Mbps;
-- Online entry is pinned to `v0.1.0-rc.14` and never falls back to `master`, `main`, `latest`, HTTP, or third-party mirrors; it is unavailable until that Release exists;
+- Online entry is pinned to `v0.1.0-rc.15` and never falls back to `master`, `main`, `latest`, HTTP, or third-party mirrors; it is unavailable until that Release exists;
 - After publication, the commands verify the fixed SHA-256 of the rc.14 main entry before execution; the controller then verifies the Release `SHA256SUMS` and selected profile again;
 - Main entry, `SHA256SUMS`, and profile must come from one Release; do not mix rc.13 and rc.14 assets in `/root` or one working directory;
 - Tags should not be moved or same-named assets replaced after publication; release a new version when defects are found;
@@ -243,7 +243,7 @@ bash ./debian-vps-tuning.sh diagnose
 # benchmark also requires BENCHMARK_HOST, see below
 bash ./debian-vps-tuning.sh benchmark
 bash ./debian-vps-tuning.sh update
-bash ./debian-vps-tuning.sh update --target v0.1.0-rc.14
+bash ./debian-vps-tuning.sh update --target v0.1.0-rc.15
 bash ./debian-vps-tuning.sh rollback
 bash ./debian-vps-tuning.sh recover
 ```
