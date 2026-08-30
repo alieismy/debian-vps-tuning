@@ -508,9 +508,13 @@ if ! (
   # shellcheck disable=SC2034
   tuning_script="$htb_route_fixture/tuning.sh"
   htb_tool="$htb_route_fixture/htb-tool"
+  # shellcheck disable=SC2034
   budget_tool="$htb_route_fixture/budget-tool"
+  # shellcheck disable=SC2034
   ledger="$htb_route_fixture/ledger.json"
+  # shellcheck disable=SC2034
   window_id='fixture-window'
+  # shellcheck disable=SC2034
   budget_mib=1024
   # shellcheck disable=SC2034
   pass_args=(--host 192.0.2.1 --output-dir "$htb_route_fixture/reference-output")

@@ -108,7 +108,10 @@ prepare() {
   [ -f "$STATE_FILE" ] && [ "$(sha256sum "$STATE_FILE" | awk '{print $1}')" = "$state_sha256" ] || die '当前 managed state 与准备输入不一致。'
   grep -Fq "SCRIPT_VERSION='${source_version}'" "$source_profile" || die 'source profile 版本契约不匹配。'
   grep -Fq "SCRIPT_VERSION='${target_version}'" "$target_profile" || die 'target profile 版本契约不匹配。'
-  grep -Fq "PROFILE_ID='${profile_id}'" "$source_profile" && grep -Fq "PROFILE_ID='${profile_id}'" "$target_profile" || die 'profile-id 契约不匹配。'
+  if ! grep -Fq "PROFILE_ID='${profile_id}'" "$source_profile" ||
+    ! grep -Fq "PROFILE_ID='${profile_id}'" "$target_profile"; then
+    die 'profile-id 契约不匹配。'
+  fi
   bash "$source_profile" verify >/dev/null
   env UPDATE_PREFLIGHT=1 PORT_SPEED_MBPS="$port_mbps" bash "$target_profile" preflight >/dev/null
   parent="$(dirname "$checkpoint")"; name="$(basename "$checkpoint")"
@@ -171,8 +174,11 @@ continue_stage() {
   esac
   if [ "$phase" = ROLLED_BACK_REBOOT_REQUIRED ] || [ "$phase" = APPLY_RUNNING ]; then
     state_version="$(jq -r '.script_version // empty' "$STATE_FILE")"; state_phase="$(jq -r '.state // empty' "$STATE_FILE")"
-    [ "$state_version" = "$target_version" ] && [ "$(jq -r '.profile.id // empty' "$STATE_FILE")" = "$profile" ] &&
-      { [ "$state_phase" = APPLIED ] || [ "$state_phase" = VERIFIED ]; } || die '目标 apply 后 managed state 契约不匹配。'
+    if [ "$state_version" != "$target_version" ] ||
+      [ "$(jq -r '.profile.id // empty' "$STATE_FILE")" != "$profile" ] ||
+      { [ "$state_phase" != APPLIED ] && [ "$state_phase" != VERIFIED ]; }; then
+      die '目标 apply 后 managed state 契约不匹配。'
+    fi
     update_phase TARGET_APPLIED_REBOOT_REQUIRED "$current"
     info '目标版已 apply。现在必须第二次重启；重启前不得再次执行 continue。'
     return 0
