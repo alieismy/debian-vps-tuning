@@ -1,10 +1,40 @@
 # 项目阶段备忘
 
 文档性质：资料性状态与延期事项记录
-当前阶段：验证和文档闭环
-更新日期：2026-08-29（Asia/Singapore）
+当前阶段：rc.15 有预算诊断与可恢复迁移实现和发布（已完成，待下一阶段决策）
+更新日期：2026-08-30（Asia/Singapore）
 
 本文件是 `AGENTS.md` 指定的唯一项目阶段备忘入口，用于记录每轮对话工作的闭环状态，以及当前阶段不主动展开的后续候选事项。它不构成需求批准、生产变更授权、发布授权或下一阶段启动决定；控制规则以 [项目级 AGENTS.md](../AGENTS.md) 为准，具体验证事实以 [验证矩阵](validation.md) 和对应发布说明为准。
+
+## 本轮记录：2026-08-30（rc.15 实现、CI 与 Pre-release 闭环）
+
+### 已完成及证据
+
+- 项目控制面已切换到 `v0.1.0-rc.15` 阶段，并明确本阶段只实现共享流量预算、可恢复迁移、统一资产与发布闭环；永久 HTB、通用 UDP、真实 VPS 变更和公网性能 campaign 均未扩入。
+- 新增 `dvt-traffic-budget.sh` 事务 ledger。benchmark、`dvt probe`、TcpQuality 和 HTB runner 在发流量前必须原子保留完整计划 payload；已知 sender bytes 按实际值提交，未知或失败按计划上界保守结算，余额不足时 fail-closed。账本同时保留协议开销和服务商计费口径未知边界。
+- 新增 `dvt-migrate.sh` 持久 checkpoint/resume。checkpoint 固定并校验旧版 profile、目标 profile 和迁移器自身哈希，按旧版 rollback/purge、第一次 boot-ID gate、目标 preflight/apply、第二次 boot-ID gate、最终 verify 推进；工具不自动 reboot，也不替代控制台或业务验收。
+- 总控、六份单模板生成 profile、installer、TcpQuality、probe、HTB runner、清单、README、CHANGELOG 和发布说明已统一为 `0.1.0-rc.15`。`SHA256SUMS` 管理资产由 15 项增至 17 项；Release 总资产为 19 项。
+- 本地门禁通过：profile 再生成一致性、Bash 语法、17 项 `SHA256SUMS`、controller/static fixture、HTB fixture 和 `git diff --check`。Windows Git Bash 对 root-only `tests/rc15-check.sh` 按设计拒绝执行，没有将其冒充为本地通过。
+- PR [#12](https://github.com/alieismy/debian-vps-tuning/pull/12) 合并提交为 `21177fe7943bbfe7592461ca532e0c5dc369efdb`。首轮 CI 的两条 `validate` 均因确定性的 ShellCheck `SC2015/SC2034` 失败；修复显式条件和 fixture 抑制后，两条新 `validate` 分别以 42 秒和 44 秒通过，覆盖固定 ShellCheck 0.11.0、Linux root installer lifecycle、预算超额/保守结算和迁移两次 boot gate fixture。
+- CodeRabbit 仅留下针对首个提交范围的 `review in progress` 评论，没有形成 review、行内意见或 required check；本轮没有把该停滞状态描述为审查通过，也未用它替代 CI 和人工 diff 审计。
+- annotated tag `v0.1.0-rc.15` 的远端 peeled target 已核对为合并提交 `21177fe7943bbfe7592461ca532e0c5dc369efdb`。已发布非 Draft 的 [GitHub Pre-release](https://github.com/alieismy/debian-vps-tuning/releases/tag/v0.1.0-rc.15)，19 个资产均为 `uploaded`。
+- 公开匿名反向下载通过：`SHA256SUMS` 的 17 个逻辑资产全部逐项匹配；清单 SHA-256 为 `374e4b912b4beb8300a2bb0aeb4f16e364cdf33d19455fa44e12a5b8464f1da1`，installer SHA-256 为 `4c7798afd48478854ac0d3ac16197d73147464d95c8b4f1a35241dec8cf4e5fd`。验证临时目录已安全清理。
+
+### 未完成门禁
+
+- 本轮没有连接或修改任何真实 VPS，没有执行 rollback、reboot、apply、HTB、TcpQuality 或公网测速。rc.15 发布完整性不证明目标 VPS 的迁移、重启持久性、控制台恢复、严格 3X-UI/Xray 验证或真实代理业务链路通过。
+- 流量 ledger 核算应用层 payload，不覆盖 TCP/IP、链路、重传及服务商计费差异；服务商面板剩余额度、维护窗口和独立测试机授权仍是运行前人工门禁。
+- 目标 VPS 生命周期和真实业务验收可作为发布后验证项保留。是否选择低风险节点执行 rc.14→rc.15 checkpoint 迁移，须由用户另行授权；不得因 Pre-release 已发布而自动执行。
+
+### 延期事项变化
+
+- P1 共享流量 ledger、TcpQuality 硬预算和 P2 checkpoint/resume 迁移已从延期候选转为 rc.15 已实现、已通过 fixture/CI、已发布能力。
+- 永久 HTB、通用 UDP 调参、网络安全专项、全面生产加固和新的高流量性能 campaign 继续保持既有延期/未授权状态。
+- 无新增延期事项。CodeRabbit 停滞评论是本次 PR 的证据限制，不新增为项目功能或发布门禁。
+
+### 当前成熟度判断
+
+rc.15 当前阶段的代码、fixture、生成资产、固定摘要、PR/CI、annotated tag、Pre-release 和公开资产反向验证已经闭合，满足本阶段完成定义。目标 VPS 生命周期、重启和业务验收仍明确未验证，但按阶段规则可作为发布后事项保留。下一阶段应由用户在“低风险目标 VPS 迁移验收”“继续收敛声明式资源策略”或“稳定版门禁规划”等候选中另行决策；本轮不自动修改 `AGENTS.md` 进入下一阶段。
 
 ## 本轮记录：2026-08-29（项目级网络调优与分层测试方案）
 
