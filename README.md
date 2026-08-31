@@ -17,7 +17,7 @@ Debian VPS Tuning 用于配置 Debian 12/13 小型云 VPS 的主机网络。主�
 rc.16 Release 发布并通过公开资产复核后，可使用下面的固定版本安装入口。它保留“先完整下载、再核对固定 SHA-256、最后执行”三个门禁，不会从 `main`/`master`/`latest` 下载，也不会在安装过程中自动执行调优或产生测试流量：
 
 ```bash
-(set -Eeuo pipefail; dvt_i="$(mktemp)"; trap 'rm -f -- "$dvt_i"' EXIT; curl --fail --show-error --silent --location --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 120 -o "$dvt_i" https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.16/install.sh; printf '%s  %s\n' '92d4dd7397d869c321798602fce472cf34bcf268d599dcd7a720ab95ca12d609' "$dvt_i" | sha256sum -c -; bash "$dvt_i")
+(set -Eeuo pipefail; dvt_i="$(mktemp)"; trap 'rm -f -- "$dvt_i"' EXIT; curl --fail --show-error --silent --location --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 120 -o "$dvt_i" https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.16/install.sh; printf '%s  %s\n' '83d4f739918309b7585c0a0b6be7ac09252512dd7516d0dc6044b058cd17a15d' "$dvt_i" | sha256sum -c -; bash "$dvt_i")
 ```
 
 安装器先核对内置固定的 `SHA256SUMS` 摘要，再逐一核对总控、六份 profile、预算账本、迁移编排、证据工具和 HTB 实验工具；通过后安装到 `/usr/local/lib/debian-vps-tuning/0.1.0-rc.16`，原子更新 `/usr/local/lib/debian-vps-tuning/current`，并创建 `/usr/local/bin/dvt`。已有同版本目录只有在全部文件重新校验通过时才复用，内容不一致时拒绝覆盖。交互终端随后打开菜单；也可加 `--no-launch` 只安装。

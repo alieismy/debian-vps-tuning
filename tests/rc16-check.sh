@@ -126,7 +126,10 @@ env PATH="${fake_bin}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/b
   bash "$process_fixture" >/dev/null 2>&1
 process_rc=$?
 set -e
-[ "$process_rc" -eq 124 ] || { printf 'benchmark timeout fixture returned rc=%s\n' "$process_rc" >&2; exit 1; }
+case "$process_rc" in
+  124 | 137) ;;
+  *) printf 'benchmark timeout fixture returned rc=%s\n' "$process_rc" >&2; exit 1 ;;
+esac
 [ -s "${test_root}/iperf-pids" ] || { printf 'benchmark timeout fixture did not record child processes\n' >&2; exit 1; }
 read -r iperf_pid sleep_pid <"${test_root}/iperf-pids"
 for attempt in 1 2 3 4 5; do

@@ -1288,6 +1288,12 @@ TIMEOUT_RC=124 run_benchmark_phase upload 0 "$test_root" "$test_root/ifaces" >/d
 rc=$?
 set -e
 [ "$rc" -eq 124 ] || { printf 'benchmark phase did not preserve hard-timeout status\n' >&2; exit 1; }
+
+set +e
+TIMEOUT_RC=137 run_benchmark_phase upload 0 "$test_root" "$test_root/ifaces" >/dev/null
+rc=$?
+set -e
+[ "$rc" -eq 137 ] || { printf 'benchmark phase did not preserve KILL-escalation status\n' >&2; exit 1; }
 EOF_BENCHMARK_PHASE_TEST
 } >"$benchmark_phase_test"
 bash "$benchmark_phase_test"

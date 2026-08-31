@@ -2801,7 +2801,7 @@ benchmark_handle_signal() {
 run_iperf3_with_timeout() {
   local output_file="$1"
   shift
-  local rc=0
+  local rc=0 started_at="$SECONDS" elapsed=0
   BENCHMARK_ACTIVE_CHILD_PID=''
   BENCHMARK_ACTIVE_CHILD_PGID=''
   setsid timeout --foreground --signal=TERM \
@@ -2814,15 +2814,25 @@ run_iperf3_with_timeout() {
   else
     rc=$?
   fi
+  elapsed=$((SECONDS - started_at))
   if [ "$rc" -eq 0 ]; then
     BENCHMARK_ACTIVE_CHILD_PID=''
     BENCHMARK_ACTIVE_CHILD_PGID=''
   else
     benchmark_reap_active_child
   fi
-  if [ "$rc" -eq 124 ]; then
-    warn "iperf3 超过 ${BENCHMARK_PHASE_TIMEOUT_RESOLVED} 秒硬上限；已终止隔离进程组并保留失败证据。"
-  fi
+  case "$rc" in
+    124)
+      warn "iperf3 超过 ${BENCHMARK_PHASE_TIMEOUT_RESOLVED} 秒硬上限；已终止隔离进程组并保留失败证据。"
+      ;;
+    137)
+      if [ "$elapsed" -ge "$BENCHMARK_PHASE_TIMEOUT_RESOLVED" ]; then
+        warn "iperf3 超过 ${BENCHMARK_PHASE_TIMEOUT_RESOLVED} 秒硬上限且 TERM 后仍未退出；已升级到 KILL、回收进程组并保留失败证据。"
+      else
+        warn 'iperf3 在硬上限前返回 137；进程可能收到外部 SIGKILL，已回收进程组并保留失败证据。'
+      fi
+      ;;
+  esac
   return "$rc"
 }
 
