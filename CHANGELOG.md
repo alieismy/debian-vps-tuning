@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.0-rc.16] - 2026-08-31
+
+### Added
+
+- benchmark 每个方向在独立进程组内执行，增加默认有界硬超时、TERM→KILL 升级和 `INT`/`TERM`/失败路径子进程回收；超时仍保留 `INCOMPLETE` 并按计划 payload 保守结算预算。
+- `diagnose` 和 benchmark 增加 IPv4/IPv6 policy rules；检测到自定义规则时保存对应地址族的全部路由表并警告常规默认路由网卡发现不覆盖该拓扑。
+- 新增 rc.16 timeout/process-group、策略路由分类和 rc.15→rc.16 checkpoint migration fixture。
+
+### Unchanged
+
+- 17 个受管 sysctl、BBR + 根 `fq`、资源感知 BDP 缓冲、swap、journald、NOFILE、schema 4 和非持久 HTB 边界不变。
+- 未引入外部调优材料中的扩张 sysctl、`initcwnd/initrwnd`、固定 MTU、RPS/RFS、UDP、MSS Clamp、CAKE 或永久 HTB。
+
 ## [0.1.0-rc.15] - 2026-08-30
 
 ### Added

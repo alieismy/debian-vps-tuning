@@ -137,7 +137,7 @@ systemctl() {
   [ "$1" = 'is-active' ]
 }
 write_managed_fixture() {
-  local profile="$1" schema="${2:-4}" version="${3:-0.1.0-rc.15}" port="${4:-200}"
+  local profile="$1" schema="${2:-4}" version="${3:-0.1.0-rc.16}" port="${4:-200}"
   jq -n \
     --arg profile "$profile" \
     --arg version "$version" \
@@ -168,7 +168,7 @@ if (verify_managed_host_baseline) >/dev/null 2>&1; then
   printf 'managed baseline accepted rc.11\n' >&2
   exit 1
 fi
-write_managed_fixture debian13-1c2g 4 0.1.0-rc.15 500
+write_managed_fixture debian13-1c2g 4 0.1.0-rc.16 500
 if (verify_managed_host_baseline) >/dev/null 2>&1; then
   printf 'managed baseline accepted 500 Mbps\n' >&2
   exit 1
@@ -510,7 +510,7 @@ printf '%s\n' '{"schema_version":1,"status":"PASS","exit_code":0,"phases":{"uplo
   >"${BENCHMARK_OUTPUT_DIR}/benchmark-result.json"
 script_sha="$(sha256sum "${BASH_SOURCE[0]}" | awk '{print $1}')"
 jq -n --arg script_sha "$script_sha" \
-  '{schema_version:1,script_version:"0.1.0-rc.15",profile:"debian13-1c1g",
+  '{schema_version:1,script_version:"0.1.0-rc.16",profile:"debian13-1c1g",
     script_sha256:$script_sha,state:"VERIFIED",state_network:{port_speed_mbps:200}}' \
   >"${BENCHMARK_OUTPUT_DIR}/benchmark-meta.json"
 printf 'user\t100\nnice\t0\nsystem\t50\nidle\t100\niowait\t0\nirq\t0\nsoftirq\t10\nsteal\t0\n' \
@@ -530,7 +530,7 @@ printf 'status=COMPLETED\nevidence_manifest_sha256=%s\nresult_sha256=%s\n' \
   "$manifest_sha" "$result_sha" >"${BENCHMARK_OUTPUT_DIR}/COMPLETED"
 EOF_MOCK_TUNING
 chmod 0700 "$mock_htb" "$mock_tuning"
-jq -n '{schema_version:4,script_version:"0.1.0-rc.15",state:"VERIFIED",
+jq -n '{schema_version:4,script_version:"0.1.0-rc.16",state:"VERIFIED",
   profile:{id:"debian13-1c1g"},network:{port_speed_mbps:200}}' >"$mock_managed_state"
 if ! (
   inherited_path="$PATH"
@@ -542,7 +542,7 @@ if ! (
   RUNTIME_STATE_FILE="${mock_runtime}/active.json"
   MANAGED_STATE_FILE="$mock_managed_state"
   managed_profile_id='debian13-1c1g'
-  managed_script_version='0.1.0-rc.15'
+  managed_script_version='0.1.0-rc.16'
   managed_state_sha256_frozen="$(sha256sum "$mock_managed_state" | awk '{print $1}')"
   output_dir="$mock_output"
   plan_file="$runner_plan"
@@ -596,7 +596,7 @@ if (
   PATH="$inherited_path"
   MANAGED_STATE_FILE="$mock_managed_state"
   managed_profile_id='debian13-1c1g'
-  managed_script_version='0.1.0-rc.15'
+  managed_script_version='0.1.0-rc.16'
   managed_state_sha256_frozen="$(sha256sum "$mock_managed_state" | awk '{print $1}')"
   tuning_script="$mock_tuning"
   export MOCK_VERIFY_RC=4
@@ -618,7 +618,7 @@ fixture_tuning_sha='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 fixture_state_sha='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 jq -n --arg tuning_sha "$fixture_tuning_sha" --arg state_sha "$fixture_state_sha" '
   {schema_version:2,runner_version:"0.3.0",tuning_script:{sha256:$tuning_sha},
-   managed_binding:{profile_id:"debian13-1c1g",script_version:"0.1.0-rc.15",
+   managed_binding:{profile_id:"debian13-1c1g",script_version:"0.1.0-rc.16",
      state:"VERIFIED",port_speed_mbps:200,state_sha256:$state_sha},
    persistent_shaping_authorized:false}' >"${sweep_fixture}/session-meta.json"
 while IFS= read -r sweep_stage; do
@@ -653,7 +653,7 @@ while IFS= read -r sweep_stage; do
   printf '%s\n' '{"schema_version":1,"status":"PASS","exit_code":0,"phases":{"upload":{},"download":null}}' \
     >"${benchmark_dir}/benchmark-result.json"
   jq -n --arg tuning_sha "$fixture_tuning_sha" '
-    {schema_version:1,script_version:"0.1.0-rc.15",profile:"debian13-1c1g",
+    {schema_version:1,script_version:"0.1.0-rc.16",profile:"debian13-1c1g",
      script_sha256:$tuning_sha,state:"VERIFIED",state_network:{port_speed_mbps:200}}' \
     >"${benchmark_dir}/benchmark-meta.json"
   printf 'user\t100\nnice\t0\nsystem\t50\nidle\t100\niowait\t0\nirq\t0\nsoftirq\t10\nsteal\t0\n' \
@@ -675,7 +675,7 @@ while IFS= read -r sweep_stage; do
     --arg tuning_sha "$fixture_tuning_sha" --arg state_sha "$fixture_state_sha" '
     {schema_version:3,status:"PASS",plan_stage:$plan_stage,
       benchmark_result_sha256:$sha,qdisc_rate_mbit:$plan_stage.rate_mbit,
-      managed_binding:{profile_id:"debian13-1c1g",script_version:"0.1.0-rc.15",
+      managed_binding:{profile_id:"debian13-1c1g",script_version:"0.1.0-rc.16",
         state:"VERIFIED",port_speed_mbps:200,state_sha256:$state_sha,
         tuning_script_sha256:$tuning_sha},benchmark_binding_valid:true,
       traffic_cap_enforced_by_htb:true,qdisc_restored_to_root_fq:true,

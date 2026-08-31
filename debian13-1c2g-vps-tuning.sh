@@ -7,7 +7,7 @@ IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 
-SCRIPT_VERSION='0.1.0-rc.15'
+SCRIPT_VERSION='0.1.0-rc.16'
 STATE_SCHEMA_VERSION=4
 LEGACY_STATE_SCHEMA_VERSION=3
 NAMESPACE='proxy-vps'
@@ -64,6 +64,11 @@ SWAP_CREATE_ALLOWED='1'
 SWAP_SKIP_REASON=''
 STATE_DIR_CREATED=0
 QDISC_MATCH_REASON=''
+POLICY_ROUTING_IPV4_STATE='unavailable'
+POLICY_ROUTING_IPV6_STATE='unavailable'
+BENCHMARK_ACTIVE_CHILD_PID=''
+BENCHMARK_ACTIVE_CHILD_PGID=''
+BENCHMARK_TIMEOUT_TERMINATE_GRACE_SECONDS=5
 
 SYSCTL_FILE="/etc/sysctl.d/90-${NAMESPACE}.conf"
 SYSCTL_SCAN_ROOT='/etc'
@@ -505,6 +510,58 @@ default_route_ifaces() {
     ip -o -4 route show default 2>/dev/null || true
     ip -o -6 route show default 2>/dev/null || true
   } | awk '{for(i=1;i<=NF;i++) if($i=="dev" && (i+1)<=NF) print $(i+1)}' | awk 'NF && !seen[$0]++'
+}
+
+policy_rule_state() {
+  local family="$1" rules
+  if ! rules="$(ip "-${family}" rule show 2>/dev/null)"; then
+    printf '%s\n' unavailable
+    return 0
+  fi
+  if awk '
+    {
+      line=$0
+      sub(/^[[:space:]]+/, "", line)
+      sub(/[[:space:]]+$/, "", line)
+      if (line ~ /^0:[[:space:]]+from all lookup (local|255)([[:space:]]+proto kernel)?$/) next
+      if (line ~ /^32766:[[:space:]]+from all lookup (main|254)([[:space:]]+proto kernel)?$/) next
+      if (line ~ /^32767:[[:space:]]+from all lookup (default|253)([[:space:]]+proto kernel)?$/) next
+      if (line != "") custom=1
+    }
+    END {exit custom ? 0 : 1}
+  ' <<<"$rules"; then
+    printf '%s\n' true
+  else
+    printf '%s\n' false
+  fi
+}
+
+detect_policy_routing() {
+  POLICY_ROUTING_IPV4_STATE="$(policy_rule_state 4)"
+  POLICY_ROUTING_IPV6_STATE="$(policy_rule_state 6)"
+}
+
+show_policy_routing_evidence() {
+  printf '[policy-routing-ipv4-rules]\n'
+  ip -4 rule show 2>/dev/null || printf '%s\n' 'unavailable'
+  printf '[policy-routing-ipv6-rules]\n'
+  ip -6 rule show 2>/dev/null || printf '%s\n' 'unavailable'
+  if [ "$POLICY_ROUTING_IPV4_STATE" = true ]; then
+    printf '[policy-routing-ipv4-routes-all]\n'
+    ip -4 route show table all 2>/dev/null || printf '%s\n' 'unavailable'
+  fi
+  if [ "$POLICY_ROUTING_IPV6_STATE" = true ]; then
+    printf '[policy-routing-ipv6-routes-all]\n'
+    ip -6 route show table all 2>/dev/null || printf '%s\n' 'unavailable'
+  fi
+  printf '[policy-routing-summary] custom_ipv4=%s custom_ipv6=%s interface_discovery=conventional-default-routes-only\n' \
+    "$POLICY_ROUTING_IPV4_STATE" "$POLICY_ROUTING_IPV6_STATE"
+  if [ "$POLICY_ROUTING_IPV4_STATE" = true ] || [ "$POLICY_ROUTING_IPV6_STATE" = true ]; then
+    warn '检测到自定义策略路由规则；本项目只按常规默认路由发现网卡，当前证据不证明该拓扑可安全 apply。'
+  elif [ "$POLICY_ROUTING_IPV4_STATE" = unavailable ] || [ "$POLICY_ROUTING_IPV6_STATE" = unavailable ]; then
+    warn '至少一个地址族的策略路由规则不可读；不能确认是否只有内核默认规则。'
+  fi
+  return 0
 }
 
 kernel_feature_available() {
@@ -2656,6 +2713,8 @@ show_diagnostics() {
   ip -br address show 2>/dev/null || true
   ip -4 route show default 2>/dev/null || true
   ip -6 route show default 2>/dev/null || true
+  detect_policy_routing
+  show_policy_routing_evidence
   while IFS= read -r iface; do
     [ -n "$iface" ] || continue
     printf '[interface] %s rx_queues=%s tx_queues=%s\n' "$iface" \
@@ -2703,6 +2762,70 @@ show_diagnostics() {
   info '诊断完成；增量计数是采样证据，不单独证明端到端业务性能。'
 }
 
+benchmark_reap_active_child() {
+  local pid="${BENCHMARK_ACTIVE_CHILD_PID:-}" pgid="${BENCHMARK_ACTIVE_CHILD_PGID:-}" target='' attempt
+  [ -n "$pid" ] || return 0
+  if [[ "$pgid" =~ ^[0-9]+$ ]] && [ "$pgid" -gt 1 ] && [ "$pgid" = "$pid" ]; then
+    if kill -0 -- "-${pgid}" 2>/dev/null; then
+      target="-${pgid}"
+    fi
+  fi
+  if [ -z "$target" ] && [[ "$pid" =~ ^[0-9]+$ ]] && [ "$pid" -gt 1 ] && kill -0 "$pid" 2>/dev/null; then
+    target="$pid"
+  fi
+  if [ -n "$target" ]; then
+    kill -TERM -- "$target" 2>/dev/null || true
+    attempt=0
+    while [ "$attempt" -lt "$BENCHMARK_TIMEOUT_TERMINATE_GRACE_SECONDS" ]; do
+      kill -0 -- "$target" 2>/dev/null || break
+      sleep 1
+      attempt=$((attempt + 1))
+    done
+    if kill -0 -- "$target" 2>/dev/null; then
+      kill -KILL -- "$target" 2>/dev/null || true
+    fi
+  fi
+  wait "$pid" 2>/dev/null || true
+  BENCHMARK_ACTIVE_CHILD_PID=''
+  BENCHMARK_ACTIVE_CHILD_PGID=''
+  return 0
+}
+
+benchmark_handle_signal() {
+  local signal_name="$1" exit_code="$2"
+  benchmark_failure_stage="signal-${signal_name}"
+  benchmark_reap_active_child
+  exit "$exit_code"
+}
+
+run_iperf3_with_timeout() {
+  local output_file="$1"
+  shift
+  local rc=0
+  BENCHMARK_ACTIVE_CHILD_PID=''
+  BENCHMARK_ACTIVE_CHILD_PGID=''
+  setsid timeout --foreground --signal=TERM \
+    --kill-after="${BENCHMARK_TIMEOUT_TERMINATE_GRACE_SECONDS}s" \
+    "${BENCHMARK_PHASE_TIMEOUT_RESOLVED}s" iperf3 "$@" >"$output_file" &
+  BENCHMARK_ACTIVE_CHILD_PID=$!
+  BENCHMARK_ACTIVE_CHILD_PGID="$BENCHMARK_ACTIVE_CHILD_PID"
+  if wait "$BENCHMARK_ACTIVE_CHILD_PID"; then
+    rc=0
+  else
+    rc=$?
+  fi
+  if [ "$rc" -eq 0 ]; then
+    BENCHMARK_ACTIVE_CHILD_PID=''
+    BENCHMARK_ACTIVE_CHILD_PGID=''
+  else
+    benchmark_reap_active_child
+  fi
+  if [ "$rc" -eq 124 ]; then
+    warn "iperf3 超过 ${BENCHMARK_PHASE_TIMEOUT_RESOLVED} 秒硬上限；已终止隔离进程组并保留失败证据。"
+  fi
+  return "$rc"
+}
+
 run_benchmark_phase() {
   local label="$1" reverse="$2" tmp_dir="$3" ifaces_file="$4"
   local current_rc=0 iface
@@ -2722,21 +2845,21 @@ run_benchmark_phase() {
   done <"$ifaces_file"
 
   if [ "$reverse" = '1' ]; then
-    if iperf3 --client "$BENCHMARK_HOST_RESOLVED" --port "$BENCHMARK_PORT_RESOLVED" \
+    if run_iperf3_with_timeout "${tmp_dir}/${label}.iperf3.json" \
+      --client "$BENCHMARK_HOST_RESOLVED" --port "$BENCHMARK_PORT_RESOLVED" \
       --time "$BENCHMARK_SECONDS_RESOLVED" --omit "$BENCHMARK_OMIT_RESOLVED" \
       --parallel "$BENCHMARK_PARALLEL_RESOLVED" "${BENCHMARK_FAMILY_ARGS[@]}" \
-      "${rate_args[@]}" --reverse --json \
-      >"${tmp_dir}/${label}.iperf3.json"; then
+      "${rate_args[@]}" --reverse --json; then
       current_rc=0
     else
       current_rc=$?
     fi
   else
-    if iperf3 --client "$BENCHMARK_HOST_RESOLVED" --port "$BENCHMARK_PORT_RESOLVED" \
+    if run_iperf3_with_timeout "${tmp_dir}/${label}.iperf3.json" \
+      --client "$BENCHMARK_HOST_RESOLVED" --port "$BENCHMARK_PORT_RESOLVED" \
       --time "$BENCHMARK_SECONDS_RESOLVED" --omit "$BENCHMARK_OMIT_RESOLVED" \
       --parallel "$BENCHMARK_PARALLEL_RESOLVED" "${BENCHMARK_FAMILY_ARGS[@]}" \
-      "${rate_args[@]}" --json \
-      >"${tmp_dir}/${label}.iperf3.json"; then
+      "${rate_args[@]}" --json; then
       current_rc=0
     else
       current_rc=$?
@@ -2811,6 +2934,7 @@ run_network_benchmark() {
   local direction="${BENCHMARK_DIRECTION:-both}" run_id="${BENCHMARK_RUN_ID:-}" output_dir="${BENCHMARK_OUTPUT_DIR:-}"
   local cap_input="${BENCHMARK_RATE_CAP_MBPS:-}" cap_mbps='' cap_source='unavailable' traffic_estimate
   local enforce_rate_cap="${BENCHMARK_ENFORCE_RATE_CAP:-0}" rate_cap_enforced=false rate_cap_per_stream_bps=0
+  local phase_timeout="${BENCHMARK_PHASE_TIMEOUT_SECONDS:-}" phase_timeout_default=0
   local tmp_dir rc=0 current_rc=0 persistent_output=0 result_tmp manifest_sha result_sha trap_rc=0
   local benchmark_failure_stage='initialization'
   local script_hash state_phase state_network iperf_version boot_id
@@ -2822,6 +2946,9 @@ run_network_benchmark() {
   check_supported_os
   command -v iperf3 >/dev/null 2>&1 ||
     die "$EXIT_UNSUPPORTED" 'benchmark 需要已安装 iperf3；脚本不会自动安装软件包。'
+  if ! command -v setsid >/dev/null 2>&1 || ! command -v timeout >/dev/null 2>&1; then
+    die "$EXIT_UNSUPPORTED" 'benchmark 需要 util-linux setsid 和 GNU coreutils timeout。'
+  fi
   [ -n "$host" ] || die "$EXIT_USAGE" 'benchmark 必须显式设置 BENCHMARK_HOST。'
   [[ "$host" =~ ^[A-Za-z0-9][A-Za-z0-9._:%-]*$ ]] ||
     die "$EXIT_USAGE" 'BENCHMARK_HOST 含不支持的字符。'
@@ -2844,6 +2971,16 @@ run_network_benchmark() {
   omit=$((10#$omit))
   if [ "$omit" -lt 0 ] || [ "$omit" -gt 10 ]; then
     die "$EXIT_USAGE" 'BENCHMARK_OMIT_SECONDS 必须在 0–10 之间。'
+  fi
+  phase_timeout_default=$((seconds + omit + 15))
+  if [ -z "$phase_timeout" ]; then
+    phase_timeout="$phase_timeout_default"
+  else
+    [[ "$phase_timeout" =~ ^[0-9]{1,3}$ ]] ||
+      die "$EXIT_USAGE" 'BENCHMARK_PHASE_TIMEOUT_SECONDS 必须是 1–300 的整数。'
+    phase_timeout=$((10#$phase_timeout))
+    [ "$phase_timeout" -ge 1 ] && [ "$phase_timeout" -le 300 ] ||
+      die "$EXIT_USAGE" 'BENCHMARK_PHASE_TIMEOUT_SECONDS 必须在 1–300 之间。'
   fi
   BENCHMARK_FAMILY_ARGS=()
   case "$family" in
@@ -2888,9 +3025,11 @@ run_network_benchmark() {
   BENCHMARK_SECONDS_RESOLVED="$seconds"
   BENCHMARK_OMIT_RESOLVED="$omit"
   BENCHMARK_PARALLEL_RESOLVED="$parallel"
+  BENCHMARK_PHASE_TIMEOUT_RESOLVED="$phase_timeout"
 
   info 'benchmark 不修改系统配置，但会向用户指定的 iperf3 服务器产生高带宽 TCP 流量。'
   info '该测试测量 VPS 到 iperf3 服务端的直连 TCP，不等同于 VLESS + REALITY + TCP 业务链路。'
+  info "每个 iperf3 方向使用独立进程组，硬超时为 ${phase_timeout} 秒，超时后最多 ${BENCHMARK_TIMEOUT_TERMINATE_GRACE_SECONDS} 秒升级到 KILL。"
   umask 077
   if [ -n "$output_dir" ]; then
     mkdir -m 0700 -- "$output_dir" || die "$EXIT_UNSUPPORTED" '无法创建 BENCHMARK_OUTPUT_DIR。'
@@ -2898,14 +3037,14 @@ run_network_benchmark() {
     persistent_output=1
     printf 'status=INCOMPLETE\nstage=%s\nrun_id=%s\nutc=%s\n' \
       "$benchmark_failure_stage" "$run_id" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"${tmp_dir}/INCOMPLETE"
-    trap 'trap_rc=$?; if [ -d "$tmp_dir" ] && [ ! -f "${tmp_dir}/COMPLETED" ]; then printf "status=INCOMPLETE\nstage=%s\nrun_id=%s\nexit_code=%s\nutc=%s\n" "$benchmark_failure_stage" "$run_id" "$trap_rc" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"${tmp_dir}/INCOMPLETE.tmp" 2>/dev/null && mv -f "${tmp_dir}/INCOMPLETE.tmp" "${tmp_dir}/INCOMPLETE" 2>/dev/null || true; fi; exit "$trap_rc"' EXIT
-    trap 'benchmark_failure_stage=signal-INT; exit 130' INT
-    trap 'benchmark_failure_stage=signal-TERM; exit 143' TERM
+    trap 'trap_rc=$?; benchmark_reap_active_child; if [ -d "$tmp_dir" ] && [ ! -f "${tmp_dir}/COMPLETED" ]; then printf "status=INCOMPLETE\nstage=%s\nrun_id=%s\nexit_code=%s\nutc=%s\n" "$benchmark_failure_stage" "$run_id" "$trap_rc" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"${tmp_dir}/INCOMPLETE.tmp" 2>/dev/null && mv -f "${tmp_dir}/INCOMPLETE.tmp" "${tmp_dir}/INCOMPLETE" 2>/dev/null || true; fi; exit "$trap_rc"' EXIT
+    trap 'benchmark_handle_signal INT 130' INT
+    trap 'benchmark_handle_signal TERM 143' TERM
   else
     tmp_dir="$(mktemp -d)" || die "$EXIT_UNSUPPORTED" '无法创建 benchmark 临时目录。'
-    trap 'rm -rf -- "$tmp_dir"' EXIT
-    trap 'exit 130' INT
-    trap 'exit 143' TERM
+    trap 'trap_rc=$?; benchmark_reap_active_child; rm -rf -- "$tmp_dir"; exit "$trap_rc"' EXIT
+    trap 'benchmark_handle_signal INT 130' INT
+    trap 'benchmark_handle_signal TERM 143' TERM
   fi
   benchmark_failure_stage='metadata'
   default_route_ifaces >"${tmp_dir}/ifaces"
@@ -2932,7 +3071,7 @@ run_network_benchmark() {
     info "benchmark payload 估算上界：$(jq -r '.payload_upper_bound_bytes' <<<"$traffic_estimate") 字节 ($(jq -r '.payload_upper_bound_gib | tostring' <<<"$traffic_estimate") GiB)，依据 $(jq -r '.cap_mbps' <<<"$traffic_estimate") Mbps / $(jq -r '.total_seconds' <<<"$traffic_estimate") 秒 / cap_source=$(jq -r '.cap_source' <<<"$traffic_estimate")。"
     info '该值是按配置带宽上限估算的 iperf payload，不含 TCP/IP/链路层开销；实际计费流量可能不同。'
   else
-    die "$EXIT_USAGE" '未提供 BENCHMARK_RATE_CAP_MBPS，且管理状态中没有可信 port_speed_mbps；rc.15 拒绝无法量化并保留预算的测试。'
+    die "$EXIT_USAGE" '未提供 BENCHMARK_RATE_CAP_MBPS，且管理状态中没有可信 port_speed_mbps；rc.16 拒绝无法量化并保留预算的测试。'
   fi
   planned_payload="$(jq -r '.payload_upper_bound_bytes' <<<"$traffic_estimate")"
   budget_reservation="benchmark-${run_id}"
@@ -2951,20 +3090,27 @@ run_network_benchmark() {
     "$run_id" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SCRIPT_VERSION" "$PROFILE_ID" "$script_hash" "${boot_id:-unknown}" "$state_phase"
   printf '[benchmark-meta] host=%s port=%s family=%s direction=%s seconds=%s omit_seconds=%s parallel=%s iperf3=%s\n' \
     "$host" "$port" "$family" "$direction" "$seconds" "$omit" "$parallel" "$iperf_version"
+  printf '[benchmark-meta] phase_timeout_seconds=%s terminate_grace_seconds=%s process_group_isolated=true\n' \
+    "$phase_timeout" "$BENCHMARK_TIMEOUT_TERMINATE_GRACE_SECONDS"
   printf '[benchmark-meta] state_network=%s congestion_control=%s default_qdisc=%s\n' \
     "$state_network" "$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || true)" \
     "$(sysctl -n net.core.default_qdisc 2>/dev/null || true)"
   ip -4 route show default 2>/dev/null || true
   ip -6 route show default 2>/dev/null || true
+  detect_policy_routing
+  show_policy_routing_evidence 2>&1 | tee "${tmp_dir}/policy-routing.txt"
   jq -n --arg run_id "$run_id" --arg utc "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --arg script_version "$SCRIPT_VERSION" --arg profile "$PROFILE_ID" --arg script_sha256 "$script_hash" \
     --arg boot_id "${boot_id:-unknown}" --arg state "$state_phase" --argjson state_network "$state_network" \
     --arg host "$host" --argjson port "$port" --arg family "$family" --arg direction "$direction" \
     --argjson seconds "$seconds" --argjson omit_seconds "$omit" --argjson parallel "$parallel" \
-    --arg iperf3 "$iperf_version" --argjson traffic_estimate "$traffic_estimate" \
+    --arg iperf3 "$iperf_version" --argjson phase_timeout_seconds "$phase_timeout" \
+    --argjson terminate_grace_seconds "$BENCHMARK_TIMEOUT_TERMINATE_GRACE_SECONDS" \
+    --arg policy_routing_ipv4 "$POLICY_ROUTING_IPV4_STATE" --arg policy_routing_ipv6 "$POLICY_ROUTING_IPV6_STATE" \
+    --argjson traffic_estimate "$traffic_estimate" \
     --argjson rate_cap_enforced "$rate_cap_enforced" --argjson rate_cap_per_stream_bps "$rate_cap_per_stream_bps" \
     --arg budget_window "$budget_window" --arg budget_reservation "$budget_reservation" --argjson budget_bypass "$budget_bypass" \
-    '{schema_version:1,run_id:$run_id,utc:$utc,script_version:$script_version,profile:$profile,script_sha256:$script_sha256,boot_id:$boot_id,state:$state,state_network:$state_network,benchmark:{host:$host,port:$port,family:$family,direction:$direction,seconds:$seconds,omit_seconds:$omit_seconds,parallel:$parallel,iperf3:$iperf3,traffic_estimate:$traffic_estimate,rate_cap_enforced:$rate_cap_enforced,rate_cap_method:(if $rate_cap_enforced then "iperf3-bitrate" else null end),rate_cap_scope:(if $rate_cap_enforced then "aggregate-target-divided-across-streams" else null end),rate_cap_per_stream_bps:(if $rate_cap_enforced then $rate_cap_per_stream_bps else null end)},traffic_budget:{parent_reserved:($budget_bypass==1),window_id:(if $budget_window=="" then null else $budget_window end),reservation_id:(if $budget_bypass==1 then null else $budget_reservation end),planned_payload_bytes:$traffic_estimate.payload_upper_bound_bytes,protocol_overhead_included:false}}' \
+    '{schema_version:1,run_id:$run_id,utc:$utc,script_version:$script_version,profile:$profile,script_sha256:$script_sha256,boot_id:$boot_id,state:$state,state_network:$state_network,benchmark:{host:$host,port:$port,family:$family,direction:$direction,seconds:$seconds,omit_seconds:$omit_seconds,parallel:$parallel,iperf3:$iperf3,phase_timeout_seconds:$phase_timeout_seconds,terminate_grace_seconds:$terminate_grace_seconds,process_group_isolated:true,traffic_estimate:$traffic_estimate,rate_cap_enforced:$rate_cap_enforced,rate_cap_method:(if $rate_cap_enforced then "iperf3-bitrate" else null end),rate_cap_scope:(if $rate_cap_enforced then "aggregate-target-divided-across-streams" else null end),rate_cap_per_stream_bps:(if $rate_cap_enforced then $rate_cap_per_stream_bps else null end)},policy_routing:{ipv4_custom_rule_state:$policy_routing_ipv4,ipv6_custom_rule_state:$policy_routing_ipv6,evidence_file:"policy-routing.txt",interface_discovery:"conventional-default-routes-only"},traffic_budget:{parent_reserved:($budget_bypass==1),window_id:(if $budget_window=="" then null else $budget_window end),reservation_id:(if $budget_bypass==1 then null else $budget_reservation end),planned_payload_bytes:$traffic_estimate.payload_upper_bound_bytes,protocol_overhead_included:false}}' \
     >"${tmp_dir}/benchmark-meta.json"
   printf '%s\n' 'null' >"${tmp_dir}/upload.summary.json"
   printf '%s\n' 'null' >"${tmp_dir}/download.summary.json"
@@ -3093,6 +3239,7 @@ Environment:
   BENCHMARK_PORT=1..65535         default 5201
   BENCHMARK_SECONDS=5..120        default 10
   BENCHMARK_OMIT_SECONDS=0..10    default 3; warm-up excluded from statistics
+  BENCHMARK_PHASE_TIMEOUT_SECONDS=1..300 default seconds + omit + 15; per direction
   BENCHMARK_PARALLEL=1..4         default 1
   BENCHMARK_IP_FAMILY=auto|4|6    default auto
   BENCHMARK_DIRECTION=upload|download|both   default both
