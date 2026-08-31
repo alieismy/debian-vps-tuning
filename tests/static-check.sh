@@ -40,7 +40,7 @@ fi
 "$python_cmd" tools/render_profiles.py --check
 bash -n "${scripts[@]}" "$controller" "$tcpquality_tool" "$installer" "$probe_tool" "$htb_wrapper" \
   "$traffic_budget_tool" "$migration_tool" tools/profile-template.sh.in \
-  tests/static-check.sh tests/controller-check.sh tests/installer-check.sh tests/rc15-check.sh
+  tests/static-check.sh tests/controller-check.sh tests/installer-check.sh tests/rc16-check.sh
 
 bash tests/controller-check.sh
 
@@ -98,7 +98,7 @@ if [ "$(od -An -tx1 -N3 "$tcpquality_tool" | tr -d ' \n')" = 'efbbbf' ]; then
   printf 'UTF-8 BOM detected: %s\n' "$tcpquality_tool" >&2
   exit 1
 fi
-grep -Fq "TOOL_VERSION='0.1.0-rc.15'" "$tcpquality_tool"
+grep -Fq "TOOL_VERSION='0.1.0-rc.16'" "$tcpquality_tool"
 grep -Fq "SUPPORTED_RELEASE_TAG='v1.00013'" "$tcpquality_tool"
 grep -Fq "SUPPORTED_COMMIT='73606e2460bde21bb2e253842971f8ca8c9eb51c'" "$tcpquality_tool"
 grep -Fq "SUPPORTED_ROOTFS_MANIFEST_SHA256='555a53df40cbdd2778771c089d1bc2c2e1c0a52b5565ad15d2e01d52b90dd0f6'" "$tcpquality_tool"
@@ -140,7 +140,7 @@ expected_keys=17
 for script in "${scripts[@]}"; do
   actual="$(awk '/^PROFILE_SYSCTL_KEYS=\(/,/^\)/ {if ($1 ~ /^(net\.|vm\.)/) count++} END {print count+0}' "$script")"
   [ "$actual" -eq "$expected_keys" ] || { printf 'unexpected managed-key count: %s (%s)\n' "$script" "$actual" >&2; exit 1; }
-  grep -Fq "SCRIPT_VERSION='0.1.0-rc.15'" "$script"
+  grep -Fq "SCRIPT_VERSION='0.1.0-rc.16'" "$script"
   grep -Eq '^STATE_SCHEMA_VERSION=4$' "$script"
   grep -Eq '^LEGACY_STATE_SCHEMA_VERSION=3$' "$script"
   grep -Fq 'PROFILE_CPU_MIN=' "$script"
@@ -201,7 +201,15 @@ for script in "${scripts[@]}"; do
   grep -Fq 'link_counter_snapshot' "$script"
   grep -Fq 'run_network_benchmark' "$script"
   grep -Fq 'BENCHMARK_OMIT_SECONDS' "$script"
+  grep -Fq 'BENCHMARK_PHASE_TIMEOUT_SECONDS' "$script"
   grep -Fq 'BENCHMARK_IP_FAMILY' "$script"
+  grep -Fq 'run_iperf3_with_timeout' "$script"
+  grep -Fq 'setsid timeout --foreground --signal=TERM' "$script"
+  grep -Fq 'benchmark_reap_active_child' "$script"
+  grep -Fq 'policy_rule_state' "$script"
+  grep -Fq '[policy-routing-ipv4-rules]' "$script"
+  grep -Fq 'ip -4 route show table all' "$script"
+  grep -Fq 'policy-routing.txt' "$script"
   # shellcheck disable=SC2016  # Intentionally match literal shell source.
   grep -Fq 'benchmark-${label}-tcp-delta' "$script"
   grep -Fq 'tmp_dir rc=0 current_rc=0' "$script"
@@ -319,8 +327,8 @@ for script in "${scripts[@]}"; do
   }
 done
 
-grep -Fq "CONTROLLER_VERSION='0.1.0-rc.15'" "$controller"
-grep -Fq "RELEASE_TAG='v0.1.0-rc.15'" "$controller"
+grep -Fq "CONTROLLER_VERSION='0.1.0-rc.16'" "$controller"
+grep -Fq "RELEASE_TAG='v0.1.0-rc.16'" "$controller"
 grep -Fq "DEFAULT_PORT_SPEED_MBPS=200" "$controller"
 grep -Fq 'verify_profile_contract' "$controller"
 grep -Fq 'debian12-1c512m-vps-tuning.sh' "$controller"
@@ -348,7 +356,7 @@ if grep -Eq 'raw\.githubusercontent\.com|/master/|/main/|releases/latest|http://
   exit 1
 fi
 
-grep -Fq "RELEASE_TAG='v0.1.0-rc.15'" "$installer"
+grep -Fq "RELEASE_TAG='v0.1.0-rc.16'" "$installer"
 grep -Eq "EXPECTED_MANIFEST_SHA256='[0-9a-f]{64}'" "$installer"
 if grep -Fq "EXPECTED_MANIFEST_SHA256='0000000000000000000000000000000000000000000000000000000000000000'" "$installer"; then
   printf 'installer manifest digest placeholder was not finalized\n' >&2
@@ -361,7 +369,7 @@ manifest_hash="$(sha256sum SHA256SUMS | awk '{print $1}')"
 grep -Fq "EXPECTED_MANIFEST_SHA256='${manifest_hash}'" "$installer"
 installer_hash="$(sha256sum "$installer" | awk '{print $1}')"
 grep -Fq "$installer_hash" README.md
-grep -Fq "$manifest_hash" docs/releases/v0.1.0-rc.15.md
+grep -Fq "$manifest_hash" docs/releases/v0.1.0-rc.16.md
 if grep -Eq 'raw\.githubusercontent\.com|/master/|/main/|releases/latest|http://' "$installer"; then
   printf 'mutable or insecure installer download source detected\n' >&2
   exit 1
@@ -860,6 +868,71 @@ EOF_DIAGNOSTIC_DELTA_TEST
 } >"$diagnostic_delta_test"
 bash "$diagnostic_delta_test"
 
+policy_routing_test="$tmp_dir/policy-routing-test.sh"
+{
+  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  awk '/^policy_rule_state\(\)/,/^}/' "${scripts[0]}"
+  awk '/^detect_policy_routing\(\)/,/^}/' "${scripts[0]}"
+  awk '/^show_policy_routing_evidence\(\)/,/^}/' "${scripts[0]}"
+  cat <<'EOF_POLICY_ROUTING_TEST'
+POLICY_ROUTING_IPV4_STATE='unavailable'
+POLICY_ROUTING_IPV6_STATE='unavailable'
+warn() { printf 'WARN:%s\n' "$*"; }
+ip() {
+  local family="$1" object="$2" action="$3"
+  if [ "$object" = rule ] && [ "$action" = show ]; then
+    [ "$family" != -6 ] || [ "${IPV6_UNAVAILABLE:-0}" != 1 ] || return 2
+    if [ "${NUMERIC_DEFAULTS:-0}" = 1 ]; then
+      printf '%s\n' '0: from all lookup 255 proto kernel'
+    else
+      printf '%s\n' '0: from all lookup local'
+    fi
+    [ "${CUSTOM_LOCAL_MODIFIER:-0}" != 1 ] || printf '%s\n' '0: from all lookup local suppress_prefixlength 0'
+    [ "${CUSTOM_RULES:-0}" != 1 ] || printf '%s\n' '100: from all fwmark 0x3e80 lookup 51820'
+    if [ "${NUMERIC_DEFAULTS:-0}" = 1 ]; then
+      printf '%s\n' '32766: from all lookup 254 proto kernel' '32767: from all lookup 253 proto kernel'
+    else
+      printf '%s\n' '32766: from all lookup main' '32767: from all lookup default'
+    fi
+    return 0
+  fi
+  if [ "$object" = route ] && [ "$action" = show ]; then
+    printf '%s\n' "${family} table-all"
+    return 0
+  fi
+  return 2
+}
+
+detect_policy_routing
+[ "$POLICY_ROUTING_IPV4_STATE" = false ] && [ "$POLICY_ROUTING_IPV6_STATE" = false ]
+if show_policy_routing_evidence | grep -Fq 'routes-all'; then
+  printf 'default policy rules unexpectedly emitted all routing tables\n' >&2
+  exit 1
+fi
+
+NUMERIC_DEFAULTS=1 detect_policy_routing
+[ "$POLICY_ROUTING_IPV4_STATE" = false ] && [ "$POLICY_ROUTING_IPV6_STATE" = false ]
+
+CUSTOM_LOCAL_MODIFIER=1 detect_policy_routing
+[ "$POLICY_ROUTING_IPV4_STATE" = true ] && [ "$POLICY_ROUTING_IPV6_STATE" = true ]
+
+CUSTOM_RULES=1 detect_policy_routing
+[ "$POLICY_ROUTING_IPV4_STATE" = true ] && [ "$POLICY_ROUTING_IPV6_STATE" = true ]
+CUSTOM_RULES=1 show_policy_routing_evidence >policy.out
+grep -Fq '[policy-routing-ipv4-routes-all]' policy.out
+grep -Fq '[policy-routing-ipv6-routes-all]' policy.out
+grep -Fq 'interface_discovery=conventional-default-routes-only' policy.out
+grep -Fq 'WARN:检测到自定义策略路由规则' policy.out
+
+IPV6_UNAVAILABLE=1 detect_policy_routing
+[ "$POLICY_ROUTING_IPV4_STATE" = false ] && [ "$POLICY_ROUTING_IPV6_STATE" = unavailable ]
+EOF_POLICY_ROUTING_TEST
+} >"$policy_routing_test"
+(
+  cd "$tmp_dir"
+  bash "$policy_routing_test"
+)
+
 benchmark_guard_test="$tmp_dir/benchmark-guard-test.sh"
 {
   printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
@@ -873,6 +946,8 @@ EXIT_VERIFY=5
 ensure_required_tools() { :; }
 check_supported_os() { :; }
 iperf3() { :; }
+setsid() { :; }
+timeout() { :; }
 die() { exit "$1"; }
 is_bool() { case "$1" in 0 | 1) return 0 ;; *) return 1 ;; esac; }
 
@@ -893,6 +968,12 @@ set +e
 rc=$?
 set -e
 [ "$rc" -eq "$EXIT_USAGE" ] || { printf 'benchmark accepted omit=11\n' >&2; exit 1; }
+
+set +e
+( BENCHMARK_HOST=example.com BENCHMARK_PHASE_TIMEOUT_SECONDS=0 run_network_benchmark ) >/dev/null 2>&1
+rc=$?
+set -e
+[ "$rc" -eq "$EXIT_USAGE" ] || { printf 'benchmark accepted phase timeout 0\n' >&2; exit 1; }
 
 set +e
 ( BENCHMARK_HOST=example.com BENCHMARK_IP_FAMILY=dual run_network_benchmark ) >/dev/null 2>&1
@@ -992,6 +1073,8 @@ benchmark_phase_test="$tmp_dir/benchmark-phase-test.sh"
   awk '/^link_total_delta\(\)/,/^}/' "${scripts[0]}"
   awk '/^qdisc_counter_snapshot\(\)/,/^}/' "${scripts[0]}"
   awk '/^build_benchmark_phase_summary\(\)/,/^}/' "${scripts[0]}"
+  awk '/^benchmark_reap_active_child\(\)/,/^}/' "${scripts[0]}"
+  awk '/^run_iperf3_with_timeout\(\)/,/^}/' "${scripts[0]}"
   awk '/^run_benchmark_phase\(\)/,/^}/' "${scripts[0]}"
   printf 'INVALID_RECEIVER_FIXTURE=%q\n' "$invalid_receiver_fixture"
   cat <<'EOF_BENCHMARK_PHASE_TEST'
@@ -1005,6 +1088,10 @@ BENCHMARK_PORT_RESOLVED=5201
 BENCHMARK_SECONDS_RESOLVED=10
 BENCHMARK_OMIT_RESOLVED=3
 BENCHMARK_PARALLEL_RESOLVED=1
+BENCHMARK_PHASE_TIMEOUT_RESOLVED=30
+BENCHMARK_TIMEOUT_TERMINATE_GRACE_SECONDS=1
+BENCHMARK_ACTIVE_CHILD_PID=''
+BENCHMARK_ACTIVE_CHILD_PGID=''
 BENCHMARK_FAMILY_ARGS=(--version6)
 softnet_snapshot() { printf '0\t1\t0\t0\n'; }
 tcp_counter_snapshot() { printf 'TcpRetransSegs\t1\n'; }
@@ -1024,6 +1111,18 @@ iperf3() {
   printf '%s\n' '{"end":{"sum_sent":{"seconds":10,"bytes":250000000,"bits_per_second":200000000,"retransmits":2},"sum_received":{"seconds":10,"bytes":248750000,"bits_per_second":199000000}}}'
   return "${IPERF_RC:-0}"
 }
+setsid() {
+  if "$@"; then return 0; else return $?; fi
+}
+timeout() {
+  while [ "$#" -gt 0 ] && [[ "$1" == --* ]]; do shift; done
+  [ "$#" -ge 2 ] || return 2
+  shift
+  if "$@"; then rc=0; else rc=$?; fi
+  [ "${TIMEOUT_RC:-0}" -eq 0 ] || return "$TIMEOUT_RC"
+  return "$rc"
+}
+warn() { :; }
 
 run_benchmark_phase upload 0 "$test_root" "$test_root/ifaces" >/dev/null
 run_benchmark_phase download 1 "$test_root" "$test_root/ifaces" >/dev/null
@@ -1183,6 +1282,18 @@ IPERF_RC=7 run_benchmark_phase upload 0 "$test_root" "$test_root/ifaces" >/dev/n
 rc=$?
 set -e
 [ "$rc" -eq 7 ] || { printf 'benchmark phase did not preserve iperf3 failure\n' >&2; exit 1; }
+
+set +e
+TIMEOUT_RC=124 run_benchmark_phase upload 0 "$test_root" "$test_root/ifaces" >/dev/null
+rc=$?
+set -e
+[ "$rc" -eq 124 ] || { printf 'benchmark phase did not preserve hard-timeout status\n' >&2; exit 1; }
+
+set +e
+TIMEOUT_RC=137 run_benchmark_phase upload 0 "$test_root" "$test_root/ifaces" >/dev/null
+rc=$?
+set -e
+[ "$rc" -eq 137 ] || { printf 'benchmark phase did not preserve KILL-escalation status\n' >&2; exit 1; }
 EOF_BENCHMARK_PHASE_TEST
 } >"$benchmark_phase_test"
 bash "$benchmark_phase_test"
@@ -1201,7 +1312,7 @@ EXIT_USAGE=2
 EXIT_UNSUPPORTED=3
 EXIT_CONFLICT=4
 EXIT_VERIFY=5
-SCRIPT_VERSION='0.1.0-rc.15'
+SCRIPT_VERSION='0.1.0-rc.16'
 PROFILE_ID='debian13-1c1g'
 STATE_FILE="$test_root/no-state.json"
 ensure_required_tools() { :; }
@@ -1214,6 +1325,20 @@ state_file_is_valid() { [ "${STATE_VALID:-0}" = '1' ]; }
 sysctl() { printf 'stub\n'; }
 ip() { :; }
 iperf3() { printf 'iperf 3.test\n'; }
+setsid() { :; }
+timeout() { :; }
+BENCHMARK_TIMEOUT_TERMINATE_GRACE_SECONDS=5
+POLICY_ROUTING_IPV4_STATE='unavailable'
+POLICY_ROUTING_IPV6_STATE='unavailable'
+benchmark_reap_active_child() { :; }
+benchmark_handle_signal() { exit "$2"; }
+detect_policy_routing() {
+  POLICY_ROUTING_IPV4_STATE=false
+  POLICY_ROUTING_IPV6_STATE=false
+}
+show_policy_routing_evidence() {
+  printf '%s\n' '[policy-routing-summary] custom_ipv4=false custom_ipv6=false interface_discovery=conventional-default-routes-only'
+}
 run_benchmark_phase() {
   local label="$1" tmp_dir="$3"
   printf '%s\n' '{"end":{"sum_sent":{"bytes":1,"bits_per_second":1,"retransmits":0},"sum_received":{"bytes":1,"bits_per_second":1}}}' >"${tmp_dir}/${label}.iperf3.json"
@@ -1231,8 +1356,9 @@ BENCHMARK_HOST=example.com BENCHMARK_DIRECTION=upload BENCHMARK_RATE_CAP_MBPS=20
 [ -f "$success_dir/COMPLETED" ] && [ ! -e "$success_dir/INCOMPLETE" ]
 jq -e '.status == "PASS" and .exit_code == 0 and (.evidence_manifest_sha256 | type == "string")' \
   "$success_dir/benchmark-result.json" >/dev/null
-jq -e '.benchmark.traffic_estimate.available == true and .benchmark.traffic_estimate.cap_source == "explicit" and .benchmark.traffic_estimate.payload_upper_bound_bytes == 325000000 and .benchmark.rate_cap_enforced == true and .benchmark.rate_cap_method == "iperf3-bitrate" and .benchmark.rate_cap_scope == "aggregate-target-divided-across-streams" and .benchmark.rate_cap_per_stream_bps == 200000000' \
+jq -e '.benchmark.traffic_estimate.available == true and .benchmark.traffic_estimate.cap_source == "explicit" and .benchmark.traffic_estimate.payload_upper_bound_bytes == 325000000 and .benchmark.rate_cap_enforced == true and .benchmark.rate_cap_method == "iperf3-bitrate" and .benchmark.rate_cap_scope == "aggregate-target-divided-across-streams" and .benchmark.rate_cap_per_stream_bps == 200000000 and .benchmark.phase_timeout_seconds == 28 and .benchmark.terminate_grace_seconds == 5 and .benchmark.process_group_isolated == true and .policy_routing.ipv4_custom_rule_state == "false" and .policy_routing.ipv6_custom_rule_state == "false" and .policy_routing.evidence_file == "policy-routing.txt"' \
   "$success_dir/benchmark-meta.json" >/dev/null
+[ -s "$success_dir/policy-routing.txt" ]
 (cd "$success_dir" && command sha256sum -c SHA256SUMS >/dev/null)
 
 managed_dir="$test_root/managed"
@@ -1390,7 +1516,7 @@ PACKET_SIZE=0
 PARALLEL=16
 ROOTFS_SHA256='c624b5cc611b7177c42608110024764e59dfd0a88150257137ae4e6d7f9f9d18'
 GET_NODES_URL='https://nodes.example.test/getNodes'
-TOOL_VERSION='0.1.0-rc.15'
+TOOL_VERSION='0.1.0-rc.16'
 MODE='local-evidence'
 mkdir "$EVIDENCE_DIR" "$PIN_DIR"
 : >"$PIN_DIR/SHA256SUMS"
@@ -1413,7 +1539,7 @@ cross_version_apply_test="$tmp_dir/cross-version-apply-test.sh"
   awk '/^apply_settings\(\)/,/^}/' "${scripts[0]}"
   cat <<'EOF_CROSS_VERSION_APPLY_TEST'
 EXIT_CONFLICT=4
-SCRIPT_VERSION='0.1.0-rc.15'
+SCRIPT_VERSION='0.1.0-rc.16'
 PORT_SPEED_MBPS=200
 BUFFER_TARGET_RTT_MS=200
 BUF_MAX=16777216
@@ -1444,7 +1570,7 @@ parameter_mismatch_apply_test="$tmp_dir/parameter-mismatch-apply-test.sh"
   awk '/^apply_settings\(\)/,/^}/' "${scripts[0]}"
   cat <<'EOF_PARAMETER_MISMATCH_APPLY_TEST'
 EXIT_CONFLICT=4
-SCRIPT_VERSION='0.1.0-rc.15'
+SCRIPT_VERSION='0.1.0-rc.16'
 PORT_SPEED_MBPS=100
 BUFFER_TARGET_RTT_MS=200
 BUF_MAX=16777216
@@ -2351,7 +2477,7 @@ STATE_DIR='/var/lib/proxy-vps-tuning'
 SYSCTL_SCAN_ROOT='/etc'
 STATE_SCHEMA_VERSION=4
 LEGACY_STATE_SCHEMA_VERSION=3
-SCRIPT_VERSION='0.1.0-rc.15'
+SCRIPT_VERSION='0.1.0-rc.16'
 PROFILE_ID='debian12-1c1g'
 UPDATE_PREFLIGHT=0
 stat() { printf '%s\n' '0'; }
@@ -2370,7 +2496,7 @@ for fixture in empty whitespace null object multiple; do
   fi
 done
 
-printf '%s\n' '{"schema_version":4,"script_version":"0.1.0-rc.15","profile":{"id":"debian12-1c1g"},"state":"PREPARED","network":{},"original_sysctls":{},"qdisc":{"file":"/tmp/qdisc","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"swap":{},"provider_sysctl_transfer":{"required":false,"source_path":"/etc/sysctl.conf","backup_path":"/var/lib/proxy-vps-tuning/provider-sysctl.conf.original","original_sha256":null,"backup_sha256":null,"transferred_sha256":null,"original_uid":null,"original_gid":null,"original_mode":null,"keys":[],"state":"NOT_REQUIRED"},"managed_files":[],"timestamps":{}}' >"$STATE_FILE"
+printf '%s\n' '{"schema_version":4,"script_version":"0.1.0-rc.16","profile":{"id":"debian12-1c1g"},"state":"PREPARED","network":{},"original_sysctls":{},"qdisc":{"file":"/tmp/qdisc","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"swap":{},"provider_sysctl_transfer":{"required":false,"source_path":"/etc/sysctl.conf","backup_path":"/var/lib/proxy-vps-tuning/provider-sysctl.conf.original","original_sha256":null,"backup_sha256":null,"transferred_sha256":null,"original_uid":null,"original_gid":null,"original_mode":null,"keys":[],"state":"NOT_REQUIRED"},"managed_files":[],"timestamps":{}}' >"$STATE_FILE"
 state_file_is_valid
 
 cp -- "$STATE_FILE" "${STATE_FILE}.valid"
@@ -2805,7 +2931,7 @@ if [ "${RUN_LOCAL_SHELLCHECK:-0}" = 1 ]; then
     experiments/htb-aggregate/rate-sweep-plan.sh \
     experiments/htb-aggregate/rate-sweep-run.sh \
     experiments/htb-aggregate/rate-sweep-analyze.sh \
-    tests/static-check.sh tests/controller-check.sh tests/installer-check.sh tests/rc15-check.sh
+    tests/static-check.sh tests/controller-check.sh tests/installer-check.sh tests/rc16-check.sh
   for helper in "$tmp_dir"/*.helper; do shellcheck -x "$helper"; done
 else
   printf '[INFO] deterministic syntax/fixture checks complete; pinned ShellCheck runs in its dedicated CI step\n' >&2
