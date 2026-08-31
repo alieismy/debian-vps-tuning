@@ -132,7 +132,7 @@ case "$process_rc" in
 esac
 [ -s "${test_root}/iperf-pids" ] || { printf 'benchmark timeout fixture did not record child processes\n' >&2; exit 1; }
 read -r iperf_pid sleep_pid <"${test_root}/iperf-pids"
-for attempt in 1 2 3 4 5; do
+for _ in 1 2 3 4 5; do
   if ! kill -0 "$iperf_pid" 2>/dev/null && ! kill -0 "$sleep_pid" 2>/dev/null; then break; fi
   sleep 1
 done
