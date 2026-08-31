@@ -1,10 +1,33 @@
 # 项目阶段备忘
 
 文档性质：资料性状态与延期事项记录
-当前阶段：rc.15 有预算诊断与可恢复迁移实现和发布（已完成，待下一阶段决策）
-更新日期：2026-08-30（Asia/Singapore）
+当前阶段：rc.16 benchmark 可终止性与策略路由证据实现和发布（进行中）
+更新日期：2026-08-31（Asia/Singapore）
 
 本文件是 `AGENTS.md` 指定的唯一项目阶段备忘入口，用于记录每轮对话工作的闭环状态，以及当前阶段不主动展开的后续候选事项。它不构成需求批准、生产变更授权、发布授权或下一阶段启动决定；控制规则以 [项目级 AGENTS.md](../AGENTS.md) 为准，具体验证事实以 [验证矩阵](validation.md) 和对应发布说明为准。
+
+## 本轮记录：2026-08-31（外部网络调优与 tcpfit 对比评审）
+
+### 已完成及证据
+
+- 已只读全量枚举外部 `VPS/脚本` 目录中的 38 份 Markdown 或 Shell 文件（20 份 Markdown、18 份 Shell）：27 份网络调优材料进入详细对照，3 份综合材料只抽取网络章节，8 份部署、安全、路由封锁、重装或滥用事件材料在检查实际内容后排除。两份 tcpfit README 字节完全相同，SHA-256 均为 `3B45C43E27A1ABC6C46DD8635073BC5ED5176D2447B749397F19C8EFB0116C8F`，未将其误计为两个独立实现。
+- 已深读 tcpfit `0.5.6` 主脚本（SHA-256 `7B9C778A0431D06425B76705C2C398D9D40085F1754FBADA0CB3C01AE55CB0E5`）及配套文档。其 `flock` 串行化、固定版本自安装、receiver goodput、疑似 policer 重复采样、重传比例、`mq` 识别和测试中断清理具有工程价值；但实际管理 32 项 sysctl，默认 RTT 仍为固定 150 ms，流量预算只是提示，qdisc 快照与 rollback 不能完整恢复原参数和层级，`initcwnd/initrwnd 32` 会改写路由属性，自动 policer 归因也不能排除公共服务端、路径、CPU/steal、共享带宽和虚拟交换机噪声。因此不支持整体移植、永久 HTB 或扩张当前参数面。
+- 已对照 NetShape `5.3.0`（SHA-256 `F5A295D0A1E7F642214DB1D729856A772B6BED4C72646FA7C39729FB0C33EAA5`）、NetPilot（SHA-256 `0A3BC8708372373D931949E3EA3D9F7D9EE4D71079315B01EC2E4BD2301C868F`）、v5/v6、`Bak` 历史脚本、PanStar、VMISS/Lightlayer、初始化/开荒材料和只读采集脚本。relay/landing 双腿 RTT 模型只对未来多跳拓扑有条件意义；NetPilot 的不完整备份/回退、按总内存百分比定缓冲、通用 UDP/RPS/RFS/MSS Clamp、可变 `main` 下载和仅凭内核版本判断 BBRv3，及历史参数包的固定大缓冲、超大 backlog、覆盖 `/etc/sysctl.conf`、固定 MTU 等做法均不适合当前项目。
+- 当前项目已经覆盖或强于第三方材料中的 receiver goodput、重复采样与中位数、短窗口重传、`mq` 叶子计数、接口字节辅助指标、完整 qdisc JSON 与恢复后语义比较、资源感知 BDP 缓冲、受限实验性 HTB，以及 rc.15 原子流量 reservation/ledger 和未知流量保守结算。新增价值仅保留为两个条件候选：为 benchmark/iperf3 增加显式超时与子进程/进程组回收；在未来支持多默认路由、策略路由、VRF 或多 WAN 时补充 `ip -4/-6 rule show` 和非 main table 诊断。两者均不要求修改网络参数。
+- 已对全部 18 份 Shell 文件执行只读 `bash -n`，18/18 退出码为 0；该证据只证明 Bash 语法可解析，不证明参数安全、回滚完整、目标 VPS 可运行或性能有效。已直接核对 Linux 6.12 `ip-sysctl.rst`、BBR 源码、iproute2 `tc-fq(8)`/`ip-route(8)` 和 Google BBRv3 `v3` 分支说明，确认 `tcp_adv_win_scale` 已废弃、`tcp_tw_reuse=1` 非保守默认、`fq maxrate` 是单流上限、`initcwnd/initrwnd` 是目的路由属性，以及主线内核版本号不能证明 BBRv3。
+
+### 未完成门禁
+
+- 本轮未执行任何第三方脚本，未连接或修改真实 VPS，未执行公网测速、iperf3、TcpQuality、HTB、apply、rollback 或 reboot；静态源码评审不能证明第三方工具或当前 rc.15 在目标 VPS 上的生命周期、重启持久性、严格代理链路或性能改善。
+- 未形成目标机配对 A/B、固定端点多轮交替测试、业务症状或 qdisc backlog/drop 证据，因此不批准从第三方材料引入新 sysctl、固定 MTU、定制 fq 深度、`initcwnd/initrwnd`、永久 HTB、RPS/RFS、UDP 或 MSS Clamp。
+
+### 延期事项变化
+
+- 无新增延期事项。benchmark 子进程显式超时/回收仅在出现可复现挂起、孤儿进程或发布可靠性要求时重新纳入；策略路由诊断仅在项目明确支持多默认路由、策略路由、VRF 或多 WAN 时重新纳入；NetShape 双腿 RTT 模型仅在支持中转/落地多跳拓扑时重新评审。上述条件不构成当前阶段需求或实施授权。
+
+### 当前成熟度判断
+
+rc.15 的发布完整性和阶段成熟度判断不变。本轮评审支持继续保持现有 17 项受管 sysctl、资源感知 BDP 缓冲、根 `fq` 默认路线和 fail-closed 预算/恢复控制，不支持因外部脚本数量更多或宣传为“实测推导”而扩张参数面。目标 VPS 生命周期、重启、严格代理链路和真实业务性能仍未验证，本轮只读对比不提升这些证据层级。
 
 ## 本轮记录：2026-08-30（rc.15 实现、CI 与 Pre-release 闭环）
 
