@@ -1,10 +1,35 @@
 # 项目阶段备忘
 
 文档性质：资料性状态与延期事项记录
-当前阶段：rc.16 benchmark 可终止性与策略路由证据实现和发布（进行中）
+当前阶段：rc.16 benchmark 可终止性与策略路由证据实现和发布（已完成；下一阶段未启动）
 更新日期：2026-08-31（Asia/Singapore）
 
 本文件是 `AGENTS.md` 指定的唯一项目阶段备忘入口，用于记录每轮对话工作的闭环状态，以及当前阶段不主动展开的后续候选事项。它不构成需求批准、生产变更授权、发布授权或下一阶段启动决定；控制规则以 [项目级 AGENTS.md](../AGENTS.md) 为准，具体验证事实以 [验证矩阵](validation.md) 和对应发布说明为准。
+
+## 本轮记录：2026-08-31（rc.16 实现、CI 与 Pre-release 闭环）
+
+### 已完成及证据
+
+- rc.16 已在不改变 17 项受管 sysctl、BBR + 根 `fq`、资源感知缓冲、流量预算和非持久 HTB 边界的前提下完成两项实现：benchmark 每个 iperf3 方向使用独立进程组、硬超时及 TERM→KILL 回收；`diagnose` 和 benchmark 增加 IPv4/IPv6 policy rule 与按需非 `main` 路由表只读证据。迁移器同时收紧为只接受 rc.1–rc.15→rc.16，不接受由更高版本降级。
+- 本地最终门禁通过：六份 profile 与单一模板一致；23 份 Shell 的 `bash -n`；controller、完整静态和 HTB fixture；17/17 `SHA256SUMS`；worktree/staged whitespace；当前版本、固定 URL、旧当前引用和 `_TBD` 防回退扫描；新增内容的私钥、常见 token/key、本机绝对路径、UUID 和 IPv4 地址扫描均无命中。Windows 本地没有绕过 root-only fixture。
+- PR [#14](https://github.com/alieismy/debian-vps-tuning/pull/14) 已合并，merge commit 为 `5fa68877961efb7f04cb036edda5fdc43fa4820d`。中间 CI 先后暴露 GNU `timeout --kill-after` 返回 `137` 的真实语义和 fixture 未使用变量的 ShellCheck `SC2034`；实现保留 `124/137` 边界并做最小 fixture 修复。最终 push Run [33388026734](https://github.com/alieismy/debian-vps-tuning/actions/runs/33388026734) 与 pull_request Run [33388030020](https://github.com/alieismy/debian-vps-tuning/actions/runs/33388030020) 均通过，覆盖生成/静态检查、Linux root installer 与 rc.16 预算/迁移/进程组 fixture、ShellCheck 0.11.0。
+- CodeRabbit 仅声明审查到 `44927ecd686a062e2132471c25dad0c76c9e9ffb`，未覆盖最后一个仅替换未使用 loop counter 的提交；PR 没有 review、行内意见或 review thread。本轮如实保留该覆盖限制，没有将 pending 状态描述为批准或替代 CI/人工审计。
+- annotated tag `v0.1.0-rc.16` 的 tag object 为 `4a29bbf65959eafc5b9fb132c18ac4bd215e9c74`，远端 peeled target 与 merge commit 均为 `5fa68877961efb7f04cb036edda5fdc43fa4820d`。已发布非 Draft 的 [GitHub Pre-release](https://github.com/alieismy/debian-vps-tuning/releases/tag/v0.1.0-rc.16)，19 个资产均为 `uploaded`。
+- 公开匿名反向下载通过：`PUBLIC_REDOWNLOAD=PASS`、`API_DIGEST_MATCHES=19`、`MANIFEST_ENTRIES=17`、`RELEASE_ASSETS=19`；19 项下载字节逐项匹配 GitHub API SHA-256，重建 HTB 子目录后 17/17 manifest 资产全部通过。`SHA256SUMS` SHA-256 为 `e2766b5e5851ae7ef064f21c2fd630663a8f3bcbb737c830f1272826b0b27cb2`，`install.sh` 为 `83d4f739918309b7585c0a0b6be7ac09252512dd7516d0dc6044b058cd17a15d`，总控为 `9ba31b2c5caa8c11e8e99fb339d8e5a82752d0c998f6284c2eed4d22f5c6631c`；唯一临时目录已安全清理。
+
+### 未完成门禁
+
+- 本轮未连接或修改任何真实 VPS，未执行公网 iperf3、TcpQuality、HTB、rollback、reboot、apply 或生产变更。发布闭环不证明目标机真实 timeout/signal 行为、进程回收、复杂策略路由拓扑、迁移两次重启、控制台恢复、严格 3X-UI/Xray 验证、代理业务链路或性能改善。
+- 自定义 policy rule 目前只触发只读证据和警告；rc.16 仍不支持以非 `main` table、fwmark、VRF、多 WAN 或多默认路由拓扑执行 apply。真实目标机使用前仍须按其拓扑独立评审。
+
+### 延期事项变化
+
+- 无新增延期事项。永久 HTB、通用 UDP、MTU、RPS/RFS、MSS Clamp、`initcwnd/initrwnd`、第三方内核、网络安全专项、全面生产加固和新的高流量性能 campaign 继续保持既有延期或未授权状态。
+- 下一阶段须由用户另行决定；本轮不自动把项目切换到稳定版、目标 VPS 迁移验收或新的调优实现阶段，也不移动或修改已发布的 rc.16 tag 与 Release 资产。
+
+### 当前成熟度判断
+
+rc.16 的实现、生成资产、固定摘要、本地 fixture、Linux root CI、PR、annotated tag、Pre-release 和公开资产反向验证已经闭合，满足本阶段完成定义。该结论只达到仓库与公开发布完整性层级；目标 VPS 生命周期、重启持久性、真实业务链路和性能仍明确未验证。
 
 ## 本轮记录：2026-08-31（外部网络调优与 tcpfit 对比评审）
 
