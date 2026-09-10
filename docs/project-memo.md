@@ -1,10 +1,31 @@
 # 项目阶段备忘
 
 文档性质：资料性状态与延期事项记录
-当前阶段：rc.17 HTB/FQ 证据完整性实现候选（本地实现与 fixture 已完成；发布及目标机验证未授权）
+当前阶段：rc.17 HTB/FQ 证据完整性 PR/CI 验证（候选实现已提交；tag、Release 与目标机验证未授权）
 更新日期：2026-09-10（Asia/Singapore）
 
 本文件是 `AGENTS.md` 指定的唯一项目阶段备忘入口，用于记录每轮对话工作的闭环状态，以及当前阶段不主动展开的后续候选事项。它不构成需求批准、生产变更授权、发布授权或下一阶段启动决定；控制规则以 [项目级 AGENTS.md](../AGENTS.md) 为准，具体验证事实以 [验证矩阵](validation.md) 和对应发布说明为准。
+
+## 本轮记录：2026-09-10（rc.17 候选提交、PR 与 Linux CI）
+
+### 已完成及证据
+
+- 用户明确授权提交当前 rc.17 候选、创建并推送 `codex/rc17-htb-evidence` 分支、创建 PR、等待并修复本次改动引入的 CI 问题，并要求 CI 全部通过后停止，不创建 tag 或 Release。实施提交为 `b16a96845595d9dd881215cf85e63815f654d817`，提交主题 `fix(htb): preserve root and leaf qdisc evidence`；提交后工作树干净，`git diff HEAD^ --check` 通过。
+- 分支已推送到 `origin/codex/rc17-htb-evidence`，GitHub PR 为 `#16`（`https://github.com/alieismy/debian-vps-tuning/pull/16`），base 为 `master`，head 精确绑定上述提交。PR 描述记录了原缺陷、schema 3 root/leaf 证据、脱敏 socket 指标、默认参数不变和未包含目标 VPS/发布操作的边界。
+- 同一提交的 push 工作流 `34453343912` 和 PR 工作流 `34453404532` 均为 `success`。PR `validate` job `102794092373` 完成 checkout、生成 profile 与 shell 结构、Linux root verified installer lifecycle 和固定 ShellCheck 0.11.0；没有需要修复的本次引入失败。唯一 annotation 是 `actions/checkout@v4` 的 Node.js 20 弃用提示，GitHub runner 强制使用 Node.js 24，job 仍成功；该提示不属于 HTB 实现缺陷。
+
+### 未完成门禁
+
+- 本记录作为 docs-only 状态提交推送后，PR head 必须重新通过同一 GitHub Actions 门禁，才能在最终回复中称为当前 head CI 全部通过。该提交不修改 profile、installer、HTB 工具或候选摘要。
+- 合并 PR、创建 `v0.1.0-rc.17` tag、Pre-release、上传及公开反向校验仍未授权；目标 VPS、iperf3、HTB A/B/A 和真实代理业务也未授权、未执行。
+
+### 延期事项变化
+
+- 无新增调优或实现延期事项。`actions/checkout@v4` Node.js 20 annotation 仅登记为上游 action 维护提示；当前 workflow 成功，不在本轮扩展为 CI 依赖升级。
+
+### 当前成熟度判断
+
+rc.17 实现提交已达到 `IMPLEMENTATION_COMMIT_AND_INITIAL_PR_CI_PASS`。在资料性状态提交的最终 head CI 通过后，本轮授权范围即闭合并停在开放 PR，不自动合并或发布；性能改善和生产采用仍没有目标 VPS 证据。
 
 ## 本轮记录：2026-09-10（rc.17 实现后的下一步门禁建议）
 
