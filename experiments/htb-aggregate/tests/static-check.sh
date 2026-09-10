@@ -137,7 +137,7 @@ systemctl() {
   [ "$1" = 'is-active' ]
 }
 write_managed_fixture() {
-  local profile="$1" schema="${2:-4}" version="${3:-0.1.0-rc.16}" port="${4:-200}"
+  local profile="$1" schema="${2:-4}" version="${3:-0.1.0-rc.17}" port="${4:-200}"
   jq -n \
     --arg profile "$profile" \
     --arg version "$version" \
@@ -168,7 +168,7 @@ if (verify_managed_host_baseline) >/dev/null 2>&1; then
   printf 'managed baseline accepted rc.11\n' >&2
   exit 1
 fi
-write_managed_fixture debian13-1c2g 4 0.1.0-rc.16 500
+write_managed_fixture debian13-1c2g 4 0.1.0-rc.17 500
 if (verify_managed_host_baseline) >/dev/null 2>&1; then
   printf 'managed baseline accepted 500 Mbps\n' >&2
   exit 1
@@ -460,13 +460,20 @@ socket_metrics_fixture="$(
   PATH="$inherited_path"
   printf '%s\n' \
     'ESTAB 0 0 198.51.100.10:50123 192.0.2.10:5201 users:(("iperf3",pid=123,fd=4))' \
-    ' cubic wscale:7,7 rto:204 rtt:2.5/0.4 mss:1448 pmtu:1500 cwnd:32 bytes_sent:1073741824 bytes_retrans:5792 segs_out:741000 retrans:0/4 reordering:3' |
+    ' cubic wscale:7,7 rto:204 rtt:2.5/0.4 mss:1448 pmtu:1500 cwnd:32 bytes_sent:1073741824 bytes_retrans:5792 segs_out:741000 retrans:0/4 reordering:3 pacing_rate 201Mbps delivery_rate 188.5Mbps minrtt:1.9 dsack_dups:2 rcv_ooopack:3 snd_wnd:4194304 rcv_wnd:2097152' |
     extract_socket_metrics
   )
 )"
 grep -Fq 'rto:204' <<<"$socket_metrics_fixture"
 grep -Fq 'rtt:2.5/0.4' <<<"$socket_metrics_fixture"
 grep -Fq 'bytes_retrans:5792' <<<"$socket_metrics_fixture"
+grep -Fq 'pacing_rate:201Mbps' <<<"$socket_metrics_fixture"
+grep -Fq 'delivery_rate:188.5Mbps' <<<"$socket_metrics_fixture"
+grep -Fq 'minrtt:1.9' <<<"$socket_metrics_fixture"
+grep -Fq 'dsack_dups:2' <<<"$socket_metrics_fixture"
+grep -Fq 'rcv_ooopack:3' <<<"$socket_metrics_fixture"
+grep -Fq 'snd_wnd:4194304' <<<"$socket_metrics_fixture"
+grep -Fq 'rcv_wnd:2097152' <<<"$socket_metrics_fixture"
 grep -Fq 'metric_rows=1' <<<"$socket_metrics_fixture"
 if grep -Eq '198\.51\.100\.|192\.0\.2\.|5201|iperf3|pid=|fd=' <<<"$socket_metrics_fixture"; then
   printf 'socket metric whitelist leaked endpoint or process details\n' >&2
@@ -504,13 +511,13 @@ case "${1:-}" in
   *) exit 2 ;;
 esac
 mkdir -p -- "$BENCHMARK_OUTPUT_DIR"
-printf '%s\n' '{"schema_version":2,"direction":"upload","reverse":false,"measurement_window":{"status":"VALID","valid":true,"issues":[]}}' \
+printf '%s\n' '{"schema_version":3,"direction":"upload","reverse":false,"measurement_window":{"status":"VALID","valid":true,"issues":[]}}' \
   >"${BENCHMARK_OUTPUT_DIR}/upload.summary.json"
 printf '%s\n' '{"schema_version":1,"status":"PASS","exit_code":0,"phases":{"upload":{},"download":null}}' \
   >"${BENCHMARK_OUTPUT_DIR}/benchmark-result.json"
 script_sha="$(sha256sum "${BASH_SOURCE[0]}" | awk '{print $1}')"
 jq -n --arg script_sha "$script_sha" \
-  '{schema_version:1,script_version:"0.1.0-rc.16",profile:"debian13-1c1g",
+  '{schema_version:1,script_version:"0.1.0-rc.17",profile:"debian13-1c1g",
     script_sha256:$script_sha,state:"VERIFIED",state_network:{port_speed_mbps:200}}' \
   >"${BENCHMARK_OUTPUT_DIR}/benchmark-meta.json"
 printf 'user\t100\nnice\t0\nsystem\t50\nidle\t100\niowait\t0\nirq\t0\nsoftirq\t10\nsteal\t0\n' \
@@ -530,7 +537,7 @@ printf 'status=COMPLETED\nevidence_manifest_sha256=%s\nresult_sha256=%s\n' \
   "$manifest_sha" "$result_sha" >"${BENCHMARK_OUTPUT_DIR}/COMPLETED"
 EOF_MOCK_TUNING
 chmod 0700 "$mock_htb" "$mock_tuning"
-jq -n '{schema_version:4,script_version:"0.1.0-rc.16",state:"VERIFIED",
+jq -n '{schema_version:4,script_version:"0.1.0-rc.17",state:"VERIFIED",
   profile:{id:"debian13-1c1g"},network:{port_speed_mbps:200}}' >"$mock_managed_state"
 if ! (
   inherited_path="$PATH"
@@ -542,7 +549,7 @@ if ! (
   RUNTIME_STATE_FILE="${mock_runtime}/active.json"
   MANAGED_STATE_FILE="$mock_managed_state"
   managed_profile_id='debian13-1c1g'
-  managed_script_version='0.1.0-rc.16'
+  managed_script_version='0.1.0-rc.17'
   managed_state_sha256_frozen="$(sha256sum "$mock_managed_state" | awk '{print $1}')"
   output_dir="$mock_output"
   plan_file="$runner_plan"
@@ -560,7 +567,7 @@ if ! (
   ss() {
     printf '%s\n' \
       'ESTAB 0 0 198.51.100.10:50123 192.0.2.10:5201 users:(("iperf3",pid=123,fd=4))' \
-      ' cubic rto:204 rtt:2.5/0.4 mss:1448 cwnd:32 bytes_retrans:5792 retrans:0/4 reordering:3'
+      ' cubic rto:204 rtt:2.5/0.4 mss:1448 cwnd:32 bytes_retrans:5792 retrans:0/4 reordering:3 pacing_rate 201Mbps delivery_rate 188.5Mbps minrtt:1.9 dsack_dups:2 rcv_ooopack:3 snd_wnd:4194304 rcv_wnd:2097152'
   }
   verify_tuning_profile_baseline "${mock_output}/tuning-profile-verify.log"
   shaped_stage="$(jq -c 'first(.stages[])' "$runner_plan")"
@@ -582,6 +589,9 @@ jq -e '.status == "PASS" and .qdisc_restored_to_root_fq == true and
   .managed_binding.profile_id == "debian13-1c1g" and
   .managed_binding.state == "VERIFIED"' "${runner_stage_dir}/stage-result.json" >/dev/null
 grep -Fq 'rtt:2.5/0.4' "${runner_stage_dir}/socket-metrics.txt"
+grep -Fq 'pacing_rate:201Mbps' "${runner_stage_dir}/socket-metrics.txt"
+grep -Fq 'delivery_rate:188.5Mbps' "${runner_stage_dir}/socket-metrics.txt"
+grep -Fq 'minrtt:1.9' "${runner_stage_dir}/socket-metrics.txt"
 if grep -Eq '198\.51\.100\.|192\.0\.2\.|5201|iperf3|pid=|fd=' \
   "${runner_stage_dir}/socket-metrics.txt"; then
   printf 'runner socket metric evidence leaked endpoint or process details\n' >&2
@@ -596,7 +606,7 @@ if (
   PATH="$inherited_path"
   MANAGED_STATE_FILE="$mock_managed_state"
   managed_profile_id='debian13-1c1g'
-  managed_script_version='0.1.0-rc.16'
+  managed_script_version='0.1.0-rc.17'
   managed_state_sha256_frozen="$(sha256sum "$mock_managed_state" | awk '{print $1}')"
   tuning_script="$mock_tuning"
   export MOCK_VERIFY_RC=4
@@ -618,7 +628,7 @@ fixture_tuning_sha='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 fixture_state_sha='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 jq -n --arg tuning_sha "$fixture_tuning_sha" --arg state_sha "$fixture_state_sha" '
   {schema_version:2,runner_version:"0.3.0",tuning_script:{sha256:$tuning_sha},
-   managed_binding:{profile_id:"debian13-1c1g",script_version:"0.1.0-rc.16",
+   managed_binding:{profile_id:"debian13-1c1g",script_version:"0.1.0-rc.17",
      state:"VERIFIED",port_speed_mbps:200,state_sha256:$state_sha},
    persistent_shaping_authorized:false}' >"${sweep_fixture}/session-meta.json"
 while IFS= read -r sweep_stage; do
@@ -639,7 +649,7 @@ while IFS= read -r sweep_stage; do
   jq -n --argjson sender "$sender" --argjson receiver "$receiver" \
     --argjson retrans "$retrans" --argjson retrans_per_gib "$retrans_per_gib" \
     --argjson overlimits "$overlimits" '
-      {schema_version:2,direction:"upload",reverse:false,
+      {schema_version:3,direction:"upload",reverse:false,
        measurement_window:{status:"VALID",valid:true,expected_seconds:10,issues:[]},
        sender:{bytes:1073741824,seconds:10,bits_per_second:($sender*1000000),mbps:$sender,
           retransmits:$retrans,retransmits_per_gib:$retrans_per_gib},
@@ -647,13 +657,20 @@ while IFS= read -r sweep_stage; do
        host:{tx_bytes_delta:1073741824,tcp_delta:{TcpRetransSegs:$retrans},
          link_delta:{"eth0.tx_dropped":0,"eth0.rx_dropped":0,
            "eth0.tx_errors":0,"eth0.rx_errors":0}},
+       qdisc_coverage:{aggregation_source:"root",topology:"htb-fq",has_root:true,
+         has_leaf:true,root_is_mq:false,root_is_htb:true,
+         htb_root_interfaces:["eth0"],fq_leaf_interfaces:["eth0"],
+         htb_fq_leaf_complete:true},
+       qdisc_root_totals:{dropped_delta:0,overlimits_delta:$overlimits,requeues_delta:0},
+       qdisc_leaf_totals:{dropped_delta:0,overlimits_delta:0,requeues_delta:0},
        qdisc_active_totals:{dropped_delta:0,overlimits_delta:$overlimits,requeues_delta:0},
-       qdisc_coverage:{aggregation_source:"root"}}
+       qdisc_health:{status:"NO_LOCAL_QUEUE_DROP_OR_REQUEUE",any_drop_or_requeue:false,
+         root:{dropped_delta:0,requeues_delta:0},leaf:{dropped_delta:0,requeues_delta:0}}}
     ' >"${benchmark_dir}/upload.summary.json"
   printf '%s\n' '{"schema_version":1,"status":"PASS","exit_code":0,"phases":{"upload":{},"download":null}}' \
     >"${benchmark_dir}/benchmark-result.json"
   jq -n --arg tuning_sha "$fixture_tuning_sha" '
-    {schema_version:1,script_version:"0.1.0-rc.16",profile:"debian13-1c1g",
+    {schema_version:1,script_version:"0.1.0-rc.17",profile:"debian13-1c1g",
      script_sha256:$tuning_sha,state:"VERIFIED",state_network:{port_speed_mbps:200}}' \
     >"${benchmark_dir}/benchmark-meta.json"
   printf 'user\t100\nnice\t0\nsystem\t50\nidle\t100\niowait\t0\nirq\t0\nsoftirq\t10\nsteal\t0\n' \
@@ -675,7 +692,7 @@ while IFS= read -r sweep_stage; do
     --arg tuning_sha "$fixture_tuning_sha" --arg state_sha "$fixture_state_sha" '
     {schema_version:3,status:"PASS",plan_stage:$plan_stage,
       benchmark_result_sha256:$sha,qdisc_rate_mbit:$plan_stage.rate_mbit,
-      managed_binding:{profile_id:"debian13-1c1g",script_version:"0.1.0-rc.16",
+      managed_binding:{profile_id:"debian13-1c1g",script_version:"0.1.0-rc.17",
         state:"VERIFIED",port_speed_mbps:200,state_sha256:$state_sha,
         tuning_script_sha256:$tuning_sha},benchmark_binding_valid:true,
       traffic_cap_enforced_by_htb:true,qdisc_restored_to_root_fq:true,
@@ -722,7 +739,9 @@ jq -e '
   .schema_version == 3 and .status == "REVIEW_REQUIRED" and
   .plan_mode == "candidate-sweep" and
   .measurement_gate.valid == true and
+  .evidence_contract_gate.valid == true and
   .shaping_exposure_gate.valid == true and
+  .qdisc_health_gate.valid == true and
   .resource_gate.valid == true and
   .persistence_authorized == false and
   .source_reference_gate.external_reference_required == true and
@@ -743,8 +762,9 @@ jq -e '
   (.rates[] | select(.rate_mbit == 190) |
      .review_flags.retransmission_below_reference_dispersion == true and
      .review_flags.sender_goodput_within_observed_best_dispersion == true and
+     .review_flags.all_evidence_contracts_valid == true and
      .review_flags.all_receiver_measurement_windows_valid == true and
-     .review_flags.all_local_qdisc_drop_samples_zero == true and
+     .review_flags.all_local_qdisc_health_samples_valid == true and
      .review_flags.all_htb_overlimit_samples_positive == true and
      .review_flags.all_sender_rate_exposure_samples_valid == true and
      .review_flags.all_resource_samples_valid == true)
@@ -774,7 +794,7 @@ refresh_benchmark_completion "$invalid_benchmark_dir"
 exposure_summary="$(candidate_summary_for_rate 190)"
 exposure_benchmark_dir="$(dirname "$exposure_summary")"
 cp "$exposure_summary" "${exposure_summary}.valid"
-jq '.qdisc_active_totals.overlimits_delta = 0' \
+jq '.qdisc_root_totals.overlimits_delta = 0 | .qdisc_active_totals.overlimits_delta = 0' \
   "${exposure_summary}.valid" >"$exposure_summary"
 refresh_benchmark_completion "$exposure_benchmark_dir"
 blocked_analysis="$(run_rate_sweep_analyzer_fixture "$sweep_fixture")"
@@ -787,7 +807,7 @@ jq -e '
   .review_shortlist.rate_mbit == null and
   .review_shortlist.eligible_rates_mbit == [] and
   (.shaping_exposure_gate.invalid_samples[0] |
-    .rate_mbit == 190 and .qdisc_overlimits_delta == 0)
+    .rate_mbit == 190 and .qdisc_root_overlimits_delta == 0)
 ' <<<"$blocked_analysis" >/dev/null
 mv "${exposure_summary}.valid" "$exposure_summary"
 refresh_benchmark_completion "$exposure_benchmark_dir"
@@ -805,8 +825,67 @@ jq -e '
   .review_shortlist.rate_mbit == null and
   .review_shortlist.eligible_rates_mbit == [] and
   (.shaping_exposure_gate.invalid_samples[0] |
-    .rate_mbit == 190 and .qdisc_overlimits_delta > 0 and
+    .rate_mbit == 190 and .qdisc_root_overlimits_delta > 0 and
     .sender_rate_exposure_ratio < 0.9)
+' <<<"$blocked_analysis" >/dev/null
+mv "${exposure_summary}.valid" "$exposure_summary"
+refresh_benchmark_completion "$exposure_benchmark_dir"
+
+cp "$exposure_summary" "${exposure_summary}.valid"
+jq '.qdisc_leaf_totals.dropped_delta = 1 |
+    .qdisc_health.leaf.dropped_delta = 1 |
+    .qdisc_health.any_drop_or_requeue = true |
+    .qdisc_health.status = "LOCAL_QUEUE_ANOMALY"' \
+  "${exposure_summary}.valid" >"$exposure_summary"
+refresh_benchmark_completion "$exposure_benchmark_dir"
+blocked_analysis="$(run_rate_sweep_analyzer_fixture "$sweep_fixture")"
+jq -e '
+  .status == "REVIEW_BLOCKED" and
+  .evidence_contract_gate.valid == true and
+  .qdisc_health_gate.valid == false and
+  .qdisc_health_gate.invalid_sample_count == 1 and
+  .review_shortlist.eligible_rates_mbit == [] and
+  (.qdisc_health_gate.invalid_samples[0] |
+    .rate_mbit == 190 and .qdisc_leaf_dropped_delta == 1 and
+    .qdisc_health_status == "LOCAL_QUEUE_ANOMALY")
+' <<<"$blocked_analysis" >/dev/null
+mv "${exposure_summary}.valid" "$exposure_summary"
+refresh_benchmark_completion "$exposure_benchmark_dir"
+
+cp "$exposure_summary" "${exposure_summary}.valid"
+jq '.qdisc_root_totals.requeues_delta = 1 |
+    .qdisc_health.root.requeues_delta = 1 |
+    .qdisc_health.any_drop_or_requeue = true |
+    .qdisc_health.status = "LOCAL_QUEUE_ANOMALY"' \
+  "${exposure_summary}.valid" >"$exposure_summary"
+refresh_benchmark_completion "$exposure_benchmark_dir"
+blocked_analysis="$(run_rate_sweep_analyzer_fixture "$sweep_fixture")"
+jq -e '
+  .status == "REVIEW_BLOCKED" and
+  .evidence_contract_gate.valid == true and
+  .qdisc_health_gate.valid == false and
+  .qdisc_health_gate.invalid_sample_count == 1 and
+  .review_shortlist.eligible_rates_mbit == [] and
+  (.qdisc_health_gate.invalid_samples[0] |
+    .rate_mbit == 190 and .qdisc_root_requeues_delta == 1 and
+    .qdisc_health_status == "LOCAL_QUEUE_ANOMALY")
+' <<<"$blocked_analysis" >/dev/null
+mv "${exposure_summary}.valid" "$exposure_summary"
+refresh_benchmark_completion "$exposure_benchmark_dir"
+
+cp "$exposure_summary" "${exposure_summary}.valid"
+jq '.schema_version = 2 |
+    del(.qdisc_health, .qdisc_root_totals, .qdisc_leaf_totals)' \
+  "${exposure_summary}.valid" >"$exposure_summary"
+refresh_benchmark_completion "$exposure_benchmark_dir"
+blocked_analysis="$(run_rate_sweep_analyzer_fixture "$sweep_fixture")"
+jq -e '
+  .status == "REVIEW_BLOCKED" and
+  .evidence_contract_gate.valid == false and
+  .evidence_contract_gate.required_upload_summary_schema == 3 and
+  .evidence_contract_gate.invalid_sample_count == 1 and
+  .review_shortlist.rate_mbit == null and
+  .review_shortlist.eligible_rates_mbit == []
 ' <<<"$blocked_analysis" >/dev/null
 mv "${exposure_summary}.valid" "$exposure_summary"
 refresh_benchmark_completion "$exposure_benchmark_dir"

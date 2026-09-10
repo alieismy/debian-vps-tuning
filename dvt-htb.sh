@@ -58,7 +58,7 @@ Scan options:
   --minimum-cpu-idle-percent 0..100 --maximum-cpu-steal-percent 0..100
   --ledger /absolute/path --window-id ID --budget-mib MIB
 
-Boundary: this wrapper supports only the existing Debian 13 rc.16, eth0,
+Boundary: this wrapper supports only the existing Debian 13 rc.17, eth0,
 200 Mbps, 1C1G/1C2G experiment contract. It never creates persistent HTB and
 never converts a shortlist into a production recommendation. reference/sweep
 temporarily replace root fq, produce deliberate traffic, and restore fq after

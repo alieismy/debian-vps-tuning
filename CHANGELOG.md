@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.1.0-rc.17] - Unreleased
+
+### Fixed
+
+- 识别 HTB `parent MAJOR:MINOR` 下的 FQ 叶 qdisc，并在缺少预期叶子计数时拒绝生成可用摘要。
+- benchmark phase summary 升级为 schema 3，分别记录 root/leaf drop、requeue 与 HTB root `overlimits`，避免叶子异常被 root 零值掩盖。
+- HTB 候选分析器对旧摘要、缺失字段以及任一受管 root/leaf drop 或 requeue 输出 `REVIEW_BLOCKED`，不再生成 shortlist。
+
+### Added
+
+- 脱敏 `ss -tin` 辅助采样新增 `pacing_rate`、`delivery_rate`、`minrtt`、`dsack_dups`、`rcv_ooopack`、`snd_wnd` 和 `rcv_wnd` 白名单字段。
+
+### Unchanged
+
+- 默认 profile 仍为 17 项受管 sysctl、资源感知 BDP 缓冲和 `BBR + fq`；HTB 仍为非持久研究入口，rate、burst/cburst 和生产授权边界不变。
+
 ## [0.1.0-rc.16] - 2026-08-31
 
 ### Added

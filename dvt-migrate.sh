@@ -6,7 +6,7 @@ IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 
-TOOL_VERSION='0.1.0-rc.16'
+TOOL_VERSION='0.1.0-rc.17'
 STATE_FILE="${DVT_STATE_FILE:-/var/lib/proxy-vps-tuning/state.json}"
 
 action=''
@@ -101,8 +101,8 @@ prepare() {
   [ ! -e "$checkpoint" ] && [ ! -L "$checkpoint" ] || die 'checkpoint 已存在，拒绝覆盖。'
   validate_file source-profile "$source_profile"; validate_file target-profile "$target_profile"
   [[ "$source_version" =~ ^0\.1\.0-rc\.[0-9]+$ ]] && [[ "$target_version" =~ ^0\.1\.0-rc\.[0-9]+$ ]] || die 'source/target version 格式无效。'
-  if [ "$target_version" != '0.1.0-rc.16' ] || ! [[ "$source_version" =~ ^0\.1\.0-rc\.([1-9]|1[0-5])$ ]]; then
-    die '本版迁移器只接受 rc.1–rc.15 来源并迁移到 0.1.0-rc.16。'
+  if [ "$target_version" != '0.1.0-rc.17' ] || ! [[ "$source_version" =~ ^0\.1\.0-rc\.([1-9]|1[0-6])$ ]]; then
+    die '本版迁移器只接受 rc.1–rc.16 来源并迁移到 0.1.0-rc.17。'
   fi
   [[ "$profile_id" =~ ^debian1[23]-[A-Za-z0-9-]+$ ]] || die 'profile-id 格式无效。'
   [[ "$port_mbps" =~ ^[0-9]+$ ]] && [ "$((10#$port_mbps))" -ge 100 ] && [ "$((10#$port_mbps))" -le 1000 ] || die 'port 必须是 100..1000。'

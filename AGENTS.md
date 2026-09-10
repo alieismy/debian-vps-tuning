@@ -6,24 +6,24 @@
 
 本文件是项目控制面，只维护当前阶段、效力、路由、边界和完成规则。详细文档方法由对应 RD Skill 单一维护，代码实现和发布遵循仓库既有入口与全局实现纪律。
 
-## 当前项目阶段：rc.16 benchmark 可终止性与策略路由证据实现和发布
+## 当前项目阶段：rc.17 HTB/FQ 证据完整性实现候选
 
-用户已于 2026-08-31 明确批准按外部网络调优对比评审的推荐方案实施，并要求提交 GitHub 和发布 Release。本阶段统一发布为 `v0.1.0-rc.16`，所有任务的时间、范围和完成判据必须优先服务于以下目标：
+用户已于 2026-09-10 明确授权按 tcpfit 整形专项再评估结论进入实现阶段。本阶段形成未发布的 `v0.1.0-rc.17` 工作树候选；提交、推送、tag、Release 和真实 VPS 操作仍未授权。所有任务的时间、范围和完成判据必须优先服务于以下目标：
 
-1. 为 profile benchmark 的每个 iperf3 方向增加有界硬超时、独立进程组、TERM→KILL 升级和信号/失败路径回收，保持 `INCOMPLETE`、预算保守结算和错误证据语义；
-2. 在 `diagnose` 和 benchmark 证据中增加 IPv4/IPv6 policy rules，以及检测到自定义规则时的非 `main` 路由表证据和明确警告；只增强只读证据，不宣称支持策略路由 apply；
-3. 保持 17 项受管 sysctl、资源感知 BDP 缓冲、根 `fq`、非持久 HTB、schema 4、预算 ledger 和迁移 checkpoint 的既有边界，不吸收 tcpfit、NetShape、NetPilot 或历史参数包的扩张参数；
-4. 将运行资产统一升级为 `v0.1.0-rc.16`，保持单一模板生成、固定 Release 摘要、旧版 rollback 兼容和不可变发布语义；
-5. 使实现、生成资产、fixture、验证矩阵、README、发布说明和实际证据一致，并完成本地、Linux root CI、PR、tag、Pre-release 资产和公开重下载闭环；
-6. 明确区分静态检查、fixture、Linux root、目标 VPS、重启持久性、真实业务链路和生产验收，不把 rc.16 发布完整性冒充目标机成功或性能改善。
+1. 修复 benchmark 对 HTB `parent MAJOR:MINOR` 下 FQ 叶子的识别，保留 `mq parent :N`，并排除 ingress/clsact；
+2. 将 benchmark phase summary 升级为 schema 3，分别保存 root/leaf qdisc totals 和 drop/requeue 健康状态，不把两层 bytes 相加；
+3. 使候选速率 analyzer 对旧摘要、缺失 HTB→FQ 叶子、任一 root/leaf drop 或 requeue fail closed 为 `REVIEW_BLOCKED`；HTB root `overlimits` 只表示整形暴露；
+4. 扩展脱敏 `ss -tin` 辅助证据，纳入 pacing、delivery、min RTT、DSACK、乱序和窗口字段，同时继续排除 endpoint、端口、PID、进程名和 inode；
+5. 保持 17 项受管 sysctl、资源感知 BDP 缓冲、默认 `BBR + fq`、非持久 HTB、managed-state schema 4、预算 ledger 和迁移 checkpoint 边界，不直接改变 HTB rate/burst/cburst 或启用持久整形；
+6. 使源模板、六份生成 profile、runner/analyzer、fixture、验证说明、版本和摘要链一致，并明确区分本地/fixture 与目标 VPS、重启、真实业务和性能证据。
 
-本阶段不得扩展为永久 HTB、通用 UDP 调参、网络安全专项、全面生产加固、安全扫描、渗透、攻击面分析或新的高流量性能 campaign。不得连接或修改真实 VPS、创建高额度测试资源或运行公网测速，除非用户另行明确授权。只有直接阻断 rc.16 实现、验证或发布且可用最小充分工作处理的事项才可纳入；其他事项登记到 [项目阶段备忘](docs/project-memo.md)。
+本阶段不得扩展为永久 HTB、通用 UDP 调参、网络安全专项、全面生产加固、安全扫描、渗透、攻击面分析或新的高流量性能 campaign。不得连接或修改真实 VPS、创建高额度测试资源或运行公网测速，除非用户另行明确授权。只有直接阻断 rc.17 实现候选与本地验证且可用最小充分工作处理的事项才可纳入；其他事项登记到 [项目阶段备忘](docs/project-memo.md)。
 
-rc.15 及更早公开 tag、Release 和资产视为不可变；发现缺陷必须在 rc.16 或后续版本修复。预算、迁移、benchmark 或策略路由证据功能不得通过兼容名义绕过所有权、完整性、流量、重启或恢复门禁。
+rc.16 及更早公开 tag、Release 和资产视为不可变；本轮修复只能进入 rc.17 或后续版本。预算、迁移、benchmark、HTB 或策略路由证据功能不得通过兼容名义绕过所有权、完整性、流量、重启或恢复门禁。
 
 每次完成本项目的一轮对话工作、准备最终回复前，必须更新 [项目阶段备忘](docs/project-memo.md)，记录本轮完成内容及证据、未完成门禁、新增或变化的延期事项，以及当前阶段成熟度判断。没有新增延期事项时也应明确记录“无新增”，避免无法判断是否完成过检查。备忘是资料性状态记录，不替代 `AGENTS.md`、验证矩阵、发布说明或用户授权。
 
-本阶段只有在 rc.16 功能、fixture、生成资产、摘要、PR/CI、tag、Pre-release 和公开资产反向验证均闭合后才算完成。目标 VPS 生命周期、真实信号中断、重启持久性和真实业务验收可以作为发布后的明确未验证项保留，但不得写成已通过。阶段完成后再提出下一阶段建议，不自动修改本文件。
+当前实现阶段只有在 rc.17 源码、fixture、生成资产、文档和本地适用门禁闭合后才算完成。PR/CI、tag、Pre-release、公开资产反向验证、目标 VPS 生命周期、真实信号中断、重启持久性和真实业务验收均属于后续单独授权或明确未验证项，不得写成已通过。阶段完成后再提出发布阶段建议，不自动执行远程操作。
 
 ## 核心执行契约
 

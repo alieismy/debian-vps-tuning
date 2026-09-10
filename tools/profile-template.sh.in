@@ -7,7 +7,7 @@ IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 
-SCRIPT_VERSION='0.1.0-rc.16'
+SCRIPT_VERSION='0.1.0-rc.17'
 STATE_SCHEMA_VERSION=4
 LEGACY_STATE_SCHEMA_VERSION=3
 NAMESPACE='proxy-vps'
@@ -2382,7 +2382,10 @@ qdisc_counter_snapshot() {
           scope="other"
           for (header_index=4; header_index<=NF; header_index++) {
             if ($header_index == "root") scope="root"
-            else if ($header_index == "parent" && $(header_index+1) ~ /^:[0-9]+$/) scope="leaf"
+            else if ($header_index == "parent" &&
+                     ($(header_index+1) ~ /^:[0-9]+$/ ||
+                      $(header_index+1) ~ /^[0-9]+:[0-9]+$/) &&
+                     kind != "ingress" && kind != "clsact") scope="leaf"
           }
           key=iface "." scope "." kind "." handle
           active=1
@@ -2450,6 +2453,10 @@ build_benchmark_phase_summary() {
           dropped_per_gib:(if $bytes > 0 then ($dropped * 1073741824 / $bytes) else null end),
           overlimits_per_gib:(if $bytes > 0 then ($overlimits * 1073741824 / $bytes) else null end)
         };
+      def qdisc_interfaces($entries; $scope; $kind):
+        [$entries[] |
+          select(.key | contains("." + $scope + "." + $kind + ".")) |
+          (.key | split("." + $scope + "." + $kind + ".")[0])] | unique;
       def absolute: if . < 0 then -. else . end;
       def relative_error($reported; $computed):
         (($reported - $computed) | absolute) /
@@ -2461,6 +2468,10 @@ build_benchmark_phase_summary() {
       ($qdisc_root_entries | length > 0) as $has_root |
       ($qdisc_leaf_entries | length > 0) as $has_leaf |
       ($qdisc_root_entries | any(.key | contains(".root.mq."))) as $root_is_mq |
+      ($qdisc_root_entries | any(.key | contains(".root.htb."))) as $root_is_htb |
+      (qdisc_interfaces($qdisc_root_entries; "root"; "htb")) as $htb_root_interfaces |
+      (qdisc_interfaces($qdisc_leaf_entries; "leaf"; "fq")) as $fq_leaf_interfaces |
+      (all($htb_root_interfaces[]; . as $iface | $fq_leaf_interfaces | index($iface) != null)) as $htb_fq_leaf_complete |
       if (.error? != null) then
         error("iperf3 JSON reports an error")
       elif ($sent | type) != "object" or ($received | type) != "object" then
@@ -2477,6 +2488,8 @@ build_benchmark_phase_summary() {
         error("root qdisc counters are missing")
       elif $root_is_mq and ($has_leaf | not) then
         error("mq root exists but managed leaf qdisc counters are missing")
+      elif $root_is_htb and (($has_leaf | not) or ($htb_fq_leaf_complete | not)) then
+        error("htb root exists but its expected fq leaf qdisc counters are missing")
       else
         ($sent.bytes * 8 / $sent.seconds) as $sent_computed_bps |
         ($received.bytes * 8 / $received.seconds) as $received_computed_bps |
@@ -2496,8 +2509,14 @@ build_benchmark_phase_summary() {
           if $received.bytes > ($sent.bytes + $receiver_bytes_tolerance)
           then "receiver-bytes-exceed-sender-tolerance" else empty end
         ]) as $measurement_issues |
+        (totals($qdisc_root_entries)) as $root_totals |
+        (if $has_leaf then totals($qdisc_leaf_entries) else null end) as $leaf_totals |
+        (($root_totals.dropped_delta > 0) or
+         ($root_totals.requeues_delta > 0) or
+         ($leaf_totals != null and
+          (($leaf_totals.dropped_delta > 0) or ($leaf_totals.requeues_delta > 0)))) as $qdisc_anomaly |
         {
-          schema_version:2,
+          schema_version:3,
           direction:$phase_label,
           reverse:($reverse == 1),
           measurement_window:{
@@ -2529,28 +2548,44 @@ build_benchmark_phase_summary() {
           },
           host:{tx_bytes_delta:$host_tx_bytes,rx_bytes_delta:$host_rx_bytes,tcp_delta:$tcp_delta,link_delta:$link_delta},
           qdisc_delta:$qdisc_delta,
-          qdisc_coverage:{aggregation_source:(if $root_is_mq then "leaf" else "root" end),has_root:$has_root,has_leaf:$has_leaf,root_is_mq:$root_is_mq},
-          qdisc_root_totals:totals($qdisc_root_entries),
-          qdisc_leaf_totals:(if $has_leaf then totals($qdisc_leaf_entries) else null end),
+          qdisc_coverage:{
+            aggregation_source:(if $root_is_mq then "leaf" else "root" end),
+            topology:(if $root_is_htb then "htb-fq" elif $root_is_mq then "mq-leaves" else "root-only" end),
+            has_root:$has_root,has_leaf:$has_leaf,root_is_mq:$root_is_mq,root_is_htb:$root_is_htb,
+            htb_root_interfaces:$htb_root_interfaces,fq_leaf_interfaces:$fq_leaf_interfaces,
+            htb_fq_leaf_complete:$htb_fq_leaf_complete
+          },
+          qdisc_root_totals:$root_totals,
+          qdisc_leaf_totals:$leaf_totals,
           qdisc_active_totals:(if $root_is_mq then totals($qdisc_leaf_entries) else totals($qdisc_root_entries) end),
+          qdisc_health:{
+            status:(if $qdisc_anomaly then "LOCAL_QUEUE_ANOMALY" else "NO_LOCAL_QUEUE_DROP_OR_REQUEUE" end),
+            any_drop_or_requeue:$qdisc_anomaly,
+            root:{dropped_delta:$root_totals.dropped_delta,requeues_delta:$root_totals.requeues_delta},
+            leaf:(if $leaf_totals == null then null else
+              {dropped_delta:$leaf_totals.dropped_delta,requeues_delta:$leaf_totals.requeues_delta} end)
+          },
           interpretation:{
             iperf_sender_retransmits:"sender-side iperf3 statistic for this direction",
             host_tcp_delta:"host-wide counters; may include unrelated traffic",
-            qdisc_active_totals:"leaf counters are used when present (for example mq); otherwise root counters are used; local qdisc drops are not remote-path loss"
+            qdisc_active_totals:"leaf counters are used for mq traffic totals; otherwise root counters are used; root and leaf bytes are never added",
+            qdisc_health:"root and leaf drops/requeues are checked independently; local qdisc health does not describe downstream or remote-path loss"
           }
         }
       end
     ' "$iperf_json" >"$output_tmp" || { rm -f -- "$output_tmp"; return "$EXIT_VERIFY"; }
   chmod 0600 "$output_tmp" || { rm -f -- "$output_tmp"; return "$EXIT_VERIFY"; }
   mv -f -- "$output_tmp" "$output" || return "$EXIT_VERIFY"
-  printf '[benchmark-%s-summary] sender_mbps=%s sender_retransmits=%s sender_retransmits_per_gib=%s host_tcp_retrans_delta=%s host_tx_bytes_delta=%s qdisc_active_drop_delta=%s qdisc_source=%s\n' \
+  printf '[benchmark-%s-summary] sender_mbps=%s sender_retransmits=%s sender_retransmits_per_gib=%s host_tcp_retrans_delta=%s host_tx_bytes_delta=%s qdisc_root_drop_delta=%s qdisc_leaf_drop_delta=%s qdisc_health=%s qdisc_source=%s\n' \
     "$label" \
     "$(jq -r '.sender.mbps // "null"' "$output")" \
     "$(jq -r '.sender.retransmits // "null"' "$output")" \
     "$(jq -r '.sender.retransmits_per_gib // "null"' "$output")" \
     "$(jq -r '.host.tcp_delta.TcpRetransSegs // "null"' "$output")" \
     "$(jq -r '.host.tx_bytes_delta' "$output")" \
-    "$(jq -r '.qdisc_active_totals.dropped_delta' "$output")" \
+    "$(jq -r '.qdisc_root_totals.dropped_delta' "$output")" \
+    "$(jq -r '.qdisc_leaf_totals.dropped_delta // "null"' "$output")" \
+    "$(jq -r '.qdisc_health.status' "$output")" \
     "$(jq -r '.qdisc_coverage.aggregation_source' "$output")"
 }
 
