@@ -49,11 +49,11 @@
 | C12 | 菜单 `apply` | 再次确认；N/Enter 不 apply | 目标 VPS 待测 |
 | C13 | 无 TTY 且无 action | 返回 usage，不等待输入 | 目标 Linux 待测 |
 | C14 | 状态档位与检测档位不一致 | 阻断，不自动换 profile | fixture 通过；目标 VPS 待测 |
-| C15 | 固定 rc.16 Release assets | 外层固定 installer 摘要；installer 固定清单摘要；下载清单、总控、六份 profile、预算/迁移/证据/CLI/HTB 资产并逐项通过 SHA-256 | 发布前必须通过本地清单、installer、Linux root CI 和 pinned ShellCheck；发布后须公开重下载 19 个资产并复核 17 个 manifest 条目 |
+| C15 | 固定 rc.17 Release assets | 外层固定 installer 摘要；installer 固定清单摘要；下载清单、总控、六份 profile、预算/迁移/证据/CLI/HTB 资产并逐项通过 SHA-256 | 当前仅为未发布候选；发布前必须通过本地清单、installer、Linux root CI 和 pinned ShellCheck；发布后须公开重下载 19 个资产并复核 17 个 manifest 条目 |
 | C16 | 已安装状态下无 `--port`/环境变量地重复 `apply` | 复用状态中的端口带宽；显式参数仍优先；无效状态值阻断 | fixture 通过；目标 VPS 待测 |
 | C17 | `diagnose` | 默认 5 秒前后采样；输出 TCP/softnet、整机 CPU、接口和可识别 ethtool 错误增量；只读显示 TCP 非受管值、qdisc、队列、RPS/XPS/IRQ、Xray sockopt、代理进程资源和 IPv4/IPv6 policy rules；自定义 rule 才展开对应地址族全部路由表并警告常规网卡发现边界；无系统写入、主动流量或进程命令行 | CPU/接口增量、非受管 TCP 值、默认/自定义/不可读 policy rule 与条件路由表 fixture；目标 VPS 待测 |
 | C18 | `benchmark` 未提供 host、iperf3、`setsid` 或 GNU `timeout`，无效端口/时长/预热/并行/地址族/run ID/1–300 秒 phase timeout，或输出目录非绝对路径/已经存在 | 明确拒绝；不覆盖旧证据，不安装软件、不改防火墙、不选择公共服务器 | 参数、timeout 和输出目录 fixture；目标 VPS 待测 |
-| C19 | 用户授权的 `benchmark` | 仅向指定 iperf3 服务端执行 upload/download/both；每方向独立进程组和硬超时，TERM 后 5 秒升级 KILL；保存原始 JSON、sender/receiver、host-wide 计数、qdisc 与 `policy-routing.txt`；校验测量窗口并以 `INCOMPLETE → COMPLETED` 提交哈希链 | schema 2 窗口、异常 JSON/计数器、mq leaf、manifest 失败、timeout 返回码、持久元数据和进程组回收 fixture；真实 endpoint 和目标 VPS 待测 |
+| C19 | 用户授权的 `benchmark` | 仅向指定 iperf3 服务端执行 upload/download/both；每方向独立进程组和硬超时，TERM 后 5 秒升级 KILL；保存原始 JSON、sender/receiver、host-wide 计数、root/leaf qdisc 与 `policy-routing.txt`；校验测量窗口并以 `INCOMPLETE → COMPLETED` 提交哈希链 | schema 3 窗口、异常 JSON/计数器、mq leaf、HTB `parent 1:10`、HTB 缺叶、root 零 drop/leaf 非零 drop、manifest 失败、timeout 返回码、持久元数据和进程组回收 fixture；真实 endpoint 和目标 VPS 待测 |
 | C20 | `update` 自动发现/`--target` | 同一 `major.minor` 内，rc 通道可选更高 rc 或稳定版，稳定通道排除 prerelease；显式目标允许跨线或 prerelease；拒绝降级和重复升级 | 版本优先级、稳定/rc 通道、非法版本 fixture 通过；GitHub API 真实查询待测 |
 | C21 | `update` 只读升级检查 | 校验当前/目标资产，当前 verify、目标 `UPDATE_PREFLIGHT=1 preflight` 通过后输出固定 URL、哈希、端口和人工迁移顺序；不得调用 rollback/purge/apply/reboot | 调用顺序 fixture 与真实 `check_preflight_state` 状态矩阵通过；目标 VPS 只读 update 待测 |
 | C22 | `/etc/sysctl.d` 等外部文件以相同值重复定义受管 key | `preflight`/`apply` 阻断；已安装状态的独立 `verify` 返回非零；`diagnose` 只读报告；项目自身文件及其符号链接不误报 | 同值冲突、受管文件别名和外部别名去重 fixture 通过；目标 VPS 负向注入不在生产机执行 |
@@ -63,12 +63,12 @@
 | C26 | 厂商 `/etc/sysctl.conf` 唯一且相同值的 `fq`/`bbr` 基线 | `preflight` 零写入并报告 `PASS_WITH_PROVIDER_SYSCTL_TRANSFER`；`apply` 提交 schema 4 状态后完整备份并原子迁移；`verify` 校验原始/迁移后哈希；`rollback` 恢复原文件和安装前运行值；外部修改时拒绝覆盖并保留 `DEGRADED` | 只读分类、迁移/恢复、外部修改拒绝和 schema 3 仅限 update-preflight fixture 通过；Debian 12/13 目标 VPS 生命周期待测 |
 | C27 | benchmark 流量预算与 opt-in pacing | 显式 `BENCHMARK_RATE_CAP_MBPS` 优先，否则只使用合法管理状态端口上限；按 `(seconds+omit)×方向数` 预留 payload；成功提交 sender bytes，失败、信号或超时按计划上界保守结算；只有 `BENCHMARK_ENFORCE_RATE_CAP=1` 才传递逐流 `--bitrate` | cap/公式/bitrate/持久元数据和失败保守结算 fixture；计费流量、真实吞吐和实际限速精度不由 fixture 证明 |
 | C28 | HTB 实验排程生成器 | 只输出 schema 2 JSON；每次调用必须显式提供安全 `window-id`，且只能生成一个 `aba`（A1/B1/A2）或 `bab`（B2/A3/B3）三阶段窗口；反向窗口必须使用不同 ID、新证据目录和独立 operator invocation；至少 300 秒冷却，候选结论关闭后才可另建低速 A/C/A；不得执行 qdisc、流量或持久化 | `aba`/`bab` 独立窗口、缺少 ID、旧 `--repeat-cycles 2` 拒绝、180 Mbit/s 控制、非法冷却和非法控制速率 fixture 通过；目标机执行仍按独立 SOP 门禁 |
-| C29 | HTB v0.4.0 执行器基线绑定 | 只接受 rc.16 schema 4、`VERIFIED`、200 Mbps 的 Debian 13 1C1G/1C2G；允许临时 100–200 Mbit/s，其中 200 仅用于端口额定 reference；活动状态保存实际 profile 和 managed-state SHA-256；profile/state 漂移、旧版本、超过端口或其他端口必须拒绝继续 | 两个允许 profile、100/200 边界及 profile/schema/version/port/hash/201 负向 fixture；1C2G v0.4.0 目标机 smoke/A/B/A 待执行 |
+| C29 | HTB v0.4.0 执行器基线绑定 | 只接受 rc.17 schema 4、`VERIFIED`、200 Mbps 的 Debian 13 1C1G/1C2G；允许临时 100–200 Mbit/s，其中 200 仅用于端口额定 reference；活动状态保存实际 profile 和 managed-state SHA-256；profile/state 漂移、旧版本、超过端口或其他端口必须拒绝继续 | 两个允许 profile、100/200 边界及 profile/schema/version/port/hash/201 负向 fixture；1C2G v0.4.0 目标机 smoke/A/B/A 待执行 |
 | C30 | HTB reference/candidate 只读计划 | schema 3；默认 `reference-screen` 只生成 2–5 个 HTB200 样本且拒绝 `--rates`；显式 `candidate-sweep` 必须 ack 并绑定已复核 reference 的 manifest/analysis/completion 摘要，只接受 3–8 个唯一 100–199 Mbit/s 候选，在首尾生成相同 HTB200 reference 并正序/反序扫描；每阶段 `rate_cap_mbit == rate_mbit`，预算按实际 HTB rate/ceil 求和；sender 最低速率暴露比例、CPU idle/steal 和 softnet/interface 零异常要求必须冻结为 plan controls；不读取主机、不执行流量 | 默认 HTB200 reference、带三摘要绑定的 180/190/195 和自定义候选计划、缺失/不完整 reference 绑定拒绝、schema 3、实际 HTB 预算公式、controls 及 mode/端口/重复/越界速率/样本/冷却/暴露/CPU 边界负向 fixture 通过 |
 | C31 | HTB reference/candidate runner | 要求 root 所有且不可被 group/world 写的固定计划、profile、稳定 HTB 工具和分析器；流量前 verify 并冻结 managed 绑定；每阶段执行 preflight→start→ACTIVE→受预算 benchmark→ACTIVE→stop→postflight；失败即停并尝试受管恢复 | mock HTB200 生命周期、绑定/hash/socket 隐私和 profile benchmark 超时进程组 fixture；真实 iperf3、runner 信号中断和目标 VPS qdisc 恢复待测 |
-| C32 | HTB reference/candidate 分析 | 校验 source reference 摘要、session managed binding、每阶段 schema 3、COMPLETED、benchmark manifest/result hash、benchmark profile/script/state 绑定和 schema 2 测量窗口；严格拒绝重复、缺失或非数字 CPU/softnet 计数；主吞吐使用 sender Mbit/s，重传使用 sender retransmits/GiB；每个样本必须有正 `overlimits`、达到冻结速率暴露比例、通过 CPU idle/steal、softnet 和接口门禁；任一测量/暴露/资源异常均输出 `REVIEW_BLOCKED` 且 shortlist 为空；有效候选按 median/MAD 描述，不假设 MSS、不计算丢包率、不使用固定全局阈值 | 合成 schema 3 `REVIEW_REQUIRED` shortlist、异常 receiver、零 overlimits、低 offered load、高 CPU steal、畸形 CPU/softnet、benchmark profile mismatch、缺失 COMPLETED 和非法 plan 负向 fixture 通过；真实样本统计解释和跨窗口复验待测 |
+| C32 | HTB reference/candidate 分析 | 校验 source reference 摘要、session managed binding、每阶段 schema 3、COMPLETED、benchmark manifest/result hash、benchmark profile/script/state 绑定和 schema 3 测量/qdisc 契约；严格拒绝重复、缺失或非数字 CPU/softnet 计数；主吞吐使用 sender Mbit/s，重传使用 sender retransmits/GiB；每个样本必须有正 HTB root `overlimits`、完整 HTB→FQ 叶子、root/leaf drop/requeue 全零、达到冻结速率暴露比例并通过 CPU/softnet/接口门禁；旧摘要、缺字段或任一门禁异常均输出 `REVIEW_BLOCKED` 且 shortlist 为空 | 合成 schema 3 `REVIEW_REQUIRED` shortlist、旧 schema、leaf drop、异常 receiver、零 overlimits、低 offered load、高 CPU steal、畸形 CPU/softnet、benchmark profile mismatch、缺失 COMPLETED 和非法 plan 负向 fixture；真实样本统计解释和跨窗口复验待测 |
 | C33 | 总控 `reconfigure` 参数与分派 | CLI 必须显式提供 `--port 100..1000`；默认值或 `PORT_SPEED_MBPS` 环境变量不能代替目标参数；菜单选项再次确认；只向选定的同版本 profile 透传目标端口和 `reconfigure` action | 参数、菜单和透传 fixture 待最终门禁；目标 VPS 待测 |
-| C34 | profile 带宽重配置语义 | 只接受同一 rc.16/profile 的 `VERIFIED` 状态；先复算旧 buffer 契约并执行完整 verify；同值无写入；自动 buffer 随端口重算，显式 buffer 保留；有效值不变时不执行 `sysctl -p`，有效值变化时只应用项目 sysctl 文件；qdisc/swap/journald/NOFILE 不变 | 无状态、状态不一致、同值、100→200、200→500、500→200、显式 buffer 与候选验证 fixture；目标 VPS 与重启持久性待测 |
+| C34 | profile 带宽重配置语义 | 只接受同一 rc.17/profile 的 `VERIFIED` 状态；先复算旧 buffer 契约并执行完整 verify；同值无写入；自动 buffer 随端口重算，显式 buffer 保留；有效值不变时不执行 `sysctl -p`，有效值变化时只应用项目 sysctl 文件；qdisc/swap/journald/NOFILE 不变 | 无状态、状态不一致、同值、100→200、200→500、500→200、显式 buffer 与候选验证 fixture；目标 VPS 与重启持久性待测 |
 | C35 | `RECONFIGURING` 事务与恢复 | 旧 state/sysctl 固定 root-only 备份及 SHA-256 有效后才提交事务；候选状态、网络值、managed hash 和变化分类一致；失败自动按旧 sysctl→完整 verify→旧 state 顺序恢复；恢复失败保留 `DEGRADED`、备份和失败证据；普通 `verify`/`rollback`/`preflight`/`apply` 不得越过，手工 `recover` 只处理合法事务 | 元数据、备份篡改、失败注入、自动恢复、恢复失败和阶段门禁 fixture 待最终门禁；目标 VPS 故障注入待测 |
 
 本地检查入口：
@@ -80,7 +80,7 @@ bash tests/static-check.sh
 bash experiments/htb-aggregate/tests/static-check.sh
 sha256sum -c SHA256SUMS
 sudo bash tests/installer-check.sh
-sudo bash tests/rc16-check.sh
+sudo bash tests/rc17-check.sh
 shellcheck -x \
   debian-vps-tuning.sh \
   debian12-1c512m-vps-tuning.sh \
@@ -103,7 +103,7 @@ shellcheck -x \
   tests/static-check.sh \
   tests/controller-check.sh \
   tests/installer-check.sh \
-  tests/rc16-check.sh \
+  tests/rc17-check.sh \
   experiments/htb-aggregate/tests/static-check.sh
 ```
 
@@ -128,9 +128,9 @@ shellcheck -x \
 
 T1、T2 必须通过才能发布首个稳定版；T3、T4 是 Debian 13 稳定版门槛；T5、T6 用于确认 100–1000 Mbps 输入边界，不能用 200 Mbps 的结果代替。T7、T8 用于证明同一 `1c2g` 兼容 profile 在 2 vCPU 下的完整生命周期；T9、T10 用于证明 512 MiB 的缓冲截断、journald、swap 和 3X-UI 生命周期。本地 fixture 不能替代目标机证据。这些门槛验证的是生命周期、恢复和业务可用性，不要求在每台目标机重跑 TcpQuality、HTB reference、candidate sweep 或 A/B/A；只有发布说明准备作出相应性能或整形主张时，才另行要求 L4 研究证据。
 
-上述目标机结果绑定测试时日志中的具体版本与 SHA-256。rc.16 不改变 rc.15 写入的 17 个 sysctl、qdisc、swap、journald、NOFILE、预算或迁移状态契约，但 profile 版本和哈希已变化，不能继承为 rc.16 目标机通过结论。当前环境没有目标 VPS 的 SSH 凭据，rc.16 最终哈希的首次生命周期、rc.15→rc.16 迁移、真实 iperf3 超时/信号回收、策略路由诊断、重启持久性和真实代理链路均不能由本地或 CI fixture 冒充。
+上述目标机结果绑定测试时日志中的具体版本与 SHA-256。rc.17 不改变 rc.16 写入的 17 个 sysctl、qdisc、swap、journald、NOFILE、预算或迁移状态契约，但 profile 版本和哈希已变化，不能继承为 rc.17 目标机通过结论。当前环境没有目标 VPS 的 SSH 凭据，rc.17 最终哈希的首次生命周期、rc.16→rc.17 迁移、真实 HTB root/leaf 计数、重启持久性和真实代理链路均不能由本地或 CI fixture 冒充。
 
-## rc.16 自动缓冲矩阵
+## rc.17 自动缓冲矩阵
 
 该矩阵验证的是输入算法和资源上限，不是吞吐结论。目标 RTT 为 200 ms；512M/1G/2G 的自动目标分别为 1×/1.25×/1.5×BDP，再向上取 16/32/64 MiB 档。
 
@@ -141,7 +141,7 @@ T1、T2 必须通过才能发布首个稳定版；T3、T4 是 Debian 13 稳定�
 | 1C2GB/2C2GB | 16 MiB | 16 MiB | 32 MiB | 64 MiB | 200/500/1000 Mbps 通过；100 待补 |
 | 2C2GB | 16 MiB | 16 MiB | 32 MiB | 64 MiB | 与 1C2GB 共用算法；控制器 CPU fixture 通过，目标机待测 |
 
-rc.16 保持 rc.15/rc.14/rc.13/rc.12/rc.11/rc.10 的该矩阵。跨脚本版本时仍必须先通过只读 update 检查，再人工执行 rollback → reboot → preflight → apply → reboot → verify 建立同版本状态，不得用 `reconfigure` 接管旧版本 state。只有同一 rc.16 profile 的 `VERIFIED` 状态在服务商端口变化后才能重配置：100→200 Mbps 等价于保持 16 MiB；2G 档 200→500 Mbps 变为 32 MiB，500→200 Mbps 恢复 16 MiB。fixture 只验证推导、事务和恢复逻辑，不证明目标 VPS 的实时 sysctl、生效持久性或性能。
+rc.17 保持 rc.16/rc.15/rc.14/rc.13/rc.12/rc.11/rc.10 的该矩阵。跨脚本版本时仍必须先通过只读 update 检查，再人工执行 rollback → reboot → preflight → apply → reboot → verify 建立同版本状态，不得用 `reconfigure` 接管旧版本 state。只有同一 rc.17 profile 的 `VERIFIED` 状态在服务商端口变化后才能重配置：100→200 Mbps 等价于保持 16 MiB；2G 档 200→500 Mbps 变为 32 MiB，500→200 Mbps 恢复 16 MiB。fixture 只验证推导、事务和恢复逻辑，不证明目标 VPS 的实时 sysctl、生效持久性或性能。
 
 ## 每台目标机的生命周期矩阵
 

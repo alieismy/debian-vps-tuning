@@ -7,8 +7,8 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 
-RUNNER_VERSION='0.4.0'
-EXPECTED_TUNING_VERSION='0.1.0-rc.16'
+RUNNER_VERSION='0.5.0'
+EXPECTED_TUNING_VERSION='0.1.0-rc.17'
 MANAGED_STATE_FILE='/var/lib/proxy-vps-tuning/state.json'
 RUNTIME_STATE_DIR='/run/htb-aggregate-experiment'
 RUNTIME_STATE_FILE="${RUNTIME_STATE_DIR}/active.json"
@@ -94,7 +94,7 @@ capture_managed_binding() {
     ((.profile.id == "debian13-1c1g") or (.profile.id == "debian13-1c2g")) and
     .network.port_speed_mbps == 200
   ' "$MANAGED_STATE_FILE" >/dev/null ||
-    die 'managed state 不是 rc.16 schema-4 VERIFIED/debian13-1c1g-or-1c2g/200-Mbps 基线。'
+    die 'managed state 不是 rc.17 schema-4 VERIFIED/debian13-1c1g-or-1c2g/200-Mbps 基线。'
   managed_profile_id="$(jq -r '.profile.id' "$MANAGED_STATE_FILE")"
   managed_script_version="$(jq -r '.script_version' "$MANAGED_STATE_FILE")"
   managed_state_sha256_frozen="$(sha256sum "$MANAGED_STATE_FILE" | awk '{print $1}')"
@@ -331,12 +331,22 @@ extract_socket_metrics() {
   # PIDs, process names and inodes are never emitted.
   awk '
     function allowed(token) {
-      return token ~ /^(rto|backoff|rtt|ato|mss|pmtu|rcvmss|advmss|cwnd|ssthresh|bytes_acked|bytes_received|bytes_sent|bytes_retrans|segs_out|segs_in|data_segs_out|data_segs_in|delivered|app_limited|busy|rwnd_limited|sndbuf_limited|reordering|retrans):/
+      return token ~ /^(rto|backoff|rtt|ato|mss|pmtu|rcvmss|advmss|cwnd|ssthresh|bytes_acked|bytes_received|bytes_sent|bytes_retrans|segs_out|segs_in|data_segs_out|data_segs_in|delivered|app_limited|busy|rwnd_limited|sndbuf_limited|reordering|retrans|minrtt|dsack_dups|rcv_ooopack|snd_wnd|rcv_wnd):/
+    }
+    function rate_keyword(token) {
+      return token == "pacing_rate" || token == "delivery_rate"
+    }
+    function safe_rate(value) {
+      return value ~ /^[0-9]+([.][0-9]+)?[KMGTPE]?bps(\/[0-9]+([.][0-9]+)?[KMGTPE]?bps)?$/
     }
     {
       output=""
       for (i=1; i<=NF; i++) {
         if (allowed($i)) output=output (output == "" ? "" : " ") $i
+        else if (rate_keyword($i) && i < NF && safe_rate($(i+1))) {
+          output=output (output == "" ? "" : " ") $i ":" $(i+1)
+          i++
+        }
       }
       if (output != "") {
         rows++

@@ -420,8 +420,8 @@ median±MAD 区间均重叠时，每个候选仅获得以下描述性 flags：
 - sender retransmits/GiB 的候选离散上界低于 HTB200 reference 离散下界；
 - sender Mbit/s 位于本轮最佳候选的观察离散范围内；
 - 所有 receiver 测量窗口通过校验；
-- 所有本地 active qdisc drop 样本为 0；
-- 所有 HTB 样本 `overlimits > 0`，且 sender goodput 达到冻结速率暴露比例；
+- 所有 schema 3 摘要都包含完整 HTB root/FQ leaf 证据，且两层 drop/requeue 样本均为 0；
+- 所有 HTB root 样本 `overlimits > 0`，且 sender goodput 达到冻结速率暴露比例；
 - 所有样本通过 CPU idle/steal、softnet drop/time_squeeze 和接口 drop/error 资源门禁。
 
 `review_shortlist.rate_mbit` 只是同时满足这些条件的最高候选速率，不是显著性检验或生产
@@ -431,11 +431,13 @@ softirq/steal、softnet、接口、qdisc backlog/requeues、地址族、路由�
 
 每阶段的 `socket-metrics.txt` 在 benchmark 窗口内按秒采样
 `ss -tinH state established`，但只保留 `rtt`、`rto`、`mss`、`cwnd`、`ssthresh`、
-`bytes_retrans`、`retrans`、`reordering`、`rwnd_limited`、`sndbuf_limited` 等白名单
+`bytes_retrans`、`retrans`、`reordering`、`rwnd_limited`、`sndbuf_limited`、
+`pacing_rate`、`delivery_rate`、`minrtt`、`dsack_dups`、`rcv_ooopack`、`snd_wnd` 和 `rcv_wnd` 等白名单
 TCP_INFO token。它不会写入 socket header、源/目的地址、端口、PID、进程名或 inode；指标
 仍可能包含同机背景 TCP 连接，只用于辅助归因，不是 iperf3 流级唯一标识。
 
-`qdisc overlimits` 证明 HTB 在执行整形，不等于丢包；本地 qdisc drop 为 0 也不能排除下游
+HTB root `qdisc overlimits` 证明整形器在工作，不等于丢包；本地 root/leaf qdisc drop 和
+requeue 为 0 也不能排除下游
 policer、宿主 vSwitch 或远端路径丢包。分析器不使用固定 MSS，不计算 packet loss
 percentage，也不使用固定 `0.1%` 一类全局重传阈值。
 

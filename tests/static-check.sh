@@ -40,7 +40,7 @@ fi
 "$python_cmd" tools/render_profiles.py --check
 bash -n "${scripts[@]}" "$controller" "$tcpquality_tool" "$installer" "$probe_tool" "$htb_wrapper" \
   "$traffic_budget_tool" "$migration_tool" tools/profile-template.sh.in \
-  tests/static-check.sh tests/controller-check.sh tests/installer-check.sh tests/rc16-check.sh
+  tests/static-check.sh tests/controller-check.sh tests/installer-check.sh tests/rc17-check.sh
 
 bash tests/controller-check.sh
 
@@ -98,7 +98,7 @@ if [ "$(od -An -tx1 -N3 "$tcpquality_tool" | tr -d ' \n')" = 'efbbbf' ]; then
   printf 'UTF-8 BOM detected: %s\n' "$tcpquality_tool" >&2
   exit 1
 fi
-grep -Fq "TOOL_VERSION='0.1.0-rc.16'" "$tcpquality_tool"
+grep -Fq "TOOL_VERSION='0.1.0-rc.17'" "$tcpquality_tool"
 grep -Fq "SUPPORTED_RELEASE_TAG='v1.00013'" "$tcpquality_tool"
 grep -Fq "SUPPORTED_COMMIT='73606e2460bde21bb2e253842971f8ca8c9eb51c'" "$tcpquality_tool"
 grep -Fq "SUPPORTED_ROOTFS_MANIFEST_SHA256='555a53df40cbdd2778771c089d1bc2c2e1c0a52b5565ad15d2e01d52b90dd0f6'" "$tcpquality_tool"
@@ -140,7 +140,7 @@ expected_keys=17
 for script in "${scripts[@]}"; do
   actual="$(awk '/^PROFILE_SYSCTL_KEYS=\(/,/^\)/ {if ($1 ~ /^(net\.|vm\.)/) count++} END {print count+0}' "$script")"
   [ "$actual" -eq "$expected_keys" ] || { printf 'unexpected managed-key count: %s (%s)\n' "$script" "$actual" >&2; exit 1; }
-  grep -Fq "SCRIPT_VERSION='0.1.0-rc.16'" "$script"
+  grep -Fq "SCRIPT_VERSION='0.1.0-rc.17'" "$script"
   grep -Eq '^STATE_SCHEMA_VERSION=4$' "$script"
   grep -Eq '^LEGACY_STATE_SCHEMA_VERSION=3$' "$script"
   grep -Fq 'PROFILE_CPU_MIN=' "$script"
@@ -327,8 +327,8 @@ for script in "${scripts[@]}"; do
   }
 done
 
-grep -Fq "CONTROLLER_VERSION='0.1.0-rc.16'" "$controller"
-grep -Fq "RELEASE_TAG='v0.1.0-rc.16'" "$controller"
+grep -Fq "CONTROLLER_VERSION='0.1.0-rc.17'" "$controller"
+grep -Fq "RELEASE_TAG='v0.1.0-rc.17'" "$controller"
 grep -Fq "DEFAULT_PORT_SPEED_MBPS=200" "$controller"
 grep -Fq 'verify_profile_contract' "$controller"
 grep -Fq 'debian12-1c512m-vps-tuning.sh' "$controller"
@@ -356,7 +356,7 @@ if grep -Eq 'raw\.githubusercontent\.com|/master/|/main/|releases/latest|http://
   exit 1
 fi
 
-grep -Fq "RELEASE_TAG='v0.1.0-rc.16'" "$installer"
+grep -Fq "RELEASE_TAG='v0.1.0-rc.17'" "$installer"
 grep -Eq "EXPECTED_MANIFEST_SHA256='[0-9a-f]{64}'" "$installer"
 if grep -Fq "EXPECTED_MANIFEST_SHA256='0000000000000000000000000000000000000000000000000000000000000000'" "$installer"; then
   printf 'installer manifest digest placeholder was not finalized\n' >&2
@@ -369,7 +369,7 @@ manifest_hash="$(sha256sum SHA256SUMS | awk '{print $1}')"
 grep -Fq "EXPECTED_MANIFEST_SHA256='${manifest_hash}'" "$installer"
 installer_hash="$(sha256sum "$installer" | awk '{print $1}')"
 grep -Fq "$installer_hash" README.md
-grep -Fq "$manifest_hash" docs/releases/v0.1.0-rc.16.md
+grep -Fq "$manifest_hash" docs/releases/v0.1.0-rc.17.md
 if grep -Eq 'raw\.githubusercontent\.com|/master/|/main/|releases/latest|http://' "$installer"; then
   printf 'mutable or insecure installer download source detected\n' >&2
   exit 1
@@ -1139,7 +1139,7 @@ sed -n '2p' "$capture" | grep -Fq -- '--version6 --reverse --json' || {
   printf 'download benchmark arguments changed: %s\n' "$(sed -n '2p' "$capture")" >&2
   exit 1
 }
-jq -e '.schema_version == 2 and .direction == "upload" and
+jq -e '.schema_version == 3 and .direction == "upload" and
   .measurement_window.status == "VALID" and .measurement_window.valid == true and
   .sender.seconds == 10 and .receiver.seconds == 10 and
   .sender.mbps == 200 and .sender.retransmits == 2 and
@@ -1147,7 +1147,10 @@ jq -e '.schema_version == 2 and .direction == "upload" and
   "$test_root/upload.summary.json" >/dev/null
 jq -e '.qdisc_root_totals.dropped_delta == 0 and .qdisc_root_totals.dropped_per_gib == null' \
   "$test_root/upload.summary.json" >/dev/null
-jq -e '.qdisc_coverage.aggregation_source == "root" and .qdisc_active_totals.dropped_delta == 0' \
+jq -e '.qdisc_coverage.aggregation_source == "root" and
+  .qdisc_health.status == "NO_LOCAL_QUEUE_DROP_OR_REQUEUE" and
+  .qdisc_health.any_drop_or_requeue == false and
+  .qdisc_active_totals.dropped_delta == 0' \
   "$test_root/upload.summary.json" >/dev/null
 jq -e '.direction == "download" and .reverse == true' "$test_root/download.summary.json" >/dev/null
 
@@ -1208,7 +1211,7 @@ done
 cp "$INVALID_RECEIVER_FIXTURE" "$test_root/invalid-window.iperf3.json"
 build_benchmark_phase_summary invalid-window 0 "$test_root" >/dev/null
 jq -e '
-  .schema_version == 2 and
+  .schema_version == 3 and
   .measurement_window.status == "INVALID_MEASUREMENT_WINDOW" and
   .measurement_window.valid == false and
   (.measurement_window.issues | index("receiver-duration-mismatch") != null) and
@@ -1233,6 +1236,21 @@ grep -Fqx $'eth0.root.mq.0:.bytes\t2000' "$test_root/mq.snapshot"
 grep -Fqx $'eth0.leaf.fq.8001:.dropped\t2' "$test_root/mq.snapshot"
 grep -Fqx $'eth0.leaf.fq.8002:.overlimits\t4' "$test_root/mq.snapshot"
 grep -Fqx $'eth0.other.ingress.ffff:.dropped\t5' "$test_root/mq.snapshot"
+
+cat >"$test_root/htb.tc" <<'EOF_HTB_TC'
+qdisc htb 1: root refcnt 2 r2q 10 default 0x10 direct_packets_stat 0 direct_qlen 1000
+ Sent 1000000 bytes 1000 pkt (dropped 0, overlimits 17 requeues 0)
+qdisc fq 10: parent 1:10 limit 10000p flow_limit 100p buckets 1024 orphan_mask 1023
+ Sent 990000 bytes 990 pkt (dropped 3, overlimits 0 requeues 1)
+qdisc ingress ffff: parent ffff:fff1 ----------------
+ Sent 50 bytes 1 pkt (dropped 5, overlimits 0 requeues 0)
+EOF_HTB_TC
+tc() { cat "$test_root/htb.tc"; }
+qdisc_counter_snapshot "$test_root/ifaces" >"$test_root/htb.snapshot"
+grep -Fqx $'eth0.root.htb.1:.overlimits\t17' "$test_root/htb.snapshot"
+grep -Fqx $'eth0.leaf.fq.10:.dropped\t3' "$test_root/htb.snapshot"
+grep -Fqx $'eth0.leaf.fq.10:.requeues\t1' "$test_root/htb.snapshot"
+grep -Fqx $'eth0.other.ingress.ffff:.dropped\t5' "$test_root/htb.snapshot"
 
 cp "$test_root/upload.tcp.before" "$test_root/mqphase.tcp.before"
 cp "$test_root/upload.tcp.after" "$test_root/mqphase.tcp.after"
@@ -1274,8 +1292,72 @@ eth0.leaf.fq.8002:.overlimits	7
 eth0.leaf.fq.8002:.requeues	0
 EOF_MQ_AFTER
 build_benchmark_phase_summary mqphase 0 "$test_root" >/dev/null
-jq -e '.qdisc_coverage.aggregation_source == "leaf" and .qdisc_coverage.root_is_mq == true and .qdisc_root_totals.dropped_delta == 0 and .qdisc_active_totals.dropped_delta == 3' \
+jq -e '.qdisc_coverage.aggregation_source == "leaf" and
+  .qdisc_coverage.root_is_mq == true and
+  .qdisc_root_totals.dropped_delta == 0 and
+  .qdisc_health.root.dropped_delta == 0 and
+  .qdisc_health.leaf.dropped_delta == 3 and
+  .qdisc_health.any_drop_or_requeue == true and
+  .qdisc_health.status == "LOCAL_QUEUE_ANOMALY" and
+  .qdisc_active_totals.dropped_delta == 3' \
   "$test_root/mqphase.summary.json" >/dev/null
+
+cp "$test_root/upload.tcp.before" "$test_root/htbphase.tcp.before"
+cp "$test_root/upload.tcp.after" "$test_root/htbphase.tcp.after"
+cp "$test_root/upload.link.before" "$test_root/htbphase.link.before"
+cp "$test_root/upload.link.after" "$test_root/htbphase.link.after"
+cp "$test_root/upload.iperf3.json" "$test_root/htbphase.iperf3.json"
+cat >"$test_root/htbphase.qdisc.before" <<'EOF_HTB_BEFORE'
+eth0.root.htb.1:.bytes	1000000
+eth0.root.htb.1:.packets	1000
+eth0.root.htb.1:.dropped	0
+eth0.root.htb.1:.overlimits	10
+eth0.root.htb.1:.requeues	0
+eth0.leaf.fq.10:.bytes	990000
+eth0.leaf.fq.10:.packets	990
+eth0.leaf.fq.10:.dropped	0
+eth0.leaf.fq.10:.overlimits	0
+eth0.leaf.fq.10:.requeues	0
+EOF_HTB_BEFORE
+cat >"$test_root/htbphase.qdisc.after" <<'EOF_HTB_AFTER'
+eth0.root.htb.1:.bytes	2000000
+eth0.root.htb.1:.packets	2000
+eth0.root.htb.1:.dropped	0
+eth0.root.htb.1:.overlimits	27
+eth0.root.htb.1:.requeues	0
+eth0.leaf.fq.10:.bytes	1980000
+eth0.leaf.fq.10:.packets	1980
+eth0.leaf.fq.10:.dropped	3
+eth0.leaf.fq.10:.overlimits	0
+eth0.leaf.fq.10:.requeues	1
+EOF_HTB_AFTER
+build_benchmark_phase_summary htbphase 0 "$test_root" >/dev/null
+jq -e '
+  .schema_version == 3 and
+  .qdisc_coverage.topology == "htb-fq" and
+  .qdisc_coverage.htb_fq_leaf_complete == true and
+  .qdisc_root_totals.overlimits_delta == 17 and
+  .qdisc_root_totals.dropped_delta == 0 and
+  .qdisc_leaf_totals.dropped_delta == 3 and
+  .qdisc_leaf_totals.requeues_delta == 1 and
+  .qdisc_health.root.dropped_delta == 0 and
+  .qdisc_health.leaf.dropped_delta == 3 and
+  .qdisc_health.leaf.requeues_delta == 1 and
+  .qdisc_health.any_drop_or_requeue == true and
+  .qdisc_health.status == "LOCAL_QUEUE_ANOMALY"
+' "$test_root/htbphase.summary.json" >/dev/null
+
+awk '!/\.leaf\./' "$test_root/htbphase.qdisc.before" >"$test_root/htbmissing.qdisc.before"
+awk '!/\.leaf\./' "$test_root/htbphase.qdisc.after" >"$test_root/htbmissing.qdisc.after"
+cp "$test_root/upload.tcp.before" "$test_root/htbmissing.tcp.before"
+cp "$test_root/upload.tcp.after" "$test_root/htbmissing.tcp.after"
+cp "$test_root/upload.link.before" "$test_root/htbmissing.link.before"
+cp "$test_root/upload.link.after" "$test_root/htbmissing.link.after"
+cp "$test_root/upload.iperf3.json" "$test_root/htbmissing.iperf3.json"
+if build_benchmark_phase_summary htbmissing 0 "$test_root" >/dev/null 2>&1; then
+  printf 'HTB summary accepted missing expected fq leaf counters\n' >&2
+  exit 1
+fi
 
 set +e
 IPERF_RC=7 run_benchmark_phase upload 0 "$test_root" "$test_root/ifaces" >/dev/null
@@ -1312,7 +1394,7 @@ EXIT_USAGE=2
 EXIT_UNSUPPORTED=3
 EXIT_CONFLICT=4
 EXIT_VERIFY=5
-SCRIPT_VERSION='0.1.0-rc.16'
+SCRIPT_VERSION='0.1.0-rc.17'
 PROFILE_ID='debian13-1c1g'
 STATE_FILE="$test_root/no-state.json"
 ensure_required_tools() { :; }
@@ -1516,7 +1598,7 @@ PACKET_SIZE=0
 PARALLEL=16
 ROOTFS_SHA256='c624b5cc611b7177c42608110024764e59dfd0a88150257137ae4e6d7f9f9d18'
 GET_NODES_URL='https://nodes.example.test/getNodes'
-TOOL_VERSION='0.1.0-rc.16'
+TOOL_VERSION='0.1.0-rc.17'
 MODE='local-evidence'
 mkdir "$EVIDENCE_DIR" "$PIN_DIR"
 : >"$PIN_DIR/SHA256SUMS"
@@ -1539,7 +1621,7 @@ cross_version_apply_test="$tmp_dir/cross-version-apply-test.sh"
   awk '/^apply_settings\(\)/,/^}/' "${scripts[0]}"
   cat <<'EOF_CROSS_VERSION_APPLY_TEST'
 EXIT_CONFLICT=4
-SCRIPT_VERSION='0.1.0-rc.16'
+SCRIPT_VERSION='0.1.0-rc.17'
 PORT_SPEED_MBPS=200
 BUFFER_TARGET_RTT_MS=200
 BUF_MAX=16777216
@@ -1570,7 +1652,7 @@ parameter_mismatch_apply_test="$tmp_dir/parameter-mismatch-apply-test.sh"
   awk '/^apply_settings\(\)/,/^}/' "${scripts[0]}"
   cat <<'EOF_PARAMETER_MISMATCH_APPLY_TEST'
 EXIT_CONFLICT=4
-SCRIPT_VERSION='0.1.0-rc.16'
+SCRIPT_VERSION='0.1.0-rc.17'
 PORT_SPEED_MBPS=100
 BUFFER_TARGET_RTT_MS=200
 BUF_MAX=16777216
@@ -2477,7 +2559,7 @@ STATE_DIR='/var/lib/proxy-vps-tuning'
 SYSCTL_SCAN_ROOT='/etc'
 STATE_SCHEMA_VERSION=4
 LEGACY_STATE_SCHEMA_VERSION=3
-SCRIPT_VERSION='0.1.0-rc.16'
+SCRIPT_VERSION='0.1.0-rc.17'
 PROFILE_ID='debian12-1c1g'
 UPDATE_PREFLIGHT=0
 stat() { printf '%s\n' '0'; }
@@ -2496,7 +2578,7 @@ for fixture in empty whitespace null object multiple; do
   fi
 done
 
-printf '%s\n' '{"schema_version":4,"script_version":"0.1.0-rc.16","profile":{"id":"debian12-1c1g"},"state":"PREPARED","network":{},"original_sysctls":{},"qdisc":{"file":"/tmp/qdisc","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"swap":{},"provider_sysctl_transfer":{"required":false,"source_path":"/etc/sysctl.conf","backup_path":"/var/lib/proxy-vps-tuning/provider-sysctl.conf.original","original_sha256":null,"backup_sha256":null,"transferred_sha256":null,"original_uid":null,"original_gid":null,"original_mode":null,"keys":[],"state":"NOT_REQUIRED"},"managed_files":[],"timestamps":{}}' >"$STATE_FILE"
+printf '%s\n' '{"schema_version":4,"script_version":"0.1.0-rc.17","profile":{"id":"debian12-1c1g"},"state":"PREPARED","network":{},"original_sysctls":{},"qdisc":{"file":"/tmp/qdisc","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"swap":{},"provider_sysctl_transfer":{"required":false,"source_path":"/etc/sysctl.conf","backup_path":"/var/lib/proxy-vps-tuning/provider-sysctl.conf.original","original_sha256":null,"backup_sha256":null,"transferred_sha256":null,"original_uid":null,"original_gid":null,"original_mode":null,"keys":[],"state":"NOT_REQUIRED"},"managed_files":[],"timestamps":{}}' >"$STATE_FILE"
 state_file_is_valid
 
 cp -- "$STATE_FILE" "${STATE_FILE}.valid"
@@ -2931,7 +3013,7 @@ if [ "${RUN_LOCAL_SHELLCHECK:-0}" = 1 ]; then
     experiments/htb-aggregate/rate-sweep-plan.sh \
     experiments/htb-aggregate/rate-sweep-run.sh \
     experiments/htb-aggregate/rate-sweep-analyze.sh \
-    tests/static-check.sh tests/controller-check.sh tests/installer-check.sh tests/rc16-check.sh
+    tests/static-check.sh tests/controller-check.sh tests/installer-check.sh tests/rc17-check.sh
   for helper in "$tmp_dir"/*.helper; do shellcheck -x "$helper"; done
 else
   printf '[INFO] deterministic syntax/fixture checks complete; pinned ShellCheck runs in its dedicated CI step\n' >&2

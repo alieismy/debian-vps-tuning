@@ -6,7 +6,10 @@ Debian VPS Tuning 用于配置 Debian 12/13 小型云 VPS 的主机网络。主�
 
 > 系统选择（信息日期：2026-08-04）：新建的 1C1G、1C2G 和 2C2G VPS 默认使用 Debian 13 minimal。Debian 13 是当前 stable；Debian 12 已转入 LTS，适用于保留既有稳定节点或满足明确兼容约束的场景。系统版本不能单独证明 BBR 可用、性能更高或空载内存更低，仍需检查虚拟化类型、运行内核和目标机资源。
 
-> 当前预发行候选版本为 `v0.1.0-rc.16`。以下联网命令固定到该候选 Release 及其校验和资产，不跟随分支或 `latest`。只有在 Release 发布且公开资产通过重下载校验后，这些命令才可使用。正式 `v0.1.0` 仍以 [目标 VPS 运行验收](docs/validation.md) 为发布条件；候选版本不代表已完成目标机、全带宽或性能验收。
+> 当前已发布预发行候选为 `v0.1.0-rc.16`，以下联网命令继续固定到该不可变 Release。工作树正在形成未发布的 `v0.1.0-rc.17` 实现候选；不得把工作树中的 rc.17 installer、摘要或 profile 当作已发布资产使用。正式 `v0.1.0` 仍以 [目标 VPS 运行验收](docs/validation.md) 为发布条件；候选版本不代表已完成目标机、全带宽或性能验收。
+
+rc.17 当前工作树候选的 `install.sh` SHA-256 为
+`4fd4dde90df4524d657623c4e22e355ab9adac70a703cff61a68e41e09007cbc`。该值只用于本地完整性门禁；在 tag、Release 和公开反向校验完成前没有可执行的 rc.17 联网安装入口。
 
 ## 联网安装与验证
 
@@ -622,13 +625,13 @@ env BENCHMARK_HOST='iperf.example.com' \
   bash ./debian-vps-tuning.sh benchmark
 ```
 
-`upload.summary.json` 和 `download.summary.json` 使用 schema 2。`measurement_window` 会核对 sender/receiver 的实际秒数、`bytes × 8 ÷ seconds` 与报告 bitrate 的一致性，以及 receiver bytes 不得在容差外超过 sender bytes。任一检查失败时，原始 JSON 和报告值仍保留，但摘要标记为 `INVALID_MEASUREMENT_WINDOW`；该样本不得用于吞吐或重传对比。benchmark 的 `PASS` 只表示采集和哈希链完整，不等于测量窗口可用于分析。
+`upload.summary.json` 和 `download.summary.json` 使用 schema 3。`measurement_window` 会核对 sender/receiver 的实际秒数、`bytes × 8 ÷ seconds` 与报告 bitrate 的一致性，以及 receiver bytes 不得在容差外超过 sender bytes。任一检查失败时，原始 JSON 和报告值仍保留，但摘要标记为 `INVALID_MEASUREMENT_WINDOW`；该样本不得用于吞吐或重传对比。benchmark 的 `PASS` 只表示采集和哈希链完整，不等于测量窗口可用于分析。
 
 摘要中的 `sender.retransmits` 是对应方向的 iperf3 sender 统计，`host.tcp_delta` 是测试窗口内的整机全局计数，`qdisc_delta` 是本地 qdisc 统计。三者不可互换：背景连接会计入整机统计，本地 qdisc drop 也不等于远端路径丢包。
 
 开始产生测试流量前，脚本会按 `带宽上限 × (有效时间 + omit) × 方向数` 计算 iperf payload 估算上界。`BENCHMARK_RATE_CAP_MBPS` 显式值优先；未提供时只接受合法管理状态中的 `network.port_speed_mbps`，否则 rc.16 fail-closed，不再运行无法量化的测试。直接 benchmark、probe、TcpQuality 和 HTB runner 必须共享一个 root-only ledger；每次先原子保留计划上界，成功后提交可得的实际 sender bytes，失败、超时或信号中断按计划上界保守计入，未能结算的 reservation 继续占用额度。账本只覆盖应用 payload，不包含协议、重传和服务商计费差异。`BENCHMARK_ENFORCE_RATE_CAP=1` 才会向 iperf3 传递 `--bitrate`；多流时脚本将总 cap 等分为每流 bps，推荐优先使用固定单流的 `dvt probe`。
 
-`sender.retransmits_per_gib` 按 iperf3 sender bytes 归一化。存在 `mq` 叶子时，`qdisc_active_totals` 汇总叶 qdisc；否则汇总根 qdisc，来源记录在 `qdisc_coverage.aggregation_source`。根与叶的统计不相加，以免重复计算同一流量。这些指标只适合比较服务端、方向、时段和参数一致的重复测试，不能单独用于性能排名。
+`sender.retransmits_per_gib` 按 iperf3 sender bytes 归一化。schema 3 分别保存 `qdisc_root_totals` 和 `qdisc_leaf_totals`；`qdisc_health` 对两层的 drop/requeue 独立判定，根与叶的 bytes 不相加。`mq` 拓扑的 `qdisc_active_totals` 仍使用叶子作为流量汇总，普通根 qdisc 和 HTB 使用 root；HTB root `overlimits` 是整形暴露证据，FQ 叶子 drop/requeue 不会再被 root 零值掩盖。缺少预期 HTB→FQ 叶子时摘要生成失败。这些指标只适合比较服务端、方向、时段和参数一致的重复测试，不能单独用于性能排名。
 
 创建持久化目录后，脚本先写入 `INCOMPLETE`。上传/下载摘要、策略路由证据、核心证据清单、`benchmark-result.json` 和 `COMPLETED` 全部提交成功后，才删除该标记。`policy-routing.txt` 总是保存 IPv4/IPv6 rules；只有检测到自定义 rule 时才展开对应地址族的 `route show table all`。这只是只读诊断，不能证明项目支持复杂策略路由 apply。`SHA256SUMS` 覆盖原始测试数据、计数器、策略路由、元数据和分方向摘要；为避免循环依赖，不覆盖 `benchmark-result.json`、`COMPLETED` 和 `INCOMPLETE`。`benchmark-result.json` 保存核心清单哈希，`COMPLETED` 绑定核心清单与最终结果哈希。
 
@@ -752,7 +755,7 @@ plan；因此完成的扫描可以追溯到唯一已复核 reference，而不记
 
 `experiments/htb-aggregate/rate-sweep-plan.sh`、`rate-sweep-run.sh` 和
 `rate-sweep-analyze.sh` 把候选发现分成 schema 3 只读计划、显式流量/临时 qdisc 执行和只读
-分析三层。当前边界只接受 rc.16 schema 4、`VERIFIED`、200 Mbps 的 Debian 13 1C1G/1C2G
+分析三层。开发候选边界只接受 rc.17 schema 4、`VERIFIED`、200 Mbps 的 Debian 13 1C1G/1C2G
 基线；runner 在流量前执行真实 profile 的只读 `verify`，冻结 managed
 profile/version/state/port/state SHA-256，并要求每个 `benchmark-meta.json` 再次匹配。只测
 上传，因为本地 egress HTB 不能用于归因下载方向的远端 sender 重传。通用默认
@@ -763,11 +766,14 @@ plan 生成器也必须显式 ack 并提供三项 reference 摘要，不能省�
 本身不读取主机，摘要真实性仍须由 `dvt htb` wrapper 或执行 SOP 校验。
 
 分析以通过窗口校验的 iperf3 sender Mbit/s 作为主吞吐指标，并使用精确 sender bytes 归一化
-的 `retransmits_per_gib`；receiver goodput 只作交叉核对。任一样本测量窗口无效、HTB
-`overlimits` 不为正、sender 未达到计划速率的 90%、CPU idle/steal 不合格，或 softnet/
+的 `retransmits_per_gib`；receiver goodput 只作交叉核对。任一样本使用旧 summary schema、
+缺少完整 HTB→FQ root/leaf 证据、测量窗口无效、HTB root `overlimits` 不为正、任一
+root/leaf qdisc drop/requeue 增长、sender 未达到计划速率的 90%、CPU idle/steal 不合格，或 softnet/
 接口异常计数增长时，输出 `REVIEW_BLOCKED` 且 shortlist 为空。阈值作为 plan controls 冻结，
 不是分析器隐藏常量。分析不假设固定 MSS、不推算 packet loss percentage、不使用固定全局
-重传阈值。runner 的脱敏 `socket-metrics.txt` 只作辅助归因，不能替代流级指标。扫描完成、
+重传阈值。runner 的脱敏 `socket-metrics.txt` 除原有 RTT、cwnd 和重传字段外，还保留
+`pacing_rate`、`delivery_rate`、`minrtt`、`dsack_dups`、`rcv_ooopack`、`snd_wnd` 和
+`rcv_wnd`；它不保留 endpoint/process 信息，只作辅助归因，不能替代流级指标。扫描完成、
 shortlist 非空和 HTB `overlimits` 都不授权持久化。通用命令见
 [HTB200 参考筛查与候选聚合速率发现 SOP](docs/experiments/htb-candidate-rate-sweep.md)；VMISS
 Basic 1C1G 使用更完整的
@@ -795,7 +801,7 @@ bash ./experiments/htb-aggregate/experiment-plan.sh \
 
 较低速率控制必须等候选结果分析关闭后另建窗口，例如 `--control-rate 180` 会附加独立的 `A-control-before → C1 → A-control-after`，不会自动执行或授权 180 Mbit/s。候选扫描不能替代该 A/B/A 和反序复验。
 
-现行执行器 v0.4.0 只接受 rc.16 schema 4、`VERIFIED`、200 Mbps 的
+开发候选执行器 v0.4.0 只接受 rc.17 schema 4、`VERIFIED`、200 Mbps 的
 `debian13-1c1g` 或 `debian13-1c2g` 基线；200 仅用于同拓扑 reference，不授权超过端口
 上限。正式 B stage 必须使用 `TCPQUALITY_RUNS=1`，避免三轮 TcpQuality 超过 40 分钟
 watchdog。1C2G 见独立 [A/B/A SOP](docs/experiments/vmiss-1c2g-200mbps-htb-aba.md)。原
@@ -879,7 +885,7 @@ env PORT_SPEED_MBPS=1000 \
 
 状态更新先由 `jq` 写入同目录临时文件。只有命令退出码、非空检查、单一 JSON 对象和完整结构校验全部通过后，才原子替换 `state.json`。空文件、空白文件、多个 JSON 文档或更新失败均不能覆盖上一个有效状态。
 
-服务商扩容或降配端口后，使用 `dvt reconfigure --port <MBPS>`。该操作只接受同一 rc.16 版本和 profile 的 `VERIFIED` 状态，先执行完整 `verify`，再保留现有 RTT；自动 buffer 按新带宽重算，显式 buffer 保持原值。同值请求只验证不写入。普通 `apply` 的参数不一致门禁没有放宽，不得手工编辑 `state.json` 代替重配置。
+服务商扩容或降配端口后，使用 `dvt reconfigure --port <MBPS>`。开发候选只接受同一 rc.17 版本和 profile 的 `VERIFIED` 状态，先执行完整 `verify`，再保留现有 RTT；自动 buffer 按新带宽重算，显式 buffer 保持原值。同值请求只验证不写入。普通 `apply` 的参数不一致门禁没有放宽，不得手工编辑 `state.json` 代替重配置。
 
 重配置把旧 state 和 sysctl 管理文件保存为 root-only 固定备份，先提交 `RECONFIGURING`，再更新候选文件、必要的运行时 buffer、管理哈希并执行完整候选验证。任何失败会尝试恢复旧 sysctl 和旧 `VERIFIED` 状态；恢复失败时状态保留为 `DEGRADED`，`status` 显示事务和失败证据，普通 `verify`/`rollback`/`apply` 均拒绝越过，必须先执行 `dvt recover`。
 

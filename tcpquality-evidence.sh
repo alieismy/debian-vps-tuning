@@ -12,7 +12,7 @@ PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 umask 077
 
-TOOL_VERSION='0.1.0-rc.16'
+TOOL_VERSION='0.1.0-rc.17'
 SUPPORTED_RELEASE_TAG='v1.00013'
 SUPPORTED_COMMIT='73606e2460bde21bb2e253842971f8ca8c9eb51c'
 SUPPORTED_RUN_SHA256='3e9e08792b441d9d74aeb64630a657f6904821dd2a911a379fcea538ebdbd5c2'

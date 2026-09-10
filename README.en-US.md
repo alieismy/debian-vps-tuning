@@ -8,7 +8,7 @@ The script uses BBR + fq, controlled TCP buffering, standard queue parameters, e
 
 > **System Selection Summary (as of 2026-08-04):** Newly created 1C1G, 1C2G, and 2C2G VPS instances are recommended to use Debian 13 minimal by default. Debian 13 is the current stable release; Debian 12 has transitioned to LTS and is better suited for retaining existing stable nodes or meeting explicit compatibility constraints. The OS version alone does not guarantee BBR availability, higher performance, or lower idle memory usage; virtualization type, running kernel, and target machine resources must still be verified.
 
-> Current release candidate: `v0.1.0-rc.16`. The following online commands are pinned to that exact candidate and must not be executed until the Release is published and all public assets have been reverse-downloaded and verified. The official `v0.1.0` still requires [Target VPS Runtime Acceptance](docs/validation.md); do not treat this candidate as target-host, full-bandwidth, or performance acceptance.
+> The current published release candidate is `v0.1.0-rc.16`; the online commands below remain pinned to that immutable Release. The working tree contains an unpublished `v0.1.0-rc.17` implementation candidate. Do not use its installer, digests, or profiles as published assets. The official `v0.1.0` still requires [Target VPS Runtime Acceptance](docs/validation.md); do not treat either candidate as target-host, full-bandwidth, or performance acceptance.
 
 > This English document was originally translated from the rc.11 documentation. Release-critical URLs and the rc.16 benchmark-termination and policy-routing evidence contracts are synchronized here. The Chinese [README](README.md) and [rc.16 release notes](docs/releases/v0.1.0-rc.16.md) remain authoritative for the complete traffic-budget ledger, checkpoint/resume migration, installer, TcpQuality evidence, advisory probe, and non-persistent HTB details.
 
@@ -587,7 +587,7 @@ env BENCHMARK_HOST='iperf.example.com' \
 > separate high-quota host, with the full traffic budget and stop conditions
 > approved in advance.
 
-The non-persistent HTB workflow is restricted to a Debian 13 rc.16 schema-4
+The development version of the non-persistent HTB workflow is restricted to a Debian 13 rc.17 schema-4
 `VERIFIED`, 200-Mbps `debian13-1c1g` or `debian13-1c2g` baseline. The 40-minute
 watchdog requires the executor to run from a stable path. `dvt htb preflight`
 does not install it implicitly; while no HTB transaction is active, install the
@@ -612,18 +612,26 @@ dvt htb smoke --rate 190 --hold-seconds 10
 
 Rate discovery is split into a schema-3 read-only plan, an explicitly invoked
 traffic/qdisc runner, and a read-only analyzer. Before traffic, the runner calls
-the selected rc.16 profile's `verify`, freezes the managed
+the selected rc.17 profile's `verify`, freezes the managed
 profile/version/state/port/state SHA-256, and requires every
 `benchmark-meta.json` to match. Every sample must have a valid measurement
-window, positive HTB `overlimits`, sender goodput of at least the frozen 90%
-rate-exposure ratio, sufficient CPU idle and steal headroom, and zero softnet
-drop/time-squeeze and interface drop/error deltas. A failure produces
+window, complete schema-3 HTB-to-FQ root/leaf evidence, positive HTB root
+`overlimits`, sender goodput of at least the frozen 90% rate-exposure ratio,
+sufficient CPU idle and steal headroom, zero root/leaf qdisc drops and requeues,
+and zero softnet drop/time-squeeze and interface drop/error deltas. A failure produces
 `REVIEW_BLOCKED` with an empty shortlist. Candidate plans bind the reviewed
 reference's `SHA256SUMS`, `sweep-analysis.json`, and `COMPLETED` digests without
 recording its absolute host path. Direct plan generation also requires the
 explicit acknowledgement and all three digest fields. The plan generator does
 not read host evidence, so digest authenticity still has to be verified by the
 `dvt htb` wrapper or the execution SOP.
+
+Schema-3 benchmark summaries keep root and leaf qdisc totals separate; their
+byte counts are never added. The redacted `socket-metrics.txt` also retains
+`pacing_rate`, `delivery_rate`, `minrtt`, `dsack_dups`, `rcv_ooopack`,
+`snd_wnd`, and `rcv_wnd` while excluding endpoints, ports, PIDs, process names,
+and inodes. These fields support diagnosis and do not replace flow-scoped
+iperf3 retransmission evidence.
 
 ```bash
 dvt htb reference \

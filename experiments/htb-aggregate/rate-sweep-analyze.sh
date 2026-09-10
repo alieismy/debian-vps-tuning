@@ -6,7 +6,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 
-ANALYZER_VERSION='0.3.0'
+ANALYZER_VERSION='0.4.0'
 
 die() { printf '[rate-sweep-analyze][FAIL] %s\n' "$*" >&2; exit 1; }
 
@@ -89,7 +89,7 @@ main() {
     (.runner_version | type == "string") and
     (.tuning_script.sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
     .managed_binding.state == "VERIFIED" and
-    .managed_binding.script_version == "0.1.0-rc.16" and
+    .managed_binding.script_version == "0.1.0-rc.17" and
     ((.managed_binding.profile_id == "debian13-1c1g") or
      (.managed_binding.profile_id == "debian13-1c2g")) and
     .managed_binding.port_speed_mbps == 200 and
@@ -224,19 +224,69 @@ main() {
     jq -n --argjson stage "$stage_json" \
       --argjson cpu "$cpu_json" --argjson softnet "$softnet_json" \
       --slurpfile plan "$plan" --slurpfile summary "${benchmark_dir}/upload.summary.json" '
+        def nonnegative_number($value):
+          ($value | type) == "number" and $value >= 0;
+        def upload_summary_contract_valid($s):
+          ($s | type) == "object" and $s.schema_version == 3 and
+          $s.direction == "upload" and $s.reverse == false and
+          ($s.measurement_window.valid | type) == "boolean" and
+          ($s.measurement_window.issues | type) == "array" and
+          nonnegative_number($s.sender.seconds) and $s.sender.seconds > 0 and
+          nonnegative_number($s.sender.mbps) and
+          nonnegative_number($s.sender.retransmits) and
+          nonnegative_number($s.sender.retransmits_per_gib) and
+          nonnegative_number($s.receiver.seconds) and $s.receiver.seconds > 0 and
+          nonnegative_number($s.receiver.mbps) and
+          ($s.host.link_delta | type) == "object" and
+          ($s.qdisc_coverage.topology == "htb-fq") and
+          ($s.qdisc_coverage.root_is_htb == true) and
+          ($s.qdisc_coverage.has_leaf == true) and
+          ($s.qdisc_coverage.htb_fq_leaf_complete == true) and
+          nonnegative_number($s.qdisc_root_totals.overlimits_delta) and
+          nonnegative_number($s.qdisc_root_totals.dropped_delta) and
+          nonnegative_number($s.qdisc_root_totals.requeues_delta) and
+          nonnegative_number($s.qdisc_leaf_totals.dropped_delta) and
+          nonnegative_number($s.qdisc_leaf_totals.requeues_delta) and
+          ($s.qdisc_health.any_drop_or_requeue | type) == "boolean" and
+          (($s.qdisc_health.status == "NO_LOCAL_QUEUE_DROP_OR_REQUEUE") or
+           ($s.qdisc_health.status == "LOCAL_QUEUE_ANOMALY")) and
+          ($s.qdisc_health.root.dropped_delta == $s.qdisc_root_totals.dropped_delta) and
+          ($s.qdisc_health.root.requeues_delta == $s.qdisc_root_totals.requeues_delta) and
+          ($s.qdisc_health.leaf.dropped_delta == $s.qdisc_leaf_totals.dropped_delta) and
+          ($s.qdisc_health.leaf.requeues_delta == $s.qdisc_leaf_totals.requeues_delta) and
+          ($s.qdisc_health.any_drop_or_requeue ==
+            (($s.qdisc_root_totals.dropped_delta > 0) or
+             ($s.qdisc_root_totals.requeues_delta > 0) or
+             ($s.qdisc_leaf_totals.dropped_delta > 0) or
+             ($s.qdisc_leaf_totals.requeues_delta > 0))) and
+          ($s.qdisc_health.status ==
+            (if $s.qdisc_health.any_drop_or_requeue then
+               "LOCAL_QUEUE_ANOMALY"
+             else "NO_LOCAL_QUEUE_DROP_OR_REQUEUE" end));
         ($summary[0]) as $s |
         ($plan[0]) as $p |
-        if ($s | type) != "object" or $s.schema_version != 2 or
-           $s.direction != "upload" or $s.reverse != false or
-           ($s.measurement_window.valid | type) != "boolean" or
-           ($s.measurement_window.issues | type) != "array" or
-           ($s.sender.mbps | type) != "number" or $s.sender.mbps < 0 or
-           ($s.qdisc_active_totals.overlimits_delta | type) != "number" or
-           $s.qdisc_active_totals.overlimits_delta < 0 or
-           ($s.qdisc_active_totals.dropped_delta | type) != "number" or
-           $s.qdisc_active_totals.dropped_delta < 0 or
-           ($s.host.link_delta | type) != "object" then
-          error("upload summary is invalid")
+        if (upload_summary_contract_valid($s) | not) then
+          {
+            sequence:$stage.sequence,label:$stage.label,condition:$stage.condition,
+            phase:$stage.phase,rate_mbit:$stage.rate_mbit,
+            sample_index:$stage.sample_index,round:$stage.round,
+            evidence_contract_valid:false,
+            evidence_contract_issues:["upload-summary-schema-or-qdisc-contract-invalid"],
+            measurement_window_valid:false,
+            measurement_window_status:"INVALID_EVIDENCE_CONTRACT",
+            measurement_window_issues:["upload-summary-schema-or-qdisc-contract-invalid"],
+            sender_seconds:null,receiver_seconds:null,sender_mbps:null,
+            receiver_mbps_reported:null,receiver_mbps:null,
+            sender_retransmits:null,sender_retransmits_per_gib:null,
+            host_tcp_retrans_delta:null,host_tx_bytes_delta:null,
+            qdisc_root_dropped_delta:null,qdisc_root_overlimits_delta:null,
+            qdisc_root_requeues_delta:null,qdisc_leaf_dropped_delta:null,
+            qdisc_leaf_requeues_delta:null,qdisc_topology:null,
+            qdisc_health_status:"INVALID_EVIDENCE_CONTRACT",
+            qdisc_health_valid:false,sender_rate_exposure_ratio:null,
+            shaping_exposure_valid:false,cpu:$cpu,softnet:$softnet,
+            link_drops_errors_delta:null,resource_gate_valid:false
+          }
         else
         ($s.sender.mbps / $stage.rate_mbit) as $rate_exposure_ratio |
         ([$s.host.link_delta | to_entries[] |
@@ -244,8 +294,9 @@ main() {
                  (.key | endswith(".rx_dropped")) or
                  (.key | endswith(".tx_errors")) or
                  (.key | endswith(".rx_errors"))) | .value] | add // 0) as $link_drops_errors |
-        (($s.qdisc_active_totals.overlimits_delta > 0) and
+        (($s.qdisc_root_totals.overlimits_delta > 0) and
          ($rate_exposure_ratio >= $p.controls.minimum_rate_exposure_ratio)) as $shaping_exposure_valid |
+        ($s.qdisc_health.any_drop_or_requeue == false) as $qdisc_health_valid |
         (($cpu.idle_percent >= $p.controls.minimum_cpu_idle_percent) and
          ($cpu.steal_percent <= $p.controls.maximum_cpu_steal_percent) and
          ($softnet.dropped_delta == 0) and ($softnet.time_squeeze_delta == 0) and
@@ -253,7 +304,8 @@ main() {
         {
           sequence:$stage.sequence,label:$stage.label,condition:$stage.condition,
           phase:$stage.phase,rate_mbit:$stage.rate_mbit,
-          sample_index:$stage.sample_index,round:$stage.round,
+           sample_index:$stage.sample_index,round:$stage.round,
+           evidence_contract_valid:true,evidence_contract_issues:[],
           measurement_window_valid:$s.measurement_window.valid,
           measurement_window_status:$s.measurement_window.status,
           measurement_window_issues:$s.measurement_window.issues,
@@ -266,10 +318,14 @@ main() {
           sender_retransmits_per_gib:$s.sender.retransmits_per_gib,
           host_tcp_retrans_delta:($s.host.tcp_delta.TcpRetransSegs // null),
           host_tx_bytes_delta:$s.host.tx_bytes_delta,
-          qdisc_dropped_delta:$s.qdisc_active_totals.dropped_delta,
-          qdisc_overlimits_delta:$s.qdisc_active_totals.overlimits_delta,
-          qdisc_requeues_delta:$s.qdisc_active_totals.requeues_delta,
-          qdisc_aggregation_source:$s.qdisc_coverage.aggregation_source,
+           qdisc_root_dropped_delta:$s.qdisc_root_totals.dropped_delta,
+           qdisc_root_overlimits_delta:$s.qdisc_root_totals.overlimits_delta,
+           qdisc_root_requeues_delta:$s.qdisc_root_totals.requeues_delta,
+           qdisc_leaf_dropped_delta:$s.qdisc_leaf_totals.dropped_delta,
+           qdisc_leaf_requeues_delta:$s.qdisc_leaf_totals.requeues_delta,
+           qdisc_topology:$s.qdisc_coverage.topology,
+           qdisc_health_status:$s.qdisc_health.status,
+           qdisc_health_valid:$qdisc_health_valid,
           sender_rate_exposure_ratio:$rate_exposure_ratio,
           shaping_exposure_valid:$shaping_exposure_valid,
           cpu:$cpu,softnet:$softnet,
@@ -296,17 +352,21 @@ main() {
          mad:(if $m == null then null else median($v | map((. - $m) | abs)) end)};
       def group_stats($rows):
         {samples:($rows|length),
+         valid_evidence_contract_samples:([$rows[] | select(.evidence_contract_valid)] | length),
          valid_measurement_windows:([$rows[] | select(.measurement_window_valid)] | length),
          valid_shaping_exposure_samples:([$rows[] | select(.shaping_exposure_valid)] | length),
+         valid_qdisc_health_samples:([$rows[] | select(.qdisc_health_valid)] | length),
          valid_resource_samples:([$rows[] | select(.resource_gate_valid)] | length),
          sender_mbps:stats([$rows[].sender_mbps]),
          sender_rate_exposure_ratio:stats([$rows[].sender_rate_exposure_ratio]),
          receiver_mbps:stats([$rows[].receiver_mbps]),
          sender_retransmits_per_gib:stats([$rows[].sender_retransmits_per_gib]),
          host_tcp_retrans_delta:stats([$rows[].host_tcp_retrans_delta]),
-         qdisc_dropped_delta:stats([$rows[].qdisc_dropped_delta]),
-         qdisc_overlimits_delta:stats([$rows[].qdisc_overlimits_delta]),
-         qdisc_requeues_delta:stats([$rows[].qdisc_requeues_delta]),
+         qdisc_root_dropped_delta:stats([$rows[].qdisc_root_dropped_delta]),
+         qdisc_root_overlimits_delta:stats([$rows[].qdisc_root_overlimits_delta]),
+         qdisc_root_requeues_delta:stats([$rows[].qdisc_root_requeues_delta]),
+         qdisc_leaf_dropped_delta:stats([$rows[].qdisc_leaf_dropped_delta]),
+         qdisc_leaf_requeues_delta:stats([$rows[].qdisc_leaf_requeues_delta]),
          cpu_idle_percent:stats([$rows[].cpu.idle_percent]),
          cpu_steal_percent:stats([$rows[].cpu.steal_percent]),
          softnet_dropped_delta:stats([$rows[].softnet.dropped_delta]),
@@ -319,13 +379,18 @@ main() {
         end;
       . as $samples |
       $plan[0] as $plan_doc |
+      ([$samples[] | select(.evidence_contract_valid != true)]) as $invalid_contract_rows |
+      (($invalid_contract_rows | length) > 0) as $evidence_contract_blocked |
       ([$samples[] | select(.measurement_window_valid != true)]) as $invalid_rows |
       (($invalid_rows | length) > 0) as $measurement_blocked |
       ([$samples[] | select(.shaping_exposure_valid != true)]) as $invalid_exposure_rows |
       (($invalid_exposure_rows | length) > 0) as $exposure_blocked |
+      ([$samples[] | select(.qdisc_health_valid != true)]) as $invalid_qdisc_rows |
+      (($invalid_qdisc_rows | length) > 0) as $qdisc_health_blocked |
       ([$samples[] | select(.resource_gate_valid != true)]) as $invalid_resource_rows |
       (($invalid_resource_rows | length) > 0) as $resource_blocked |
-      ($measurement_blocked or $exposure_blocked or $resource_blocked) as $analysis_blocked |
+      ($evidence_contract_blocked or $measurement_blocked or $exposure_blocked or
+       $qdisc_health_blocked or $resource_blocked) as $analysis_blocked |
       ([$samples[] | select(.condition == "reference-htb")]) as $reference_rows |
       (group_stats($reference_rows)) as $reference_all |
       ([$samples[] | select(.phase == "reference-start")]) as $reference_start_rows |
@@ -354,9 +419,10 @@ main() {
           . + {review_flags:{
             retransmission_below_reference_dispersion:($group_retrans_upper < ([0,$reference_retrans_lower]|max)),
             sender_goodput_within_observed_best_dispersion:($g.sender_mbps.median >= $near_best_floor),
+            all_evidence_contracts_valid:($g.valid_evidence_contract_samples == $g.samples),
             all_receiver_measurement_windows_valid:($g.valid_measurement_windows == $g.samples),
-            all_local_qdisc_drop_samples_zero:($g.qdisc_dropped_delta.max == 0),
-            all_htb_overlimit_samples_positive:($g.qdisc_overlimits_delta.min > 0),
+            all_local_qdisc_health_samples_valid:($g.valid_qdisc_health_samples == $g.samples),
+            all_htb_overlimit_samples_positive:($g.qdisc_root_overlimits_delta.min > 0),
             all_sender_rate_exposure_samples_valid:($g.valid_shaping_exposure_samples == $g.samples),
             all_resource_samples_valid:($g.valid_resource_samples == $g.samples)
           }}]
@@ -365,8 +431,9 @@ main() {
          [$rates_with_flags[] | select(
            .review_flags.retransmission_below_reference_dispersion and
            .review_flags.sender_goodput_within_observed_best_dispersion and
+           .review_flags.all_evidence_contracts_valid and
            .review_flags.all_receiver_measurement_windows_valid and
-           .review_flags.all_local_qdisc_drop_samples_zero and
+           .review_flags.all_local_qdisc_health_samples_valid and
            .review_flags.all_htb_overlimit_samples_positive and
            .review_flags.all_sender_rate_exposure_samples_valid and
            .review_flags.all_resource_samples_valid)]
@@ -378,6 +445,16 @@ main() {
         plan_mode:$plan_doc.mode,
         status:(if $analysis_blocked then "REVIEW_BLOCKED" else "REVIEW_REQUIRED" end),
         persistence_authorized:false,
+        evidence_contract_gate:{
+          valid:(($evidence_contract_blocked | not)),
+          required_upload_summary_schema:3,
+          requires_htb_fq_topology:true,
+          requires_root_and_leaf_qdisc_health:true,
+          invalid_sample_count:($invalid_contract_rows | length),
+          invalid_samples:[$invalid_contract_rows[] | {
+            sequence,label,condition,rate_mbit,issues:.evidence_contract_issues}],
+          invalid_sample_effect:"REVIEW_BLOCKED; old or incomplete summaries must be regenerated"
+        },
         measurement_gate:{
           valid:(($measurement_blocked | not)),
           invalid_sample_count:($invalid_rows | length),
@@ -393,8 +470,21 @@ main() {
           invalid_sample_count:($invalid_exposure_rows | length),
           invalid_samples:[$invalid_exposure_rows[] | {
             sequence,label,condition,rate_mbit,sender_mbps,
-            sender_rate_exposure_ratio,qdisc_overlimits_delta}],
+            sender_rate_exposure_ratio,qdisc_root_overlimits_delta}],
           invalid_sample_effect:"REVIEW_BLOCKED; generate a new fixed-parallel plan instead of ranking unexposed rates"
+        },
+        qdisc_health_gate:{
+          valid:(($qdisc_health_blocked | not)),
+          requires_zero_root_drops:true,
+          requires_zero_root_requeues:true,
+          requires_zero_leaf_drops:true,
+          requires_zero_leaf_requeues:true,
+          invalid_sample_count:($invalid_qdisc_rows | length),
+          invalid_samples:[$invalid_qdisc_rows[] | {
+            sequence,label,condition,rate_mbit,qdisc_topology,qdisc_health_status,
+            qdisc_root_dropped_delta,qdisc_root_requeues_delta,
+            qdisc_leaf_dropped_delta,qdisc_leaf_requeues_delta}],
+          invalid_sample_effect:"REVIEW_BLOCKED; inspect local root and leaf queue counters before ranking rates"
         },
         resource_gate:{
           valid:(($resource_blocked | not)),
@@ -436,10 +526,14 @@ main() {
           "confirm endpoint, address family, tool hashes, route, workload and time-window comparability",
           "reject or repeat the run when measurement windows, reference drift or sample dispersion are operationally material"
         ],
-        next_gate:(if $measurement_blocked then
+        next_gate:(if $evidence_contract_blocked then
+          "regenerate every stage with upload summary schema 3 and complete HTB root/FQ leaf counters"
+        elif $measurement_blocked then
           "preserve evidence, diagnose the invalid iperf3 measurement window, and repeat with a new evidence directory"
         elif $exposure_blocked then
           "do not rank rates; preserve evidence and generate a new complete plan with a fixed higher parallel count or a different authorized endpoint"
+        elif $qdisc_health_blocked then
+          "do not rank rates; inspect root/leaf qdisc drops and requeues before creating a new evidence directory"
         elif $resource_blocked then
           "do not rank rates; diagnose CPU steal/idle, softnet or link counters before creating a new evidence directory"
         elif $plan_doc.mode == "reference-screen" then
@@ -450,7 +544,7 @@ main() {
           htb_effect:"may support a local-egress burst/policer hypothesis but cannot by itself prove provider policing",
           overlimits:"expected evidence that HTB acted; not packet loss",
           shaping_exposure:"positive overlimits plus sender goodput at the frozen rate-exposure ratio is required for every sample",
-          local_qdisc_drops:"zero local drops do not exclude downstream or remote-path loss",
+          local_qdisc_health:"zero root/leaf drops and requeues do not exclude downstream or remote-path loss",
           success_boundary:"completion and a shortlist do not prove proxy business-path improvement"
         },
         traffic_budget:$plan_doc.traffic_budget,

@@ -6,7 +6,7 @@ IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 
-TOOL_VERSION='0.1.0-rc.16'
+TOOL_VERSION='0.1.0-rc.17'
 SCHEMA_VERSION=1
 
 action=''
@@ -91,7 +91,7 @@ validate_ledger_path() {
 
 validate_ledger_json() {
   jq -e --argjson schema "$SCHEMA_VERSION" '
-    .schema_version == $schema and .tool_version == "0.1.0-rc.16" and
+    .schema_version == $schema and .tool_version == "0.1.0-rc.17" and
     (.window_id | type == "string" and length > 0) and
     (.budget_bytes | type == "number" and floor == . and . > 0) and
     (.reserved_bytes | type == "number" and floor == . and . >= 0) and

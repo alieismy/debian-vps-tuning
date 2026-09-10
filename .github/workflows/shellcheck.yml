@@ -21,7 +21,7 @@ jobs:
       - name: Check verified installer lifecycle
         run: |
           sudo bash tests/installer-check.sh
-          sudo bash tests/rc16-check.sh
+          sudo bash tests/rc17-check.sh
 
       - name: ShellCheck 0.11.0
         run: |
@@ -55,6 +55,6 @@ jobs:
             tests/static-check.sh \
             tests/controller-check.sh \
             tests/installer-check.sh \
-            tests/rc16-check.sh \
+            tests/rc17-check.sh \
             experiments/htb-aggregate/tests/static-check.sh \
             .tmp/ci-helpers/*.helper
