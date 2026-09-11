@@ -1539,3 +1539,45 @@ rc.14 的本地、Linux CI、PR/评审、完整性链和公开 Pre-release 发�
 ### 当前成熟度判断
 
 项目仍处于验证和文档闭环阶段。rc.14 候选仍有明确的本地最终门禁和目标环境证据缺口，尚未达到应切换到下一阶段的条件。本轮无其他新增延期事项。
+
+## 本轮记录：2026-09-11（Ubuntu 支持可行性评估）
+
+### 已完成及证据
+
+- 只读复核当前 `master`/rc.17 工作树：项目正式契约仍是 Debian 12/13 amd64 的六份 profile。总控 `detect_profile_from()` 仅接受 `ID=debian` 和版本 12/13；profile 模板 `check_supported_os()` 及状态字段、`tools/render_profiles.py`、安装器资产清单、`dvt-migrate.sh` 的 profile 正则和 HTB wrapper 均存在 Debian 专属边界。GitHub Actions 的 `ubuntu-24.04` 仅是 CI runner，不构成 Ubuntu 目标机支持证据。
+- 评估结论为“有条件可行，但不应并入 rc.17”：现有调优逻辑主要使用 Linux 通用的 `sysctl`、`iproute2`、`tc`、`systemd`、swap 和 `jq` 接口，静态上没有发现必须依赖 Debian 用户态的核心动作；但 Ubuntu 目标机的内核、qdisc、systemd-sysctl 加载、镜像/cloud-init、3X-UI/Xray、回滚和重启行为尚无本项目证据。
+- 已核对 Ubuntu 官方生命周期页和发布目录（2026-09-11）：Ubuntu 22.04 LTS 标准安全维护至 2027-05，24.04 LTS 至 2029-05，26.04 LTS 已于 2026-04 发布、标准安全维护至 2031-05；当前 amd64 Server 镜像分别为 22.04.5、24.04.5 和 26.04.1。来源：`https://ubuntu.com/about/release-cycle`、`https://releases.ubuntu.com/`、`https://ubuntu.com/download/server`。
+
+### 未完成门禁
+
+- 尚未修改任何源码、profile、清单或文档契约；没有 Ubuntu 目标 VPS、安装/重启/回滚/代理业务或性能验收证据。不能把静态可移植性写成 Ubuntu 已支持。
+- Ubuntu 支持若立项，至少需要重新设计发行版字段和状态兼容策略，扩展 controller/template/generator/installer/manifest、迁移正则、测试 fixture、README/设计范围/验证矩阵，并决定 HTB 研究面是否继续限定 Debian 13。每个纳入的 Ubuntu 版本都需要独立的 amd64、四个资源档边界、qdisc/sysctl/swap/systemd、迁移/恢复、重启和真实 VLESS + REALITY + TCP 证据。
+
+### 延期事项变化
+
+- 新增“Ubuntu 目标支持决策”延期候选：在 rc.17 源码、fixture、生成资产、文档和本地门禁闭合前，不扩展发行版矩阵。重新评估触发条件为用户批准新阶段并提供 Ubuntu 测试资源/目标边界；优先从 Ubuntu 24.04 LTS 试点，26.04 LTS 在首个点版本和依赖兼容性复核后纳入，22.04 LTS 仅在明确的存量兼容需求下考虑。无新增其他延期事项。
+
+### 当前成熟度判断
+
+Ubuntu 支持技术上有条件可行，产品和运行证据尚不足以承诺支持。当前阶段继续保持 Debian-only；Ubuntu 评估已形成决策输入，但不改变 rc.17 实现范围，也不授权目标 VPS 操作或发布。
+
+## 本轮记录：2026-09-11（Debian-only rc.17 闭环复核）
+
+### 已完成及证据
+
+- 重新执行当前工作树的 Debian-only 门禁：`python tools/render_profiles.py --check`、全部目标脚本与测试脚本 `bash -n`、`bash tests/controller-check.sh`、`bash tests/static-check.sh`、`bash experiments/htb-aggregate/tests/static-check.sh` 和 `sha256sum -c SHA256SUMS` 均通过。静态套件最终输出为 `static checks passed for 6 scripts` 和 `HTB aggregate experiment static checks passed`。
+- 复核实际 Git 状态：`v0.1.0-rc.17` 已指向合并提交 `6bed55333a6483a4c5efd899d9942e7df3ced088`；当前 `master`/`origin/master` 为后续文档同步提交 `6786fbe6f949ccb43428fb52c1c58e9ba542e897`。GitHub Actions 固定 run `34455870749`（rc.17 合并提交）为 `success`。
+- 重新从公开 `v0.1.0-rc.17` Release 下载 19 个资产，逐项按清单复核通过；公开 `SHA256SUMS` 摘要为 `d44284ed010a5a9774fc104cea50a51bd209f8e0d1e57b9680cdf147e5bdc208`，公开 `install.sh` 摘要为 `4fd4dde90df4524d657623c4e22e355ab9adac70a703cff61a68e41e09007cbc`。临时下载目录已清理。
+
+### 未完成门禁
+
+- 本机 Windows 环境不是 Linux root，`tests/installer-check.sh` 返回 `installer check requires root`，`tests/rc17-check.sh` 返回 `[dvt-traffic-budget][FAIL] 必须以 root 运行`；这两项已由 rc.17 GitHub Actions 成功作业覆盖，本地不能重复宣称通过。
+- rc.17 仍没有新增 Ubuntu 支持；目标 VPS 的 rc.17 首次安装、迁移/重配置、重启持久性、真实 VLESS + REALITY + TCP、HTB reference/A/B/A 和性能改善仍不是本轮本地复核所得证据。不得把 Release 或 CI 结果写成这些运行/业务门禁通过。
+
+### 延期事项变化
+
+- 无新增延期事项。Ubuntu 支持继续保持上一条记录的延期候选；目标 VPS 生命周期、真实业务和研究型 HTB 证据按既有矩阵继续登记，未获得新的执行授权。
+
+### 当前成熟度判断
+
+rc.17 的 Debian-only 源码、生成资产、静态 fixture、CI、tag、Pre-release 和公开资产完整性已复核闭合；项目仍处于验证和文档闭环阶段。当前剩余缺口属于目标环境和业务层证据，不改变 rc.17 的发行版范围，也不自动授权下一阶段或真实 VPS 操作。
