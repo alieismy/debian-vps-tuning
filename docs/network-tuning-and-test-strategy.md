@@ -6,7 +6,7 @@
 
 适用范围：本项目支持的 Debian 12/13 amd64、1C512MB、1C1GB、1C2GB 和 2C2GB VPS
 
-证据截止：2026-08-29（Asia/Singapore）
+证据截止：2026-09-11（Asia/Singapore）
 
 ## 1. 背景与目标
 
@@ -47,6 +47,27 @@ HTB 证据。既有验证证明脚本的状态事务、BBR、根 `fq`、socket b
 
 最高证据层级：rc.11 生命周期和多轮线路观察可执行；临时 HTB 生命周期部分通过；没有形成
 可授权永久 HTB 的因果结论。
+
+#### 2026-09-11 Basic HTB200 reference 与 endpoint closeout
+
+本轮在同一受控 endpoint 上完成了 Basic 的三次 HTB200 单流 IPv4 reference。三次样本的
+sender 吞吐约为 187–190 Mbit/s，sender retransmits 均为 0，主机级 `TcpRetransSegs`
+增量均为 0；HTB root 与 FQ leaf 的 drops/requeues 均为 0，HTB root `overlimits` 为正。
+schema 3 的测量窗口、root/leaf qdisc totals、资源门禁、内部摘要链和恢复检查均已闭合。
+这证明本次固定 HTB200 窗口可稳定完成并且证据可审计，不证明 HTB 相比默认 `fq` 的因果
+收益，也不证明真实 VLESS + REALITY + TCP 业务改善。
+
+endpoint closeout 归档的外层 SHA-256 为
+`6c1b30561866ef6913a4fb9d2227e7fdba6b322ac9c57500de02fb313fef0c16`，与 sidecar 一致；
+归档内部清单、路径安全、server/observer transient unit、TCP/5201 listener、`iperf3`
+进程和临时 UFW 规则均已核验清理，其他 UFW 规则保持不变。observer 与 closeout 原目录
+按约定保留；归档含 endpoint/source 地址、端口和完整 journal，属于受控私有证据，不进入
+公开 Release、issue 或仓库。
+
+因此当前最高证据层级更新为：Basic HTB200 reference 和 endpoint 生命周期已经闭合；
+default root `fq` 对照、同时间窗 A/B/A、Core 测试以及真实代理业务验收仍未完成。candidate
+sweep 已停止，不因 reference 完成而自动授权；默认配置继续保持 BBR + 根 `fq`，HTB 继续是
+显式授权、受预算约束、非持久的研究能力。
 
 ### 2.2 `htb-aggregate` 目录
 
@@ -323,8 +344,9 @@ rc.15 的四条主动流量入口已接入同一 root-only ledger；仍须先在
 - 公共节点、时段、IPv4/IPv6 和真实代理路径结论分开。
 
 HTB 研究顺序仍可采用 reference → candidate → A/B/A → 反向窗口，但任何前置结论已足以
-停止时立即结束，不以完成既定序列为目标。TcpQuality `--all` 不作为默认工具；需要多节点线路
-研究时单独批准流量预算。
+停止时立即结束，不以完成既定序列为目标。本次 Basic 在三次 HTB200 reference 已稳定且
+重传为零后即停止，未进入 candidate 或 A/B/A；后续重新打开必须有独立问题、预算和授权。
+TcpQuality `--all` 不作为默认工具；需要多节点线路研究时单独批准流量预算。
 
 ## 8. 变更触发矩阵
 

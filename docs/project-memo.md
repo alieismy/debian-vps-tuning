@@ -1,10 +1,683 @@
 # 项目阶段备忘
 
 文档性质：资料性状态与延期事项记录
-当前阶段：rc.17 HTB/FQ 证据完整性 PR/CI 验证（候选实现已提交；tag、Release 与目标机验证未授权）
-更新日期：2026-09-10（Asia/Singapore）
+当前阶段：rc.17 Pre-release 已发布并反向验证（Basic HTB200 reference 已完成；default-fq 对照、A/B/A 与 Core 尚未执行）
+更新日期：2026-09-11（Asia/Singapore）
 
 本文件是 `AGENTS.md` 指定的唯一项目阶段备忘入口，用于记录每轮对话工作的闭环状态，以及当前阶段不主动展开的后续候选事项。它不构成需求批准、生产变更授权、发布授权或下一阶段启动决定；控制规则以 [项目级 AGENTS.md](../AGENTS.md) 为准，具体验证事实以 [验证矩阵](validation.md) 和对应发布说明为准。
+
+## 本轮记录：2026-09-11（Basic/endpoint 证据同步到相关文档）
+
+### 已完成及证据
+
+- 根据 `F:\Software\Software\翻墙\VPS\VMISS\测试\Basic\basic-htb200-reference-retry-20260911T064016Z.tar.gz` 的已核验结果，同步更新 `README.md`、`README.en-US.md`、`docs/network-tuning-and-test-strategy.md`、`docs/validation.md` 以及两个当前 HTB 研究 SOP。文档现在明确记录三次 HTB200 单流 IPv4 reference 已完成，吞吐约 187–190 Mbit/s，sender/主机级重传增量为 0，HTB root/FQ leaf drop/requeue 为 0，root `overlimits` 为正，且 reference 完成后已停止 candidate sweep。
+- 将 endpoint closeout 作为受控私有证据同步到相关文档：归档外层 SHA-256 为 `6c1b30561866ef6913a4fb9d2227e7fdba6b322ac9c57500de02fb313fef0c16`，内部清单和路径安全检查通过，临时 server/observer unit、TCP/5201 listener、`iperf3` 进程和 UFW 规则已清理，其他 UFW 规则未变化；observer/closeout 原目录按要求保留，不作为公开 Release、issue 或仓库资产。
+- 明确保留证据边界：Basic reference 不证明相对默认 `fq` 的因果收益，不证明真实 VLESS + REALITY + TCP 业务改善，不授权默认或持久 HTB；default-fq 对照、A/B/A、Core 和真实业务验收仍未执行。将 1C2G/Core A/B/A SOP 标为不因 Basic reference 自动启动，并把旧 rc.13/rc.14 命令块标作历史协议参考。
+
+### 未完成门禁
+
+- 本轮只做文档同步和静态一致性检查，没有连接或修改 VPS，没有运行 Basic、endpoint、Core、candidate sweep、A/B/A、重启、发布或生产变更。
+- 文档同步不改变 rc.17 源码、生成 profile、fixture、Release 资产或目标机通用 L4 门禁；目标 VPS 的 default-fq 对照、真实业务验收、重启持久性和任何持久 HTB 仍未验证或未授权。
+
+### 延期事项变化
+
+- 无新增延期事项。Basic candidate sweep、Core、default-fq 对照、A/B/A、真实 VLESS + REALITY + TCP 验收、burst/cburst 比较和持久 HTB 继续保持停止或未授权状态。
+
+### 当前成熟度判断
+
+相关现行文档已与 Basic HTB200 reference 和 endpoint closeout 的最高证据层级一致；项目仍处于 rc.17 证据完整性实现候选阶段，未进入下一轮主动网络实验或生产变更阶段。
+
+## 本轮记录：2026-09-11（tcpfit v0.5.8 当前源码吸收评估）
+
+### 已完成及证据
+
+- 只读冻结并检查 `Kylin010/tcpfit` 当前 `main`/`v0.5.8`：提交 `76331588af487a973d3445a1bf8bba7037d566ca`，`tcpfit.sh` SHA-256 为 `3a4d720bf7acb5b77eb24708ca17b6b42487628eefbdcb982e62454c2287358e`，release 为非 draft、非 prerelease；`bash -n tcpfit.sh`、`bash -n install.sh` 和 `python -m py_compile orchestrator/fleet.py` 通过。结论只达到固定源码、发布元数据和语法证据层级，未运行第三方 root 脚本、未连接目标 VPS、未产生公网流量。
+- 已形成唯一研究记录 [tcpfit v0.5.8 研究与 rc.17 吸收评估](tcpfit-v0.5.8-research-2026-09-11.md)：v0.5.8 的主要新增是按 `dev`/`via` 关键字解析无 `via` 默认路由，以及可选 PPP `ip-up` 重拨钩子；goodput、重传/GiB、loss-spike、HTB rate/ceil 与 FQ leaf 语义具有条件参考价值，但固定 RTT、32 项 sysctl、`initcwnd/initrwnd`、持久 HTB、可变 `main` 安装、默认遥测和未上线 fleet 编排不满足 rc.17 边界。
+- 对照当前 rc.17 源码确认：本项目默认路由网卡已按 `dev` 关键字发现，HTB/FQ root/leaf schema 3、socket 脱敏、共享流量 ledger、进程组回收、状态/所有权和非持久 HTB 已以更严格契约覆盖 tcpfit 的主要工程机制；当前没有需要因 tcpfit 参数包而修改默认 profile 的证据。
+
+### 未完成门禁
+
+- PPP/PPPoE 重拨后的 qdisc 持久化仍只是条件候选，尚未进入 rc.17。若未来纳入支持范围，必须先补需求、hook 所有权与哈希、schema/回滚、无 `via`/多路径/重拨 fixture 和 Linux root 生命周期证据。
+- tcpfit 的维护者 PPPoE 实测、吞吐数字和 policer 归因未在本项目目标环境复现；不能把 README 或单次外部运行声明写成目标 VPS 性能证据。
+- 本轮未修改网络实现、生成 profile、版本、发布资产或任何 VPS；现有 rc.17 本地/目标机/发布门禁状态不变。
+
+### 延期事项变化
+
+- 新增一项有边界的延期候选：“明确 PPP/PPPoE 拓扑需求后，评估受管 `ip-up` qdisc 恢复”；触发条件是用户提出该支持需求或出现可复现的 PPP 重拨后 qdisc 丢失问题。除此之外无新增延期事项。
+
+### 当前成熟度判断
+
+当前仍为 rc.17 证据完整性实现候选；tcpfit v0.5.8 研究未发现可直接替换 rc.17 默认参数或生命周期契约的内容。研究交付完成，后续只有 PPP/PPPoE 支持需求或新的可复现实验问题出现时才重新打开该候选。
+
+## 本轮记录：2026-09-11（六台 VPS 版本统一建议）
+
+### 已完成及证据
+
+- 通过 GitHub Releases API 确认当前已发布的最新版本为 `v0.1.0-rc.17`，状态为非 draft、非稳定版的 Pre-release，发布时间为 `2026-09-10T08:34:26Z`；Release 提供 19 个固定资产，包括 `install.sh`、总控、六份 profile、迁移器、预算/证据/HTB 工具和 `SHA256SUMS`。未使用可变 `latest` 或分支内容。
+- rc.17 的迁移器源码约束为：目标必须是 `0.1.0-rc.17`，来源允许 `rc.1`–`rc.16`；迁移过程要求旧版 verify、旧版 rollback/purge、第一次人工 reboot、目标版 preflight/apply、第二次人工 reboot 和最终 verify。迁移器本身不执行 reboot，也不声称控制台可达性或真实业务验收。
+- rc.17 当前仍保持 17 项受管 sysctl、默认 `BBR + fq`、managed-state schema 4 和按资源/端口计算的缓冲矩阵；500 Mbps 不会因为版本升级自动启用 HTB。1C1G/500 Mbps 的自动缓冲仍为 16 MiB，1C2G/500 Mbps 为 32 MiB；1C1G/100–200 Mbps 均为 16 MiB。
+- 结合已完成的 Basic 1C1G/200 Mbps HTB200 三样本零重传和 endpoint closeout 证据，当前没有依据把 HTB reference、candidate sweep 或真实业务测速作为六台 VPS 的版本迁移前置条件。版本迁移和性能/业务验收继续分层处理。
+
+### 决策建议
+
+- 建议最终将六台 VPS 的 **Debian VPS Tuning 管理版本统一到 rc.17**，以消除诊断字段、迁移器、证据 schema 和回滚行为的版本漂移；这是管理面统一，不表示六台机器应使用相同的端口参数、缓冲大小或 HTB 状态。
+- 不建议一次性并行升级六台。先完成全量只读盘点并按业务风险分批：已完成 rc.17 的 Basic 保持现状作为已验证样本；随后在维护窗口升级 Core；再升级两台 500 Mbps；最后升级另外两台 1C1G/200 Mbps 与 1C1G/100 Mbps。每台都必须独立保存 checkpoint 和证据。
+- 对当前确实由 rc.1–rc.16 管理、且 managed state 完整、旧版 profile 可取得并通过 verify 的主机，采用 rc.17 `migrate` 路径；不能用 rc.17 `apply` 直接覆盖旧状态。对旧状态损坏、来源是无状态契约的历史 v5/v6、无法取得旧版固定资产或无法验证备份/控制台的主机，先停在只读盘点，不猜测 rollback；必要时选择已验证备份和控制台可用后的干净重装路径。
+- 同一 rc.17 profile 已形成 `VERIFIED` 状态后，服务商只改变带宽时使用 `reconfigure --port`：100→200 Mbps 对 1C1G 保持 16 MiB；1C2G/2G 200→500 Mbps 自动缓冲变为 32 MiB；500→200 Mbps 恢复 16 MiB。版本迁移和带宽重配置不能混成一次未审计操作。
+
+### 未完成门禁
+
+- 六台 VPS 的实际当前版本、Debian 主版本、运行内核、CPU/内存档、managed-state 状态/hash、端口记录、qdisc、swap、x-ui/Fail2ban 状态和业务维护窗口尚未形成当前统一清单；在该清单完成前不能给每台机器下达具体迁移命令。
+- rc.17 是最新已发布候选，不是稳定版 `v0.1.0`；README 中部分旧段落仍固定写 `rc.16`，这些段落不能作为当前联网安装入口。实际安装必须以 rc.17 Release 的固定 `SHA256SUMS` 和对应资产为准。
+- 版本统一后的重启持久性、3X-UI/Xray 严格 NOFILE、真实 VLESS + REALITY + TCP 和业务重传仍需按台验收；Basic HTB200 reference 的零重传不能替代这些证据。
+
+### 延期事项变化
+
+- 六台 VPS 的统一升级从“是否升级”转为“先盘点、后分批迁移到 rc.17”的建议路线；没有新增公网 benchmark、HTB、持久整形或系统参数变更授权。
+- Core 与四台未完成盘点的 VPS 暂不执行远程变更；先收集只读清单，再按业务窗口安排迁移顺序。无新增延期事项。
+
+### 当前成熟度判断
+
+当前为 `RC17_LATEST_RELEASE_CONFIRMED_SIX_HOST_INVENTORY_REQUIRED_BEFORE_BATCH_MIGRATION`。下一最短动作是为六台 VPS 建立一份脱敏只读 inventory；完成后才能生成逐台 rc.17 迁移计划。
+
+## 本轮记录：2026-09-11（Basic reference 与 endpoint closeout 全部闭合）
+
+### 已完成及证据
+
+- 已审阅 `dvt-endpoint-20260911T063156Z-closeout-20260911T071901Z.tar.gz` 及其 sidecar。外层 SHA-256 `6c1b30561866ef6913a4fb9d2227e7fdba6b322ac9c57500de02fb313fef0c16` 与 sidecar 一致；归档共 51 个成员，包括 49 个普通文件和 2 个目录，无重复路径、绝对路径、父目录穿越、链接或特殊对象。内部 `SHA256SUMS` 的 48 个条目全部通过并覆盖 observer 与 closeout 中除清单本身外的所有文件。
+- closeout 合同绑定正确：observer pointer 精确指向 `/root/dvt-endpoint-20260911T063156Z`，server/observer units 分别为 `dvt-endpoint-20260911T063156Z-server.service` 与 `dvt-endpoint-20260911T063156Z-observer.service`，来源地址、IPv4、TCP/5201 和 `eth7` 与启动窗口记录一致。关闭前两个 unit 均为 active/running、RuntimeMaxUSec 为 2h；关闭后均为 inactive/dead、MainPID 0、LoadState not-found。
+- closeout 结果与原始快照交叉核对通过：server/observer 均已停止，TCP/5201 listener 和 `iperf3` 进程均 absent，observer open-file 匹配为 0；UFW 删除前检查与删除前二次快照逐字节一致，精确删除 rule `9`，目标临时规则数量变为 0，其他 UFW 规则规范化集合 diff 为空；`inet dvt_iperf3` 表在关闭前后均 absent；pointer 已删除，observer 原目录按约定保留。
+- endpoint journal 中启动阶段和 Basic 的 TCP connect 预检阶段各出现一次 `unable to receive cookie at server: Bad file descriptor`，这是无 iperf3 控制协议的裸 TCP 探测被 server 记录的预期日志；随后在 `06:40:33Z`、`06:45:48Z`、`06:51:04Z` 三个窗口各有一次来自 Basic 的正常 iperf3 接受记录，与三份 reference 样本一一对应。该 closeout 归档属于受控私有证据，包含 endpoint/source 地址和端口，不应直接公开发布。
+- Basic reference 归档已在本轮前一阶段完成独立校验并判定为三次 HTB200 零重传；候选速率扫描已经停止，未发生新的性能流量、默认 profile 变更、持久 HTB 或重启。
+
+### 未完成门禁
+
+- Basic 与 endpoint 的本轮运行证据已闭合；不再有待执行的 endpoint 清理命令。observer 和 closeout 原目录仍按用户要求保留，未来删除必须使用精确路径和新的明确授权。
+- 本轮仍没有 default root `fq` 对照、HTB200 A/B/A、Core 测试或真实 VLESS + REALITY + TCP 业务验收，因此不能把零重传归因于 HTB，也不能据此把 HTB 纳入默认或持久生产配置。
+- 公开发布的 rc.17 资产、源码和 Release 状态不因这些目标机证据而改变；运行归档不应作为公开 Release asset。
+
+### 延期事项变化
+
+- 新 endpoint closeout 阻断已关闭，Basic HTB200 reference 与临时服务生命周期均已完成；无新增延期事项。
+- Basic candidate sweep 保持停止状态；Core、default-fq 对照、A/B/A、真实业务验收、burst/cburst 比较和持久 HTB 仍属于未授权后续事项。
+
+### 当前成熟度判断
+
+当前为 `BASIC_HTB200_REFERENCE_AND_ENDPOINT_CLOSEOUT_VERIFIED_NO_MORE_BASIC_TRAFFIC`。本轮运行阶段完成；后续若继续推进，只能先形成新的对照测试设计并取得单独授权。
+
+## 本轮记录：2026-09-11（Basic HTB200 reference 审阅通过，候选速率扫描停止）
+
+### 已完成及证据
+
+- 已审阅 `basic-htb200-reference-retry-20260911T064016Z.tar.gz`。外层 SHA-256 `1f95569796bbee19b88217e29a2ae84c33da44b6d2a59057ab7542117e4336a8` 与独立 sidecar 一致；归档共 163 个成员，包括 148 个普通文件和 15 个目录，无重复路径、绝对路径、父目录穿越、链接或特殊对象。wrapper 清单 147/147、reference 清单 112/112、三份 benchmark 内层清单及各级 `COMPLETED` 对 manifest/result/analysis 的摘要绑定均通过。
+- reference 为 schema 3、analyzer `0.4.0`、`reference-screen`，三个样本的 evidence-contract、measurement、shaping-exposure、root/leaf qdisc-health 和 resource gate 全部有效。`REVIEW_REQUIRED` 是该模式预期的人工判读状态，不是执行失败，也不会产生候选 shortlist 或持久化授权。
+- 三个 HTB200 单流 IPv4 upload 样本的 sender/receiver 分别为 `190.302/189.869`、`187.995/187.822`、`187.160/187.148` Mbit/s；sender 中位数 `187.995` Mbit/s，receiver 中位数 `187.822` Mbit/s。三次 iperf3 sender retransmits、主机级 `TcpRetransSegs` 增量均为 0。
+- 三次均识别到真实 `HTB root 1:` 与 `FQ leaf 10: parent 1:10`。HTB root `overlimits` 分别为 5375、5380、5316，证明 200 Mbit/s 整形器在测量窗口内实际参与调度；root/leaf drops 和 requeues、softnet drops/time-squeeze、接口 drops/errors 均为 0。CPU idle 为 `94.449%–96.565%`，steal 为 `0.390%–1.163%`，没有触发 1 vCPU 资源门禁。
+- 原始 iperf3、TCP、link 和 qdisc 前后计数已与 schema 3 phase summary 逐项交叉核对。脱敏 socket 辅助证据保留了 `pacing_rate`、`delivery_rate`、`minrtt`、`rcv_ooopack`、`snd_wnd`、`rcv_wnd` 等实际出现字段，没有保留 IPv4 endpoint、端口、PID、进程名或 inode；未出现的可选字段没有被伪造。
+- 流量 ledger 将本次计划上限 `975000000` bytes 结算为实际已知 `706871296` bytes，状态为 `COMMITTED`，reserved 回到 0。保留第一次失败的 `975000000` bytes 保守计账后，window 总 accounted 为 `1681871296` bytes，受控预算尚余 `6908063296` bytes（约 `6.434 GiB`）。
+- wrapper 恢复证据通过：x-ui 与 Fail2ban 均 active，严格 `dvt verify` 为 0 警告，HTB runtime 已停止，root qdisc 恢复为唯一 `fq`，class 为空；没有创建持久整形。
+- 人工停止判断：HTB200 已在固定 endpoint、固定地址族、固定单流负载的三次 reference 中稳定达到约 187–190 Mbit/s 且零重传。当前没有证据支持继续扫描 180/190/195 Mbit/s；为避免无收益流量消耗，candidate sweep 在本轮停止。
+- 已形成新窗口 closeout 操作者脚本 `endpoint-closeout-fresh-reference-window-20260911.sh`，固定绑定 `/root/dvt-endpoint-20260911T063156Z`、其 server/observer units、Basic 来源、TCP/5201 和 `eth7`。脚本允许 unit 仍 active 或已自然到期两种终态；校验 pointer/READY/元数据和精确 UFW 规则后停止仍 active 的两个 unit，验证无 listener、iperf3 进程和 observer open fd，仅删除目标临时 UFW 规则及 pointer，保留 observer 原目录，并生成内部清单、归档和 sidecar。操作者副本 SHA-256 为 `ae3dfb5af57bc3030d330487707261730afa0485dbf7cf55fca0595c418fc013`；Bash `-n`、复制摘要和 UFW 精确端口/冲突 fixture 通过。本机无 ShellCheck，因此未新增该脚本的本地 ShellCheck 证据。
+
+### 未完成门禁
+
+- 新 endpoint 窗口在最后一次现场证据中仍可能运行，必须尽快执行已校验 closeout，并下载审阅其 `.tar.gz` 与 `.tar.gz.sha256`。在归档完整性、两个 unit 终态、listener/进程、临时 UFW 规则、pointer 和其他 UFW 规则未变化证据闭合前，不清理 endpoint 上的 observer/closeout 原目录。
+- 本轮只证明 Basic 在隔离 iperf3 单流路径下的临时 HTB200 reference 稳定，不能区分“HTB 平滑突发”的增益与该时段路径本来就无丢包，也不能证明服务商 policer 存在、默认 root `fq` 存在问题，或真实 VLESS + REALITY + TCP 业务重传已改善。
+- 不再执行 Basic candidate sweep。若仍要判断是否将 HTB 纳入默认或持久配置，需要另行设计并授权低流量、同时间窗的 default `fq` 与临时 HTB200 A/B/A，再结合真实代理业务证据；当前 reference 本身不授权该变更。
+
+### 延期事项变化
+
+- Basic 的 180/190/195 Mbit/s candidate sweep 从“reference 后待决定”变为“依据三样本零重传停止”，不再作为当前主线待办。剩余受控 benchmark 预算保留，不因余额存在而继续消耗。
+- 新 endpoint closeout 归档成为唯一近期运行收尾事项。Core 测试、默认/持久 HTB、burst/cburst 比较、多流并发和真实业务 A/B/A 均未启动。
+- 无新增 sysctl、默认 profile、永久服务、重启或生产代理配置变更。
+
+### 当前成熟度判断
+
+当前为 `BASIC_HTB200_REFERENCE_VERIFIED_ZERO_RETRANSMITS_CANDIDATE_SWEEP_STOPPED_ENDPOINT_CLOSEOUT_READY`。下一最短动作是在 endpoint 执行 closeout、下载并审阅归档；不运行新的性能样本。
+
+## 本轮记录：2026-09-11（新 endpoint READY，Basic HTB200 reference 重试器就绪）
+
+### 已完成及证据
+
+- endpoint 新窗口 `dvt-endpoint-20260911T063156Z` 已建立并通过启动器终态：server/observer units 分别为 PID 109596/109594，均 `LoadState=loaded`、`ActiveState=active`、`SubState=running`、`RuntimeMaxUSec=2h`；IPv4-only TCP/5201 listener 为 `0.0.0.0:5201`，endpoint loopback PASS，UFW 中恰有一条只允许 Basic 固定 IPv4 来源的临时规则。启动器退出码为 0，理论到期时间为 `2026-09-11T08:31:56Z`。
+- 已重新读取旧失败归档中的原 ledger 与 plan：window id 为 `basic-htb-ref-20260911T033823Z`，预算 `8589934592` bytes，reserved 0，accounted `975000000`，唯一 entry 为 `FAILED_CONSERVATIVE`；旧 plan 是 schema 3、3 个 HTB200 样本、单流 IPv4 upload、10 秒测量、3 秒 omit 和 300 秒冷却，计划 payload 上界同为 `975000000` bytes。
+- 已形成 `basic-run-htb200-reference-retry-20260911.sh`。脚本要求 endpoint 至少剩余 1800 秒，验证 Basic 到固定 endpoint 的 `eth0`/固定源 IPv4 路由和 TCP connect、iperf3 client-only、rc.17 verify、稳定 HTB 执行器、preflight、x-ui/Fail2ban、旧 ledger 完整合同和旧 `reference/INCOMPLETE`；随后停止 x-ui，在新的时间戳 session/reference 目录运行原三样本 HTB200 计划并复用同一 ledger/window/budget。
+- 重试器的 EXIT/signal 收尾会在需要时调用稳定执行器 `stop`，验证 preflight、唯一 root `fq`、空 class，恢复并验证 x-ui、Fail2ban 和 `dvt verify`，保存前后 ledger 与 reference 终态，并生成 wrapper 内部清单、`.tar.gz` 和 sidecar。操作者副本 SHA-256 为 `2822a9f2cefbca1f3205628ca75b11fc0f4aa718515bd07b7e8ccc4550330df7`；复制前后摘要一致、Bash `-n` 通过，旧 ledger jq 合同与 route parser fixture 通过。脚本尚未执行，没有产生新的 Basic 流量或 qdisc 变更。
+
+### 未完成门禁
+
+- 必须在 endpoint 到期前上传并校验 Basic 重试器，以限时 transient systemd unit 启动；若启动器发现 endpoint 剩余不足 1800 秒、TCP 不通、ledger 漂移、依赖/verify/preflight 失败，应保留其无流量或失败归档并重新建立 endpoint 窗口，不能放松门禁。
+- reference 执行后必须下载并审阅 wrapper 归档、sidecar、reference 内部 `SHA256SUMS`、schema 3 analysis、三个 stage、iperf sender/receiver、root/leaf qdisc、CPU/steal、softnet、接口、恢复和 ledger 结算。`REVIEW_BLOCKED` 是有效的停止结论，不能通过重试或提高并发自动绕过。
+- 未完成 reference 审阅前不得运行 candidate sweep。即使 reference 为 `REVIEW_REQUIRED`，也必须先判断 HTB200 重传是否已可接受；只有仍反复偏高且替代解释不足时，才需要用户另行确认 candidate sweep。
+
+### 延期事项变化
+
+- 新 endpoint 前置阻断已关闭，主线进入 Basic reference 重试执行。旧 endpoint 与新 endpoint 的服务器端证据目录继续保留，待本窗口 closeout 归档后统一精确清理。
+- 无新增默认/持久 HTB、sysctl、burst/cburst、P2/P4 并发、candidate sweep、A/B/A 或 Core 流量授权。
+
+### 当前成熟度判断
+
+当前为 `FRESH_ENDPOINT_READY_BASIC_HTB200_REFERENCE_RETRY_RUNNER_READY`。下一最短动作是在 Basic 运行已校验的 transient reference unit并回传 wrapper 归档；结果审阅前不进入候选速率测试。
+
+## 本轮记录：2026-09-11（旧 endpoint closeout 归档通过，新窗口启动器就绪）
+
+### 已完成及证据
+
+- endpoint 已执行经固定摘要验证的 closeout，脚本输出 `endpoint_closeout=PASS`、`endpoint_closeout_exit=0`：删除的 UFW rule number 为 1，旧 observer pointer 已删除，observer 原目录保留；TCP/5201 listener、iperf3 进程、目标临时 UFW 规则和旧 `inet dvt_iperf3` table 均为 absent，其他 UFW 规则为 unchanged。
+- 已审阅下载的 `dvt-endpoint-20260911T033753Z-closeout-20260911T061402Z.tar.gz`。外层 SHA-256 `ec61d60c291cb9230cb76b10d7c4cabd6a7f8014bbb9c62bc28fdcfb1b263f9e` 与 sidecar 一致；35 个成员由 33 个普通文件和 2 个目录组成，无重复、绝对路径、父目录穿越、链接或特殊对象；内部 `SHA256SUMS` 32/32 覆盖并通过。
+- 归档内 pre/delete/post 证据确认：UFW 检查与删除前快照逐字节一致，删除命令报告成功，目标规则消失，其他规则的规范化集合 diff 为空；listener、iperf3 进程和旧 nft table 前后均为空，`dvt-*` units 前后为空，记录的 server/observer unit 前后均不 active，归档的 pointer 副本精确指向旧 observer。旧 endpoint 窗口达到可复核 closeout 终态。
+- 归档确认 endpoint 到 Basic 的观测接口仍为 `eth7`；旧 unit 名为时间戳隔离的 `dvt-endpoint-20260911T033753Z-server.service` 与 `...-observer.service`。已据此形成新的 `endpoint-start-fresh-reference-window-20260911.sh`，固定 Basic IPv4 来源、TCP/5201、IPv4、`eth7` 和 7200 秒 RuntimeMax；脚本只在无 pointer、无 listener/iperf3/dvt unit/旧 nft table/5201 UFW 规则且到 Basic 路由走 `eth7` 时创建新窗口，并在部分失败时尝试停止本次新 unit 和撤销本次新增规则。
+- 新窗口启动器通过 Bash `-n`、复制前后摘要一致性和 UFW 合成 fixture；fixture 同时验证 `5201/tcp` 不会误匹配 `15201/tcp`。操作者副本 SHA-256 为 `551baaff2a228459fbb74513a7252347243eb6170568efeedd9003e6873b49cc`。该脚本尚未执行，没有启动新 listener、修改新规则或产生测试流量。
+
+### 未完成门禁
+
+- 必须先在 endpoint 上传并核验新窗口启动器及 sidecar，再执行一次；取得新的 session id、pointer、两个 active/2h unit、TCP/5201 listener、仅 Basic `/32` 的 UFW rule 和 endpoint loopback PASS 后，才能从 Basic 做 TCP connect。
+- Basic reference 仍未重跑。新 endpoint 门禁通过后，必须先在 Basic 复核 iperf3 client-only、rc.17 verify、HTB preflight、原 ledger/window/budget 不变量和现有 `FAILED_CONSERVATIVE` reservation，再建立新的 reference output directory；不能覆盖旧 `reference/INCOMPLETE`，也不能释放第一次失败的保守预算占用。
+- candidate sweep、A/B/A、Core 测试和默认/持久 HTB 继续未启动。reference 完成后必须先审阅 schema 3 的 measurement、shaping exposure、resource 和 root/leaf qdisc 健康，再决定是否有理由授权 candidate sweep。
+
+### 延期事项变化
+
+- 旧 endpoint server、observer、pointer 和临时 UFW closeout 阻断已关闭；服务器端旧 observer/closeout 原目录暂时保留，待整个新 reference 窗口归档确认后再统一做精确清理，不阻塞创建时间戳隔离的新窗口。
+- 无新增默认 profile、sysctl、永久 HTB、burst/cburst、额外并发或额外流量范围。Basic 的服务商剩余配额和共享 ledger 上限不变。
+
+### 当前成熟度判断
+
+当前为 `OLD_ENDPOINT_CLOSEOUT_VERIFIED_FRESH_ENDPOINT_START_READY`。下一最短动作是建立一个全新的两小时 endpoint 窗口并回传 READY/units/listener/UFW 证据；在此之前不运行 Basic reference。
+
+## 本轮记录：2026-09-11（旧 endpoint server 自动结束，observer closeout 待确认）
+
+### 已完成及证据
+
+- endpoint 于 `2026-09-11T05:50:05Z` 的只读复核显示旧 `dvt-iperf3-server.service` 已被 transient `--collect` 清理：`LoadState=not-found`、`ActiveState=inactive`、`SubState=dead`、MainPID 0，TCP/5201 无 listener；因此旧 server 不需要再 stop，也不能作为下一 reference 的服务端窗口复用。
+- 旧独立 `inet dvt_iperf3` table 已不存在。UFW 中仍恰有一条 `5201/tcp ALLOW IN`，来源为 Basic `/32`，注释为 `TEMP DVT iperf3`；该规则属于旧窗口，需在 observer 证据停止和归档后删除。
+- 修正版只读检查确认 observer pointer 是 root:root、mode 600 的普通文件并精确指向 `/root/dvt-endpoint-20260911T033753Z`；observer 目录是 root:root、mode 700 的普通目录，inventory 只有既有元数据、pre 快照和截至 `04:07:52Z` 的 `vmstat.txt`。所有 `dvt-*` unit/unit-file 查询为空，`observer_open_file_matches=0`，没有 iperf3 listener 或进程，因此 observer 已静止，可以进入归档和精确 ACL 清理。
+- related process summary 中的 PID 92016 是 MobaXterm 的系统监控循环，因为命令行含 `/proc/net/dev` 被宽匹配命中；它没有持有 observer 文件，也不是 `dvt-*`/iperf3 进程。上一轮 `UNEXPECTED_PATH` 已确认只是辅助检查遗漏 `/root/dvt-endpoint-*` 合法前缀，不是 endpoint 故障。
+- 已形成旧 endpoint closeout 脚本并完成本地 Bash `-n` 与合成 UFW fixture。脚本在变更前再次验证 pointer、observer 所有权和对象类型、记录 unit 非 active、无 open fd、无 iperf3 进程/listener、旧 nft table 不存在，以及临时 UFW 规则精确匹配数量为 1；删除前再次比较 UFW 快照，删除后验证目标规则消失且其他规则的规范化集合完全不变。脚本保留 observer 原目录，删除已归档的旧 pointer，生成内部清单、`.tar.gz` 和外部 SHA-256，不启动服务或产生测试流量。操作者副本 `endpoint-closeout-old-window-20260911.sh` 的 SHA-256 为 `143783eddfb33f9cd7d8669d448771657f872f69fe1da7f57b1a2c4d7628d597`，复制前后摘要一致且副本再次通过 Bash `-n`。
+
+### 未完成门禁
+
+- 旧 endpoint closeout 脚本尚未在 endpoint 执行，因此临时 UFW `/32` 规则和旧 pointer 仍存在，完整归档、SHA-256、其他 UFW 规则未变化以及无 listener/无临时规则终态仍待回传。此门禁闭合前不得启动新的 endpoint transient server 或 Basic reference。
+- closeout 成功后，必须先下载并审阅 `.tar.gz` 与 `.tar.gz.sha256`；在外部归档完整性确认前保留 endpoint 上的 observer 与 closeout 原目录，不做额外删除。
+
+### 延期事项变化
+
+- endpoint 阻断从“observer 命名和终态待确认”收窄为“observer 已确认静止，closeout 归档和 UFW 临时规则精确删除待执行”。Basic iperf3 客户端就绪状态不变。
+- 新增一次性辅助检查修正：endpoint observer 合法路径前缀必须包含实际采用的 `/root/dvt-endpoint-*`，相关 unit 查询应覆盖 `dvt-*`，不能只匹配 server 命名。无新增调优、流量或持久化范围。
+
+### 当前成熟度判断
+
+当前为 `BASIC_CLIENT_READY_OLD_ENDPOINT_OBSERVER_QUIESCENT_UFW_CLOSEOUT_PENDING`。下一最短动作是在 endpoint 执行已自检的 closeout，下载并审阅归档；成功后才能建立全新的 endpoint/reference 窗口。
+
+## 本轮记录：2026-09-11（Basic iperf3 客户端安装与低流量验收通过）
+
+### 已完成及证据
+
+- 审阅 `dvt-basic-iperf3-client-install-20260911T050958Z.tar.gz`。外层 SHA-256 `970e3cb5abb11fc3beff9926f2dc0b83437dd7cc56dc3bba32296d040f92bf9d` 与独立 sidecar 一致；18 个归档成员无绝对路径、父目录穿越、链接或设备节点；内部 `SHA256SUMS` 15/15 通过，安装脚本 `exit_code=0`。
+- Basic 从 Debian 13 trixie 当前 mirror 安装 `iperf3 3.18-2+deb13u2`、`libiperf0 3.18-2+deb13u2` 和 `libsctp1 1.0.21+dfsg-1`，共下载约 163 kB、增加约 425 kB；`0 upgraded`，没有执行系统升级或 reboot。`/usr/bin/iperf3` 报告 iperf 3.18，并支持 socket pacing 等本次 TCP client 所需能力。
+- 安装后已执行 `systemctl disable --now iperf3.service`；Basic 上没有 TCP/5201 listener，client-only 门禁通过。安装前后 `x-ui.service` MainPID 均为 38980，Fail2ban active，`proxy-vps-fq.service` active/exited；严格代理 verify 为 0 警告，说明安装没有重启或破坏代理服务。
+- 安装前后 `eth0` 都保持同一唯一 root `fq` handle `8002:`、class 为空，drops/overlimits/requeues/backlog 均为零；HTB preflight 再次通过，managed state SHA-256 仍为 `a8a4242d262b096050bf54ea272a69e5739137f7fe662c520de3c5cbd9fb63a0`。安装窗口没有启动 HTB 或运行 benchmark。
+
+### 未完成门禁
+
+- 旧 endpoint transient unit、observer、临时 UFW `/32` 规则的 closeout 归档尚未回传。新的 reference 前必须确认旧 unit/listener 已停止、旧临时规则已删除，然后创建全新两小时 unit、observer 和临时 allow，并重新验证 endpoint loopback、Basic TCP connect 与接收端资源基线。
+- 下一次 Basic reference 尚必须使用新 output directory，保留旧 `reference/INCOMPLETE`；继续复用 `/root/basic-htb-ref-20260911T033823Z/traffic-ledger.json` 和同一 window ID，使首个 `FAILED_CONSERVATIVE` reservation 继续占用预算。reference 仍固定 IPv4、单流、upload、3 个 HTB200 样本、3 秒 omit、10 秒测量与 300 秒冷却。
+- `iperf3.service` 的 inactive 和本机无 listener 已验证；下一 reference 前还应补一个 `systemctl is-enabled` 只读结果，明确记录 client 包的持久 daemon 状态。安装验收不等于 endpoint 或 reference 通过。
+
+### 延期事项变化
+
+- “Basic 缺少 iperf3 客户端”阻断已关闭；主线转到 endpoint 旧窗口 closeout 和新 reference 窗口建立。rc.17 runner 的依赖预检时序改进仍作为下一版本候选，不阻塞当前使用已安装客户端继续实验。
+- 无新增默认 profile、sysctl、HTB 参数、持久整形或额外流量授权；candidate sweep、A/B/A、Core 测试和真实代理性能复验继续未启动。
+
+### 当前成熟度判断
+
+当前为 `BASIC_IPERF3_CLIENT_READY_AWAITING_FRESH_ENDPOINT_REFERENCE_WINDOW`。Basic 的客户端、调优状态、代理服务、Fail2ban、root `fq` 与 HTB preflight 均已闭合；尚不能开始主动流量，直到旧 endpoint 窗口安全结束并以全新临时服务、ACL、observer 和可达性证据重新建立 reference 前置门禁。
+
+## 本轮记录：2026-09-11（Basic reference 失败归档审阅：确认缺少 iperf3，恢复通过）
+
+### 已完成及证据
+
+- 审阅用户下载的 `basic-htb-ref-20260911T033823Z-failure-bundle-20260911T045901Z.tar.gz`。外层 SHA-256 `9c352a0ee3bb8a2dcaf012b1a7b7f816053929ee46502dedb98cba99ad5042f3` 与独立 sidecar 一致；70 个归档成员没有绝对路径、父目录穿越、符号链接、硬链接或设备节点；独立 failure-review 的 36 项内部 `SHA256SUMS` 全部通过。
+- 根因已经确认：Basic 的 `tool-prerequisites.txt` 明确为 `iperf3=MISSING`，而 `setsid`、`timeout`、`jq`、`tc`、`ss` 均存在；首阶段 `benchmark.log` 只有“benchmark 需要已安装 iperf3；脚本不会自动安装软件包”。profile 在创建 benchmark 输出和调用 `run_benchmark_phase` 前即终止，因此没有启动 iperf3 进程、没有 `upload.iperf3.json`、phase summary、`benchmark-result.json` 或性能样本。
+- HTB 生命周期本身通过：200 Mbit/s root HTB、class `1:10` 和 parent `1:10` 的 FQ leaf 建立成功，前后 ACTIVE gate 均通过；runner 在 `03:38:41Z` 正常执行 managed stop，`stopped_by_watchdog=false`、`already_restored_before_stop=false`，随后 preflight 通过。pre-stop HTB root/leaf/class 各累计 34,684 bytes、492 packets，drop/overlimit/requeue/backlog 均为零；这些是约 15 秒内的 SSH/控制与背景流量，不是 iperf throughput evidence。
+- 失败时外层恢复立即把 `x-ui.service` 恢复为 active，`recovery-state.txt` 已记录 root `fq`。`04:59Z` 的独立复核再次证明 active state 缺失、无活动 watchdog、唯一 root `fq`、class 为空、preflight 通过；`x-ui.service` PID 在复核前后未变化，Fail2ban 和 `proxy-vps-fq.service` 均为 active，严格代理 verify 返回 0 且警告数 0。Basic 无需 reboot 或额外 qdisc 恢复。
+- 共享 ledger 已按既有 fail-closed 契约把完整计划上界 `975000000` bytes 记为 `FAILED_CONSERVATIVE`，`actual_known_bytes=null`；这不是服务商实际流量。原 8192 MiB 账本仍有 `7614934592` bytes（约 7.092 GiB）可用，足以继续保守覆盖一次新三样本 reference 和一次既定 candidate sweep，并剩余约 1.803 GiB；后续应复用同一 ledger，保留失败 reservation，不得编辑或释放该条目。
+- 已形成仅安装 Basic 客户端的 `basic-install-iperf3-client.sh`，并通过本地 Bash `-n` 与复制后 SHA-256 一致性检查。脚本只运行 `apt-get update` 和 `apt-get install --no-install-recommends iperf3`，预置不启动 iperf3 daemon，随后显式 disable/stop 本机 `iperf3.service`，验证 Basic 不监听 TCP/5201、HTB preflight、root `fq`、严格代理、Fail2ban，并生成独立证据归档；不 reboot、不停止 x-ui、不运行 benchmark。
+
+### 未完成门禁
+
+- Basic 尚未实际安装 `iperf3`。安装完成后必须取得 `/usr/bin/iperf3` 版本、包状态、本机无 TCP/5201 listener、无 active iperf3 service、root `fq`、HTB preflight 和严格代理 verify 证据；安装本身不构成 reference 通过。
+- endpoint 本次 transient unit/observer 和临时 UFW `/32` 规则尚未提供 closeout 归档。必须先停止并归档旧 endpoint 窗口、删除临时规则；下一次 reference 需要新的两小时 unit、observer 和前置面板快照，不复用已经过期的运行窗口。
+- 新 reference 必须使用新的 output directory，但应复用现有 ledger/window 以保留 `FAILED_CONSERVATIVE` 占用。只有新 reference 的 3 个 stage、schema 3 analyzer、manifest 和 `COMPLETED` 全部闭合后，才能人工判断是否需要 candidate sweep。
+
+### 延期事项变化
+
+- 新增后续版本的最小运行可靠性修复候选：HTB runner 应在预算 reserve、创建 session 和修改 qdisc 之前检查 `iperf3`、`setsid` 和 `timeout`，避免已知缺失依赖仍进入 HTB/失败保守结算。该缺口不影响 HTB restore 安全性，也不改变 rc.17 已发布资产；是否形成 rc.18 需在当前运行验证之外单独实施和发布。
+- 一次性 failure-review 辅助脚本把 stage 错按 `${SESSION_ROOT}/stages` 定位，而真实目录是 `${SESSION_ROOT}/reference/stages`，导致 `selected-evidence.txt` 的便捷摘录显示 absent；归档同时完整包含原始 session，因此本次诊断与证据没有丢失。后续如复用该工具须先修正路径，不得把便捷摘要当作原始文件缺失。
+- candidate sweep、A/B/A、Core 测试、真实代理性能复验、默认 profile 修改和持久 HTB继续未启动。
+
+### 当前成熟度判断
+
+当前为 `BASIC_RUNTIME_RECOVERED_REFERENCE_BLOCKED_BY_MISSING_IPERF3_CLIENT`。本次失败证明 rc.17 HTB 启停和恢复门禁正常，也暴露了 runner 的依赖预检时序缺口；它没有提供任何吞吐、重传或 HTB 收益证据。下一最短动作是关闭旧 endpoint 窗口并在 Basic 安装仅客户端用途的 `iperf3`，完成低流量验收后再建立全新 endpoint/reference 窗口。
+
+## 本轮记录：2026-09-11（Basic HTB200 reference 首阶段失败，转入证据保全）
+
+### 已完成及证据
+
+- 用户在 Basic 上完成 rc.17 版本绑定、严格代理验证、稳定 HTB 执行器语法复核、同一 endpoint TCP 可达性检查和 HTB preflight；这些门禁均通过。停止 `x-ui.service` 后启动三样本 HTB200 reference，新会话目录为 `/root/basic-htb-ref-20260911T033823Z`。
+- runner 只进入首个 `01-R-s1-htb200` 阶段即失败，外层报告 `benchmark、ACTIVE gate 或恢复失败；退出码 3`，reference wrapper 最终返回 1。没有第二、第三样本，没有 `COMPLETED` 终态，也没有形成可用于 analyzer 或候选速率决策的有效 HTB200 reference。
+- 代码复核确认，stage runner 将 benchmark、后置 ACTIVE、HTB stop 和 postflight preflight 合并到同一失败出口；因此终端摘要本身不能定位根因。退出码 3 与 profile 的 `EXIT_UNSUPPORTED` 一致，且用户展示的前置检查没有 `iperf3 --version`；“Basic 缺少 `iperf3` 客户端或 benchmark 专用依赖”是当前高可能性假设，仍须由原始 `benchmark.log`、`benchmark/INCOMPLETE`、`upload.iperf3.json` 和工具存在性证据确认。
+- 已为操作者形成只读优先的失败审阅脚本并通过 Bash `-n` 语法检查。脚本不改写原始失败目录；它先保存 `/run/htb-aggregate-experiment`、qdisc/class、watchdog、service 和工具前置条件，再在存在合法 active state 时调用稳定执行器的受管 `stop`，验证唯一根 `fq`、空 HTB class、无 active state、无活动 watchdog和 postflight preflight，恢复 `x-ui.service` 并执行严格 verify，最后把原始 session 与独立 review 目录一起打包并生成 SHA-256。
+
+### 未完成门禁
+
+- Basic 当前是否已经由 runner trap 恢复到唯一根 `fq`、是否仍有 active state/watchdog、`x-ui.service` 是否恢复 active，以及严格 verify 是否再次通过，均尚无用户回传的现场证据。上述状态确认优先于任何依赖安装、reference 重试、候选 sweep 或重启。
+- 首阶段的实际失败点和是否发送过任何 iperf payload 尚未确认。共享 ledger 按 runner 设计应把失败 reservation 以完整计划上界保守结算，但实际 ledger 文件与条目还没有采集，不能把代码预期写成目标机已证事实。
+- endpoint 临时 iperf3 unit、observer、临时 UFW `/32` 规则及接收端证据仍须在 Basic 证据保全后结束并归档。本次失败会话不得原地覆盖或重跑；如确认只是缺少客户端依赖，也必须使用新的 session 目录和经复核的预算状态。
+
+### 延期事项变化
+
+- HTB200 reference 从“可开始”退回“首阶段失败、等待证据保全和根因诊断”。180/190/195 candidate sweep、A/B/A、Core 测试、真实代理性能复验和持久 HTB继续未启动。
+- 无新增默认 profile、sysctl、HTB rate/burst/cburst、持久化或额外高流量 campaign 变更。只有证据确认 rc.17 工具存在明确实现缺陷时，才新开最小修复；缺少 VPS 运行依赖属于运行前置条件缺口，不自动构成发布缺陷。
+
+### 当前成熟度判断
+
+当前为 `BASIC_HTB200_REFERENCE_STAGE1_FAILED_EVIDENCE_PRESERVATION_AND_RECOVERY_PENDING`。rc.17 的本地/发布完整性和此前 HTB190 smoke 证据不变，但此次运行没有形成任何有效 reference 结论；在 Basic 的 root `fq`、代理服务和失败归档闭合前，不得继续主动流量测试或根据该失败判断 HTB 是否有效。
+
+## 本轮记录：2026-09-11（endpoint 最终门禁与 Basic HTB190 冒烟通过）
+
+### 已完成及证据
+
+- endpoint 最终复核通过：transient iperf3 unit 为 active/running，IPv4 `0.0.0.0:5201` 正常监听；UFW 中恰有一条只允许 Basic 实际源 IPv4 访问 TCP/5201 的临时规则；旧 `inet dvt_iperf3` table 已不存在；删除旧 table 后 endpoint loopback TCP 检查返回 0，`endpoint_final_gate=PASS`。
+- Basic 的 rc.17 绑定通过：`/usr/local/bin/dvt` 指向固定 `0.1.0-rc.17` Release，managed profile 为 `debian13-1c1g`、schema 4 语义下的 `VERIFIED`、200 Mbps；冒烟前严格代理验证警告数为 0。当前 Release 中 HTB 执行器源资产和安装到 `/usr/local/sbin/htb-aggregate-experiment` 的稳定副本均通过 manifest SHA-256 校验。
+- 冒烟前 Basic 到同一 endpoint IPv4/TCP 5201 再次返回 `tcp_connect_exit=0`，HTB preflight 通过。停止 `x-ui.service` 后，10 秒 HTB190 smoke 成功建立 `htb root → class 1:10 rate=ceil=190Mbit → fq parent 1:10`，ACTIVE 联合门禁和 40 分钟 watchdog 均通过。
+- 冒烟活动期 root HTB、FQ leaf 和 class 均为 drop 0、requeue 0、backlog 0；`overlimits=0` 只说明零高带宽 payload 的 smoke 没有产生整形暴露，符合该阶段用途，不能解释为 HTB 功能失败或路径无丢包。执行器在 10 秒后受管停止，`stopped_by_watchdog=false`、`already_restored_before_stop=false`。
+- 冒烟后 active state 消失，watchdog inactive，HTB class 列表为空，唯一根 qdisc 恢复为 `fq`，后置 preflight 通过。`x-ui.service` 恢复为 active，新主进程及 Xray 子进程 NOFILE 均为 65536，严格验证再次为 0 警告；最终 `smoke_gate=PASS`。
+
+### 未完成门禁
+
+- HTB200 reference 尚未发送 payload。正式窗口前仍需保存 Basic 与 endpoint 服务商面板额度快照，在 endpoint 重新建立完整两小时的 transient iperf3 unit，并启动覆盖 reference 全窗口的有界 CPU/接口观察器。
+- reference 必须继续固定同一 IPv4 endpoint/TCP 5201、Basic `eth0`、单流、3 样本、每样本 3 秒 omit 加 10 秒测量、阶段间 300 秒冷却，并使用新建 8192 MiB 共享 ledger。计划 payload 上界为 975,000,000 bytes，约 929.8 MiB 或 0.908 GiB，不包含协议、重传及服务商计费差异。
+- reference 结束后仍须证明每阶段受管恢复、最终 root `fq`、active state 缺失、`x-ui.service` 严格验证、证据清单与完成标记通过，并取得 endpoint 同窗口资源证据和两端面板对账。若为 `REVIEW_BLOCKED` 或任一门禁异常，保留现场并停止；即使为 `REVIEW_REQUIRED` 也必须先人工审阅，不能自动进入 sweep。
+
+### 延期事项变化
+
+- endpoint 终态检查和 Basic HTB190 smoke 从待办更新为通过，主线推进到三样本 HTB200 reference。180/190/195 candidate sweep、A/B/A、Core 迁移/测试和持久 HTB继续未启动。
+- 无新增默认 profile、sysctl、HTB 参数、持久化或额外 campaign 范围。上一轮登记的历史 SOP 文字漂移继续作为后续版本候选，不影响使用 rc.17 wrapper 的当前受控 reference。
+
+### 当前成熟度判断
+
+当前为 `BASIC_HTB190_SMOKE_PASS_READY_FOR_BOUNDED_HTB200_REFERENCE`。主机、endpoint、临时 ACL、稳定执行器、watchdog、恢复和严格代理服务门禁均已取得当前运行证据；可以在保存两端面板前置快照后执行已授权的三样本 HTB200 reference，但其结果尚不能支持候选速率、默认值或持久 HTB 结论。
+
+## 本轮记录：2026-09-11（iperf3 endpoint TCP 可达性恢复，进入 HTB 前置门禁）
+
+### 已完成及证据
+
+- endpoint 本机全局 IPv4 与 Basic 使用的 `IPERF3_HOST` 一致，默认出口为 `eth7`；transient `dvt-iperf3-server.service` 当时仍为 active/running，`iperf3` 在 IPv4 `0.0.0.0:5201` 监听。Basic 到该地址的路由明确选择 `eth0` 和预期源 IPv4。
+- 第一次 endpoint loopback `/dev/tcp` 返回 124 的原因已经由防火墙证据解释：当时独立 `inet dvt_iperf3` input base chain 只允许 Basic 源地址，随后无条件 drop 其他 TCP/5201，因此 loopback 源 `127.0.0.1` 在 UFW 的 loopback accept 之前已被丢弃。该结果不能用于否定 listener。
+- endpoint 的真实 firewall authority 是 active UFW，INPUT policy 为 drop。独立早期 nftables chain 的 Basic allow counter 已有命中，但其 `accept` 不能阻止后续 UFW chain 再次 drop；这与第一次 Basic TCP 超时一致。操作者随后在 UFW 中加入仅允许 Basic 实际 `/32` 源地址访问 TCP/5201 的临时规则，并删除独立 `dvt_iperf3` table。
+- 完成上述修正后，Basic 对同一 endpoint IPv4/TCP 5201 的 5 秒 `/dev/tcp` 检查返回 0。该证据闭合 IPv4 TCP 三次握手可达性门禁，但仍不是 iperf3 吞吐、接收端资源或 HTB 效果证据。
+
+### 未完成门禁
+
+- 正式流量前仍需在 endpoint 上复核：临时 UFW `/32` 规则仍存在、独立 `dvt_iperf3` table 已不存在、transient iperf3 unit 尚未达到两小时上限；Basic 上查询不到同名 table 只说明 Basic 本机没有该 table，不能替代 endpoint 复核。
+- 仍需冻结测试前 VMISS/endpoint 面板额度、endpoint 接收端接口和资源基线，并用 bounded observer 覆盖 reference 窗口。Basic 还需在维护窗口内通过 rc.17 strict verify、稳定 HTB 执行器 manifest 校验、preflight 和 10 秒 HTB190 smoke，确认 active state 消失且根 `fq` 恢复。
+- HTB200 reference 的 payload 尚未开始。只有上述门禁通过后，才执行 IPv4、单流、3 样本、10 秒测量加 3 秒 omit、300 秒阶段冷却、8192 MiB 共享 ledger 的 reference；结束后恢复 `x-ui.service` 并再次 strict verify。reference 结果必须先审阅，不能自动进入 180/190/195 sweep。
+
+### 延期事项变化
+
+- “endpoint TCP 公网可达性阻断”已关闭，主线推进到 endpoint 最终复核和 Basic HTB 前置门禁。candidate sweep、A/B/A、Core 迁移和持久 HTB继续未启动。
+- 发现研究 SOP 中仍存在 rc.14 与 1C2G 示例路径等历史文字漂移；本轮真实执行必须使用 rc.17 已安装的 `dvt htb` wrapper 和当前 managed profile，不照抄这些旧路径。该文档清理登记为后续版本候选，不修改已发布 rc.17 资产。
+- 无新增默认 profile、sysctl、持久 HTB或额外主动流量授权。
+
+### 当前成熟度判断
+
+当前为 `IPERF3_ENDPOINT_TCP_REACHABILITY_PASS_HTB_PREFLIGHT_PENDING_REFERENCE_NOT_STARTED`。下一最短动作是在 endpoint 复核临时 UFW/unit 并启动有界资源观测，然后在 Basic 的恢复 trap 内完成 strict verify、HTB190 smoke 和恢复检查；这些通过后可在同一已授权维护窗口执行 HTB200 reference。
+
+## 本轮记录：2026-09-11（iperf3 endpoint 监听成功但 Basic TCP 可达性阻断）
+
+### 已完成及证据
+
+- endpoint 上的 transient `dvt-iperf3-server.service` 已由 `systemd-run` 启动，`RuntimeMaxUSec=2h`、MainPID 非零、Result success、ActiveState/SubState 为 active/running；`ss` 显示 `iperf3` 在 IPv4 `0.0.0.0:5201` 监听。该证据证明本机进程和 socket 正常，不证明公网路径或 ACL 放行。
+- Basic 使用 Bash `/dev/tcp` 对当前指定 endpoint IPv4/TCP 5201 做无测速连接检查，5 秒后由 `timeout` 返回 124。该返回表示 TCP open 未在窗口内完成，符合 SYN 静默丢弃、目标地址不匹配或路径不可达；不是 iperf3 性能结果，也没有进入 HTB/reference 流量阶段。
+- 当前 Basic 使用的 endpoint IPv4 与此前材料冻结的固定 endpoint 地址不同。该变化可能是有意切换到另一台自有 VMRack 主机，也可能是目标地址选择错误；必须先用 endpoint 控制台地址和本机全局 IPv4核对，不能仅以 UUID hostname 或 `0.0.0.0:5201` 推断公网目标正确。
+- 复审了此前给出的独立 nftables table 建议。nftables 在同一 hook 存在多个 base chain 时，较早 chain 的 `accept` 只结束当前 chain，包仍可被后续 UFW/nftables chain drop；因此独立 `dvt_iperf3` chain 的 allow counter 即使命中，也不能保证绕过现有默认拒绝防火墙。该方案需要修正为：先识别实际 firewall authority；UFW active 时把临时 allow 写入 UFW 自身，只有不存在后续拒绝 chain 时才单独使用临时 nftables table。
+
+### 未完成门禁
+
+- 尚未确认当前 `IPERF3_HOST` 是否确实对应启动 transient unit 的主机公网 IPv4，也未取得 endpoint 本机 loopback TCP/5201 结果、Basic 到目标的 route-selected source、provider ACL、UFW/nftables 实际 input policy和临时规则 counters。
+- 需要在 endpoint 上用有界 `tcpdump` 与 Basic 同步重试一次：无 SYN 到达则定位到错误目标/provider ACL/前置路径；SYN 到达但无 SYN-ACK则定位到 endpoint host firewall/listener path；SYN-ACK 发出但 Basic 无 ACK则检查返回路径或 Basic 侧过滤。门禁闭合前不得运行 iperf3 payload、HTB smoke 或 reference。
+- transient unit 最长两小时会自动停止；排障完成或放弃本窗口后仍要显式停止 unit并删除仅为本次建立的 firewall 规则。不得为便于排障把 5201 永久开放给全网。
+
+### 延期事项变化
+
+- Basic HTB200 reference 从“endpoint 准备中”细化为“endpoint 本机监听通过、TCP 公网可达性阻断”。candidate sweep、A/B/A、Core 迁移和持久 HTB继续未启动。
+- 新增操作方案修正：临时 ACL 必须进入真实生效的 firewall authority，不能把独立早期 nftables `accept` 误写为最终放行。无新增调优参数或主动流量授权。
+
+### 当前成熟度判断
+
+当前为 `IPERF3_ENDPOINT_LISTENING_TCP_REACHABILITY_BLOCKED_HTB_REFERENCE_NOT_STARTED`。下一最短动作是核对 endpoint 地址、本机 loopback、Basic route source 和防火墙规则 counter，再用单次 SYN 抓包定位；不需要操作 DVT、qdisc 或 Core。
+
+## 本轮记录：2026-09-10（Basic rc.17 迁移后验收闭合）
+
+### 已完成及证据
+
+- 只读审阅了 `dvt-basic-post-rc17-20260910T150213Z.tar.gz`。外层 SHA-256 `c925576ca84e1c3e97e8e1bc33328d55bd20a4dc4c022066832c6217ae97734b` 与独立 `.sha256` 一致，归档路径安全；内部 `SHA256SUMS` 的 18 个文件全部通过。`capture-exit-codes.tsv` 中 18 项均返回 0，前一版采集器的 DVT PATH、空 reboot-required 表示和 `systemctl status` 日志泄露缺陷均已关闭。
+- `/usr/local/bin/dvt --version` 明确为 controller/release rc.17；strict proxy verify 返回警告数 0。managed state 为 rc.17、`VERIFIED`、`debian13-1c1g`、200 Mbps、kernel `6.12.107+deb13-cloud-amd64`、auto 16 MiB buffer、1 GiB project swap active，5 个受管文件完整。当前 state SHA-256 为 `a8a4242d262b096050bf54ea272a69e5739137f7fe662c520de3c5cbd9fb63a0`。
+- `x-ui.service`、`fail2ban.service` 和 `proxy-vps-fq.service` 均为 active/enabled，结果 success、重启次数 0；`systemctl --failed` 为空。没有 `/var/run/reboot-required`，没有活动 HTB state，`eth0` 无 HTB class；根 `fq` 累计约 649.1 MB/650918 包，drop/overlimit/requeue 与 backlog 均为零。接口 RX/TX error/drop 为零，swap 使用 0，内存 available 约 650.9 MB。
+- 30 秒只读 diagnose 返回 0：CPU idle `96.80%`、steal `0.49%`、softnet processed 1402 且 dropped/time_squeeze 为零；接口增量约 RX 327590 bytes、TX 320012 bytes，接口和 ethtool drop/error/timeout 增量均为零；qdisc 前后 drop/requeue 维持零。窗口记录 `TcpRetransSegs=1`、`TCPLostRetransmit=1`、`TCPTimeouts=1`，但这是主机级累计增量且窗口仅发送约 320 KB，缺少固定流和有效字节分母，不能作为 normalized reference，也不构成当前资源/qdisc 异常或 HTB 收益证据。
+- 用户确认实际客户端代理冒烟已经完成。该证据属于操作者业务验收声明；结合 strict verify、活动 Xray 子进程和当前服务状态，Basic 的 rc.17 迁移后主机/服务/基础业务验收可以闭合。无需再次迁移、执行 `apply` 或为了清零计数重启。
+
+### 未完成门禁
+
+- 尚未建立固定 iperf3 endpoint：服务端软件/版本、固定 TCP 端口、IPv4 监听、仅允许 Basic 源地址的 provider/local ACL、接收端 CPU/链路余量、服务端面板额度和测试前截图仍待确认。没有这些证据不得运行 Basic reference。
+- HTB200 reference 尚未执行。正式窗口仍须停止 Basic 的 `x-ui.service`，在外层恢复 trap 保护下先运行零 iperf 流量的 rc.17 HTB190 smoke，确认根 `fq` 恢复和无 active state，再执行 3 样本、IPv4、单流、8192 MiB ledger 的 reference；完成后恢复服务、strict verify并与 VMISS 面板对账。
+- Core 的 DVT rc.12 路径/strict verify 缺口继续延期，不阻塞 Basic。只有 Basic reference 因 1C1G 资源门禁不可判读，或形成可信候选后确需跨资源档确认时再补采和迁移 Core。
+
+### 延期事项变化
+
+- Basic post-migration 归档和真实代理冒烟从“待完成”更新为“通过”。下一主线由迁移验收转为固定 endpoint 准备与只读/低风险联通门禁；candidate sweep、A/B/A、Core 迁移和持久 HTB仍未启动。
+- 无新增默认 profile、sysctl、持久 HTB或旧 TcpQuality 流量授权。30 秒 diagnose 中的单次主机级重传只保留为背景观测，不扩展成故障调查或参数修改。
+
+### 当前成熟度判断
+
+当前为 `BASIC_RC17_POST_MIGRATION_ACCEPTANCE_PASS_ENDPOINT_PENDING_HTB200_REFERENCE_NOT_STARTED`。Basic 已具备进入 endpoint 准备的主机条件；只有 endpoint 和测试前面板门禁闭合后，才可在独立维护窗口执行有预算的 HTB200 reference。
+
+## 本轮记录：2026-09-10（Basic/Core 当前归档与 Basic rc.17 迁移终态审阅）
+
+### 已完成及证据
+
+- 只读审阅了用户下载到 VMISS Basic/Core 测试目录的两个当前归档。Basic 外层归档 SHA-256 为 `6a36e4b42e77f945a36a8137004b9ae12ea737433ee1b01ba5f550b3e93b337c`，Core 为 `8b592cd55eeb63f17909c6ea0b1a164df61142331d3342106077355c1410cb59`，均与各自 `.tar.gz.sha256` 一致；两个归档的内部 `SHA256SUMS` 均逐项通过，且没有路径逃逸条目。归档传输与内部文件完整性通过。
+- 采集脚本存在已复现的运行缺陷：两台归档中的 `dvt --version/status/verify/diagnose` 均返回 127，原因为非交互脚本环境找不到 `dvt`。此前 `bash -n` 只覆盖语法，不能证明目标 PATH/安装入口可用；必须改为显式、已验证的 DVT 可执行路径，或在旧版 Core 上先人工解析控制器实际路径后再运行。`reboot-required` 文件存在但内容为空时，原脚本也不能区分“空标记文件”和“不需要重启”，后续应显式记录存在性、大小和包列表。原脚本的 `systemctl status` 还带入了最近 journal 行和外部扫描源地址，超出服务健康判断所需范围；后续改用 `systemctl show`、`is-active`、`is-enabled` 和 `--failed`，不采集服务日志尾部。
+- DVT 缺失项之外的归档证据有效。两台均为 Debian 13、单一 IPv4/IPv6 default route 走 `eth0`、无活动 HTB state、无 HTB class、3X-UI 与 Fail2ban active、接口 RX/TX error/drop 为零、磁盘余量充足、约 1 GiB project swap 只使用 268 KiB。10 秒 `vmstat` 中 Basic idle 为 96–99%、steal 主要为 0%且单点 1%；Core idle 为 93–99%、steal 为 0–1%，当前没有资源饱和证据。
+- Basic 迁移前根 `fq` 累计约 101.07 GB/1.157 亿包，drop/requeue 为零。Core 根 `fq` 累计约 349.41 GB/3.302 亿包，记录 38 drops、23 requeues，其中 `flows_plimit=34`、`horizon_drops=4`；折合约 0.115 drop/百万包和 0.070 requeue/百万包。这是自 qdisc 建立以来的累计值，不是当前窗口增量，不能据此认定 Core 正在丢包或归因 TCP 重传；若以后测试 Core，必须以 rc.17 phase delta 重新判断。
+- 审阅了用户提供的 Basic 第二次重启后输出：checkpoint 到达 `COMPLETE`，迁移器内置 verify 和随后显式 strict proxy verify 均返回“警告数 0”；状态为 rc.17/schema 4 语义下的 `VERIFIED`、`debian13-1c1g`、200 Mbps、BBR + root `fq`，3X-UI active，Xray 子进程与主进程 NOFILE 均为 65536，项目 swap 为 1 GiB、active 且使用 0，内存 available 约 660.5 MB，根 `fq` 当时 drop/overlimit/requeue 为零。该证据足以判定 rc.14→rc.17 checkpoint 生命周期和严格代理服务门禁通过。
+- Basic 迁移前归档使用 `6.12.101+deb13-cloud-amd64`，最终状态使用 `6.12.107+deb13-cloud-amd64`。checkpoint `COMPLETE` 证明两次 boot gate 与 rc.17 apply/verify 已执行，但内核同时变化，因此不能用迁移前后差异单独归因 rc.17；后续 reference/sweep 必须全部固定在当前 6.12.107 boot/runtime 内比较。
+
+### 未完成门禁
+
+- Basic 尚缺迁移后的新归档、`fail2ban.service` 明确 `is-active` 结果、`systemctl --failed`、30 秒 post-migration diagnose、真实客户端 VLESS + REALITY + TCP 冒烟和迁移后 VMISS 面板快照。当前可判定 DVT 生命周期通过，尚不能把“控制台监听存在”写成真实业务验收通过，也不能立即把迁移前归档当作 reference 前基线。
+- Core 当前 DVT 版本、controller 路径、managed state 与 strict verify 仍被采集脚本的 127 缺口阻断。Core 现阶段没有迁移或主动测试需要；先保留完整归档，只有需要跨资源复核时再解析旧 controller 的实际路径并补采 DVT 门禁。
+- 固定 iperf3 endpoint 仍缺服务端安装、固定端口、仅允许测试源地址的 ACL、防火墙、版本、监听、接收 CPU/链路余量和面板前置快照。Basic reference 尚未授权执行，也不得在业务冒烟和 post-migration 基线闭合前运行。
+
+### 延期事项变化
+
+- Basic rc.14→rc.17 checkpoint 迁移与两次重启从“待执行”更新为“运行证据通过”；下一步收敛为短时 post-migration 验收和修正版最小补采。Basic reference 保持下一独立窗口，candidate sweep、A/B/A、Core 迁移和持久 HTB仍未启动。
+- 新增采集器修复项：DVT 命令必须绑定显式可信可执行路径；reboot-required 必须记录存在性和内容大小。该修复只影响证据采集可靠性，不改变 rc.17 profile 或目标机调优状态。
+
+### 当前成熟度判断
+
+当前为 `BASIC_RC17_MIGRATION_VERIFIED_POST_MIGRATION_ACCEPTANCE_PENDING_REFERENCE_NOT_STARTED`。Basic 已达到 rc.17 lifecycle/strict service 验证层，归档完整性和非 DVT 系统基线也可信；补齐迁移后最小证据与真实代理冒烟后，才可进入独立 HTB200 reference 窗口。Core 继续作为条件复核机。
+
+## 本轮记录：2026-09-10（Basic 在线事实更正与操作脚本复审）
+
+### 已完成及证据
+
+- 用户更正当前运行事实：Basic 并未停机，500 GB 套餐尚余 315 GB；Core 的 1000 GB 套餐尚余 638 GB。Basic 为 1C1G、200 Mbps/`eth0`、rc.14，只服务一名代理用户且全天可重启；Core 为 1C2G、200 Mbps/`eth0`、rc.12，为其他机器提供代理，白天尽量不中断、夜间可重启。此前以“Basic 已停机”为前提选择 Core 为首台主动实验机的建议随之失效。
+- 更新后的最短路径是 Basic 优先：先在两台机器采集只读当前基线；只在 Basic 上完成 rc.14→rc.17 checkpoint 迁移、稳定观察和独立的 HTB200 reference。Basic 的历史 HTB190 信号、较低业务影响和随时可重启条件，使其比 Core 更适合作为同机复验对象。Core 暂时保持只读旁证；只有 Basic 因 1C1G CPU/steal/softnet 使 reference 无法判读，或 Basic 产生可信 shortlist 后需要跨资源档夜间复核时，才迁移并测试 Core。
+- 按 rc.17 当前默认参数，3 样本 HTB200 reference 应用 payload 约 0.908 GiB，180/190/195 candidate sweep 约 4.381 GiB，合计约 5.289 GiB；8192 MiB 共享 ledger 可以覆盖应用 payload。继续采用 12–15 GiB 服务商额度预留，并在每阶段前后保存 VMISS 面板计费快照。该预留分别低于 Basic 当前剩余额度约 5% 和 Core 当前剩余额度约 2.5%，但不构成自动重试、旧 TcpQuality campaign 或双机完整 sweep 的授权。
+- 对此前建议的 Shell 片段进行了逐项静态复审并修正：摘要生成必须排除 `SHA256SUMS` 自身并先写临时文件；每次重启登录后必须重新赋值迁移 `CHECKPOINT`；analyzer 人工核对字段应使用 `qdisc_health_gate`；主动窗口必须用 `EXIT/INT/TERM` trap 尝试停止 HTB 并恢复原本运行的 `x-ui.service`；安装 rc.17 controller 前先由旧 controller 执行 `dvt update --target v0.1.0-rc.17`；旧版本基线改用直接读取 active-state 与 `tc`，不依赖旧 `dvt htb status`；active-state 检查必须在 `set -Eeuo pipefail` 或显式分支中 fail closed。
+- Basic 1G 内存使迁移 rollback 的 owned-swap 清理成为额外运行风险。迁移前必须保存 `free -b` 和 `swapon --show --bytes`，并在 rollback/apply 窗口停止 `x-ui.service` 降低内存压力；如果迁移器不能安全完成 `swapoff` 或保留 checkpoint，则停止并保留状态，不得手工删除迁移状态或强制清理 swap。
+- 本地验证已闭合：公开 rc.12、rc.14 controller 均按各自 Release `SHA256SUMS` 反向核验且包含 `update`；rc.17 migrator 源码确认接受 rc.1–rc.16 直迁 rc.17；修正后的采集/维护窗口片段通过 Git Bash `bash -n`；`python tools/render_profiles.py --check` 和完整 `bash tests/static-check.sh` 均通过。未连接、停止、迁移、重启或测试任何真实 VPS，也未产生公网流量。
+
+### 未完成门禁
+
+- 尚未取得两台机器的当前只读基线、VMISS 面板阶段快照、Basic 的控制台/系统快照和 3X-UI 数据库备份，也未确认固定获授权 iperf3 endpoint 的端口、地址族、接收容量、防火墙/ACL 和服务端额度。当前只应执行只读采集，不能把历史记录视为当前运行事实。
+- Basic 迁移必须与主动 reference 分成两个窗口。迁移完成后先验证 rc.17 schema 4 `VERIFIED`、根 `fq`、`x-ui.service`、Xray NOFILE、Fail2ban 和真实代理业务，并完成稳定观察；随后才能在独立窗口停用真实代理流量并运行 3 样本 reference。
+- 若 Basic reference 在 200 Mbps 下测量有效且重传可接受，应停止，不运行 sweep，也无需仅为完成研究而测试 Core。只有重传反复偏高且资源、softnet、接口、endpoint 与 root/leaf qdisc 门禁健康时，才运行一次 Basic candidate sweep。正式 A/B/A 仍需先把旧 rc.14/TcpQuality SOP 更新为 rc.17、固定 iperf3、schema 3、共享 ledger 和显式 payload，再由用户单独批准。
+- 当前用户要求的是方案与脚本自检及事实更新，不构成连接 VPS、停止服务、迁移、重启、配置 endpoint 或产生主动流量的本轮执行授权。
+
+### 延期事项变化
+
+- Basic 从“等待服务商恢复、不能测试”更正为“当前在线且是首台 rc.17 迁移/reference 候选”；Core 从“首台主动候选”调整为“只读旁证及条件触发的夜间跨资源复核”。此前基于错误停机前提形成的记录保留为历史过程，由本条最新记录取代其当前决策效力。
+- 不再计划预先迁移两台机器或在两台上各跑完整 campaign。Core 的迁移/reference 以 Basic 出现资源受限或形成候选后确有交叉验证价值为重新纳入条件。无新增默认/持久 HTB、sysctl、TcpQuality 或公网大流量测试授权。
+
+### 当前成熟度判断
+
+当前为 `BASIC_PRIMARY_BOUNDED_RC17_REFERENCE_READY_AFTER_LIVE_BASELINE_SCRIPT_PLAN_CORRECTED`。主机选择、流量上界和操作脚本的高影响缺陷已经修正并通过本地静态门禁；下一安全动作仅为在 Basic 与 Core 分别运行修正后的只读采集脚本，人工审阅当前状态后再决定 Basic 迁移窗口。
+
+## 本轮记录：2026-09-10（Core/Basic 可重启条件更新后的实验角色）
+
+### 已完成及证据
+
+- 用户更新运行约束：Core 只运行一个 3X-UI 服务，为其他机器提供代理；白天尽量不停机，夜间可以安排重启。Basic 也只运行一个 3X-UI 服务，仅一名用户使用，全天均可安排重启。该信息消除了此前将 Core 限定为“绝不重启、只能被动旁证”的维护阻塞。
+- 两台仍是配额受限的代理业务机。Core 的 1C2G、1000 GB 套餐、当前约 643 GB 剩余、200 Mbps/`eth0` 和夜间维护条件，使它成为现有两台中更合适的 rc.17 迁移及有界 HTB reference/sweep 候选；主动测试窗口必须协调用户、停止 3X-UI/Xray 并确认接口字节稳定，测试后恢复服务并严格验证。Basic 仍因 500 GB 账期封停等待恢复，历史流量事故和较小额度使它更适合作为候选速率冻结后的低预算交叉复验机。
+- 推荐把运行拆成独立门禁：白天只读基线 → 第一夜 rc.12→rc.17 checkpoint 迁移与两次人工重启 → 稳定观察 → 第二夜只执行 3 样本 HTB200 reference（默认 payload 上界约 0.91 GiB）→ 人工评审。reference 已稳定且重传可接受则停止；只有测量有效、200 Mbps 下重传反复偏高且 CPU/steal、softnet、接口、root/leaf qdisc 和 endpoint 无更强解释时，才另开夜间窗口执行 180/190/195 candidate sweep（约 4.38 GiB）。
+- reference+sweep 默认应用 payload 合计约 5.29 GiB，可由 8192 MiB 共享 ledger 覆盖；考虑 VMISS 双向计费、协议开销、失败保守结算和禁止无审查重试，Core 控制台建议为该阶段预留 12–15 GiB。该预算相对用户报告的剩余额度可控，但必须在每个阶段前后与 VMISS 面板对账。
+
+### 未完成门禁
+
+- 尚未取得 Core 当前只读基线、控制台/快照、3X-UI 配置备份、夜间维护窗口、客户端停用确认、固定获授权 iperf3 endpoint、服务端版本/端口/IPv4 ACL/接收容量及两端额度证据。当前不能直接迁移或发流量。
+- rc.17 迁移器要求旧版 rollback 后第一次 reboot，再执行 rc.17 preflight/apply，随后第二次 reboot 和最终 verify；不得把两个重启与 HTB reference 混成一个故障难以归因的窗口。迁移完成后还要严格验证 `x-ui.service`、Xray NOFILE、Fail2ban、根 `fq`、schema 4 `VERIFIED` 和真实代理业务。
+- 正式 A/B/A 与反向窗口仍受旧 rc.14/TcpQuality SOP 漂移阻断。candidate shortlist 出现后，必须先把 SOP 更新为 rc.17、固定 iperf3 endpoint、schema 3 root/leaf qdisc 证据和共享预算，再单独批准执行；不能原样运行旧文档。
+- Core 上的有界实验只能回答该 Core/该 endpoint/该时段的主机特定问题。要修改项目默认值、启用持久 HTB 或提出跨 VPS 性能主张，仍需独立无业务测试资源和 Basic/Core 的短时真实代理路径复验。
+
+### 延期事项变化
+
+- Core 从“仅被动诊断”调整为“夜间可迁移、可承担分阶段有界 reference/sweep”；此前不重启相关延期条件关闭。Basic 从“完全暂停”调整为“服务商恢复后先做当前状态和业务恢复，候选冻结后再决定是否低预算交叉复验”。
+- 当前用户提供的是运行条件更新和操作方案请求，不等于已经授权本轮连接 VPS、停止 3X-UI、迁移、重启、配置 endpoint 或产生主动流量。无新增默认/持久 HTB、sysctl 或生产候选速率授权。
+
+### 当前成熟度判断
+
+当前为 `CORE_PRIMARY_BOUNDED_RC17_HTB_CANDIDATE_BASIC_CROSS_VALIDATION_AFTER_RESET`。主机选择和分阶段顺序已经收敛；下一安全动作是白天采集 Core 当前只读基线并冻结第一夜迁移所需的控制台、备份和维护条件，HTB 流量必须等迁移与稳定验证独立闭合后再开始。
+
+## 本轮记录：2026-09-10（VMISS 重传问题的下一步执行顺序）
+
+### 已完成及证据
+
+- 根据 3X-UI 方案和 2026-08-28 已批准的分层测试策略，将下一步收敛为“业务机被动诊断优先、独立研究机承担 HTB 因果实验”。仓库 README 已明确 `diagnose` 是无主动流量的首选故障入口；`probe` 只用于症状触发且有硬预算的单机诊断；benchmark、TcpQuality 和 HTB 属于需要独立高额度测试机的研究层。
+- Core 当前最适合在不重启、不迁移和不改 qdisc 的条件下采集真实问题窗口，判断重传是否与聚合出口速率、RTT、CPU/steal、softnet、接口错误或路径变化同步。Basic 在服务商账期恢复后只做控制台额度、当前状态、低流量生命周期和真实代理冒烟，不承担 reference→sweep→A/B/A 速率发现。
+- rc.17 已发布的 HTB 证据修复不改变默认网络参数，也不要求立即运行公网测试；只有要决定默认/持久 HTB、具体候选速率或发布性能主张时，才进入独立因果实验。
+
+### 未完成门禁
+
+- 尚未采集 Core 同一真实重传窗口的脱敏 `diagnose`、聚合吞吐或接口字节增量和业务侧时间戳，不能判断整形假设是否值得进入主动验证。不得只凭累计重传数、单次 `ss` 或本地 qdisc 零丢包归因服务商 policer。
+- 若 Core 被动证据仍显示接近 200 Mbps 聚合发送时重传稳定升高，下一步需要无业务、可重装、有控制台/快照、高额度或不计量的独立测试机，以及固定获授权 iperf3 endpoint、地址族、端口和硬预算。rc.17 可直接使用的测试机仍须满足真实 200 Mbps、唯一默认出口 `eth0`；500 Mbps/`eth7` VMRack 资源需要后续版本先完成接口和 provider-rate 通用化。
+
+### 延期事项变化
+
+- 暂停为 Basic/Core 准备完整 HTB campaign 和大流量 endpoint 窗口。是否启动独立 HTB 研究，以 Core 被动诊断能否形成可复现的“速率相关重传膝点”线索为重新纳入条件。
+- 无新增生产迁移、重启、主动流量、默认/持久 HTB 或网络参数修改授权。
+
+### 当前成熟度判断
+
+当前为 `CORE_PASSIVE_DIAGNOSIS_FIRST_HTB_RESEARCH_CONDITIONAL`。下一安全动作是收集 Core 的低风险真实症状证据；Basic 等待服务商恢复；独立 HTB 测试资源仅在整形假设仍有充分依据时准备。
+
+## 本轮记录：2026-09-10（VMISS 3X-UI 方案中的 HTB 测试必要性追溯）
+
+### 已完成及证据
+
+- 只读复核了 `F:\Software\Software\翻墙\VPS\VMISS VPS 3X-UI 详细配置方案.md` V1.14。该文档正式适用对象仅为 `US.LA.TRI.Core`；其调优接口边界明确记录 rc.12 `BBR + fq` 生命周期通过不证明吞吐或 HTB 收益，不增加全局 `fq maxrate` 或持久 HTB/TBF，临时 HTB A/B/A 或 candidate sweep 属于独立实验而非 3X-UI 部署步骤。最终维护门禁仍要求根 qdisc 保持受管 `fq`，不得被未归因的持久整形替代。
+- 文档只在“多 VMISS 实例复用边界”中引用 Basic 的独立 500 GB 账期/自动重置契约和低重要性告警豁免；这些内容不把 Core 方案变成 Basic/Core 共用性能测试方案，也没有要求 Basic 或 Core 完成 HTB/TcpQuality 才能验收 3X-UI。
+- 追溯 2026-08-28 的项目决策：Basic 29 次 TcpQuality 日志窗口已产生约 264.27 GB 出站，公共节点和时段漂移使继续主动测试的边际价值不足；用户批准将 Basic 完整 HTB campaign 和 1C2G A/B/A 降为研究专用，不再作为 VPS 升级、日常验收或 3X-UI 部署门禁。只有出现可复现真实业务症状、确实需要 HTB 因果结论、使用独立高额度测试机并批准硬预算时，才重新评审。
+- 2026-09-10 用户以“实际重传明显”和 tcpfit 专项重新提出因果研究，满足了重新评审研究问题的触发条件，但没有自动满足“独立高额度测试机”条件。Basic 是 500 GB 配额业务机且已因历史测试封停，Core 是 1000 GB 配额业务机且要求尽量不重启；因此二者当前都不应承担完整 HTB 速率发现/A/B/A campaign。
+
+### 未完成门禁
+
+- Basic 解封后可以完成低流量生命周期、当前只读诊断和真实业务冒烟；在候选速率已由独立测试机发现前，不再把它规划为 HTB200 reference→sweep→A/B/A 的发现主机。若未来仅做最终短时业务相关复验，也需独立授权、硬字节上界和 VMISS 面板对账。
+- Core 继续保持 rc.12、根 `fq` 和不重启边界，只做被动诊断及 3X-UI 方案规定的业务/路由/账期验收。不得把 tcpfit 研究、rc.17 发布或 Basic 不可用解释为 Core 必须迁移或执行 HTB。
+- 若仍需形成聚合整形因果结论，应使用可重装、无业务、高额度或不计流量的独立测试机。现有 500 Mbps/`eth7` VMRack 测试资源不符合 rc.17 固定 200 Mbps/`eth0` 执行契约；需要另准备 200 Mbps/`eth0` 合格资源，或在后续版本先完成真实 provider-rate/默认接口通用化，再进行独立实验。
+
+### 延期事项变化
+
+- 修正此前“Basic 解封后作为完整 HTB 主实验机”的建议：Basic 只保留低流量现状/业务复验候选，完整速率发现回到独立高额度测试机。Core 维持被动旁证。
+- 三项目研究和 rc.17 证据能力的静态/fixture结论不受影响；默认或持久 HTB 仍需独立实验因果证据。无新增 VPS 操作、主动流量或持久整形授权。
+
+### 当前成熟度判断
+
+当前为 `VMISS_BUSINESS_HOST_HTB_CAMPAIGNS_NOT_REQUIRED_DEDICATED_RESEARCH_HOST_NEEDED`。既有决策一直排除把 Basic/Core 的完整 HTB/TcpQuality 作为升级、部署或日常验收门禁；新重传问题只使独立研究重新具有价值。当前正确路线是 Core 不重启、Basic 等待重置并仅做低流量恢复/业务检查，完整 HTB 因果实验转移到合格的独立测试资源。
+
+## 本轮记录：2026-09-10（首轮三项目研究与整形专项任务复盘）
+
+### 已完成及证据
+
+- 对首个“三项目深入研究和吸收评估”任务进行过程复盘：最初执行确实在完成 tcpfit 深读、仅开始 NetShape 后发生中止/任务漂移，没有当轮交付三项目完整比较和吸收矩阵；该过程缺陷成立。后续工作已用固定版本补齐 tcpfit `v0.5.7`、vps-netpilot 和 netshape-manager/peertune 的源码级功能、证据边界、吸收/延期/拒绝矩阵，并形成 [外部网络调优项目研究](external-network-tuning-research-2026-09-10.md)，但这不消除用户需要再次纠偏的执行问题。
+- 第二个“重点重评 tcpfit 整形能否改善本项目重传”任务正确把问题收敛为聚合出口 policer 假设。Linux HTB 可控制 egress class 聚合速率，FQ 主要做逐流 pacing；因此 tcpfit 的 `HTB rate=ceil → fq leaf` 机制在理论上适配“多流总出口超过稳定 policer”这一特定故障形态，但不能修复入向/远端重传、路径拥塞或乱序、CPU/softnet、接口错误、PMTU 和代理应用路径问题。
+- 后续 rc.17 已吸收不依赖性能结论的证据工程价值：识别 `parent MAJOR:MINOR` 的 HTB→FQ 叶子，phase summary schema 3 分离 root/leaf totals，任一 root/leaf drop/requeue 或旧证据 fail closed 为 `REVIEW_BLOCKED`，并扩展脱敏 socket pacing/delivery/min RTT/DSACK/乱序/窗口字段。这些属于观测契约正确性，可由源码语义、fixture、Linux root/真实 qdisc smoke 分层验证，不需要先证明 HTB 能降低目标 VPS 重传。
+- HTB 性能测试只对仍未决的运行主张是必要门禁：是否存在稳定的聚合 policer knee、180/190/195 中哪个速率改善 retransmits/GiB 且保持 receiver goodput、tcpfit 约 4 ms burst/cburst 是否优于当前参数、是否值得设计持久 opt-in shaper。没有同机、同端点、同方向/地址族、多窗口 A/B/A 和真实代理复验，这些结论均不能成立。
+
+### 未完成门禁
+
+- 当前还没有目标机证据证明“缺少 aggregate cap”是用户若干 VPS 重传的根因，也没有证据支持把 HTB、190 Mbps、90%/95%、tcpfit burst、`fq maxrate`、`limit=40960`、`flow_limit=8192` 或持久 systemd shaper加入默认 profile。
+- Basic 已因历史 HTB 研究期间的流量生成超过 500 GB 而停机，Core 又要求尽量不重启；因此目前不具备运行 HTB 因果实验的主机条件。Basic 解封后也只能先运行独立、最小预算 HTB200 reference并与 VMISS 面板对账，不能为了“完成研究”自动继续 sweep/A/B/A。
+- 只有 reference 显示重传问题可复现、整形暴露充分、主机/endpoint/qdisc 证据健康时，才有理由运行一次受控候选 sweep；只有候选出现可重复收益时，才修订并执行有硬字节上界的 A/B/A。旧公共 TcpQuality 多轮流程不再作为正式因果实验入口。
+
+### 延期事项变化
+
+- tcpfit/NetShape 的聚合整形从“待吸收功能”明确分为两层：非持久研究能力和证据语义已经吸收；生产默认或持久 opt-in 整形继续延期，触发条件是低流量、同机多窗口因果证据及单独设计/发布授权。
+- tcpfit/NetPilot/NetShape 的宽 sysctl、固定 RTT/缓冲、`initcwnd/initrwnd`、RPS/RFS、UDP/conntrack、MSS Clamp、CAKE/TBF fallback 和固定经验速率仍维持拒绝或独立需求状态；HTB 测试即使成功也不能同时验证这些不同机制。
+
+### 当前成熟度判断
+
+当前达到 `THREE_PROJECT_RESEARCH_COMPLETE_HTB_PRODUCT_DECISION_REMAINS_CONDITIONAL`。三项目的源码价值判断和 rc.17 证据链吸收已经具备充分静态/fixture依据；HTB 运行测试不是完成吸收评估所必需，但若要声明降低目标 VPS 重传、选择生产速率或进入持久整形设计，则是不可替代的因果证据门禁。现阶段因 Basic 配额封停和 Core 不重启约束而暂停该门禁是正确选择。
+
+## 本轮记录：2026-09-10（VMISS 配额与 Basic 流量封停约束修正）
+
+### 已完成及证据
+
+- 用户补充并纠正当前资源约束：Basic 为 1C1G、500 GB 配额、面板已用 180 GB；Core 为 1C2G、1000 GB 配额、面板已用 357 GB；两台端口均为 200 Mbps。按面板数值直接相减，名义剩余分别为 320 GB 和 643 GB，但该算术值不代表当前可发流量状态。
+- Basic 曾在 HTB 测试期间累计超过 500 GB 后被服务商停机，目前必须等待流量重置后才能开机。该服务商封停状态优先于“已用 180 GB”的面板数字；在用户确认重置完成、实例可启动且面板新周期口径明确前，Basic 不再视为当前可迁移或可测试主机。
+- rc.17 Basic 五样本 HTB200 reference 的协议 payload 上界约 1.625 GB，reference 加 180/190/195 sweep 约 6.329375 GB，远低于 500 GB。历史测试能耗尽 500 GB，说明旧 TcpQuality/重复运行/背景业务/失败重试或服务商计费口径中至少有一项没有被现有历史记录可靠约束；不能仅凭 rc.17 计划上界解释旧封停，也不能继续复用旧 TcpQuality A/B/A 流程。
+- Core 名义剩余约 643 GB，但用户要求尽量不重启，且它仍为 rc.12/1C2G。Core 继续只用于不重启的只读与被动观测，不因 Basic 暂时不可用而自动升级为主动 HTB 替代机。
+
+### 未完成门禁
+
+- Basic 必须等待服务商完成流量重置并恢复开机；恢复后先核对新计费周期起止、面板已用/剩余、封停阈值、上下行是否都计费及重置规则，再执行任何迁移或网络测试。不得以面板当前“180 GB 已用”推断实例已经解封。
+- 在 Basic 上重新开始时，第一批主动流量只允许独立五样本 HTB200 reference，不预授权 sweep、TcpQuality、A/B/A 或失败自动重试。reference 的本地账本建议只给覆盖 1.625 GB payload 的最小预算，并在完成后人工对账 VMISS 面板增量；面板增量与 sender bytes 无法解释地偏离时立即终止整个 campaign。
+- 旧 A/B/A SOP 在修订为 rc.17、固定 iperf3 endpoint、显式 payload 上界、共享账本和每阶段人工停顿前不得执行。鉴于 Basic 已发生配额封停，后续不再使用无法形成可靠上界的旧公共 TcpQuality 流程作为正式 HTB 因果实验。
+- Core 仍需单独的只读运行证据；任何 rc.12→rc.17 迁移、重启或主动流量都保持未授权。Basic 解封前，项目没有符合“rc.17、200 Mbps、eth0、可重启、可控额度”的当前 HTB 主实验机。
+
+### 延期事项变化
+
+- Basic 的 rc.17 迁移和 HTB reference 从“等待当前只读基线”改为“先等待服务商额度重置和实例解封，再做当前只读基线”。candidate sweep、A/B/A 和真实代理复验继续保持后续逐阶段授权。
+- 新增正式实验门禁：每个主动流量阶段结束后必须把 sender bytes、本地预算账本和 VMISS 面板计费增量三方对账；不能解释的超额计费或面板延迟必须阻断下一阶段。无新增 Core 重启、持久 HTB或默认 profile 修改授权。
+
+### 当前成熟度判断
+
+当前为 `BASIC_BLOCKED_BY_PROVIDER_TRAFFIC_RESET_CORE_PASSIVE_ONLY`。Basic 仍是硬件和生命周期上更合适的主实验机，但现在受服务商流量封停阻断；Core 在不重启约束下只能提供被动旁证。下一安全检查点是确认 Basic 新计费周期已重置且实例恢复，然后只读重建基线，并先以单独、最小预算的五样本 HTB200 reference 验证本地账本与服务商计费是否一致。
+
+## 本轮记录：2026-09-10（VMISS Core/Basic 历史证据复核与差异化测试准备）
+
+### 已完成及证据
+
+- 只读复核了用户指定的 `Core` 与 `Basic` 本地测试记录；本轮没有连接或修改两台 VPS，也没有产生公网测试流量。记录主要形成于 2026 年 8 月，属于历史快照，不能证明两台机器当前仍保持相同内核、服务、qdisc、路由、连接、额度或受管状态。
+- `Core` 历史证据显示 Debian 13、1C2G、200 Mbps、`eth0`、rc.12 schema 受管状态和 `BBR + fq` 生命周期验证曾通过，旧版 HTB200 smoke 也曾完成 HTB 建立、断言、停止和根 `fq` 恢复；但四个 `htb200-reference-*` 目录均为空，旧 schema 2 plan 不能作为 rc.17 reference 结果。Core 当前按用户要求应尽量不重启，因此暂不迁移 rc.12→rc.17，也不把它作为 rc.17 HTB 主实验机。
+- `Basic` 历史证据显示 Debian 13、1C1G、200 Mbps、`eth0`，旧 S3 多窗口重传密度存在明显波动，说明时段和路径是重要混杂变量。旧 S4 第一次 A/B/A 中标记为 B1 的 TCPQuality 运行实际开始和结束均为根 `fq`，不构成 HTB 条件；第二次尝试的 B1 确认运行 HTB190，重传密度约 `699/GiB`、HTB root overlimits `103044` 且 root/leaf drop/requeue 为零，但缺少 A2，且 A1 与 B1 的字节量和时段不同。该结果是值得复验的强信号，仍不足以批准持久 190 Mbps。
+- 用户说明 Basic 当前为 rc.14 且允许重启。结合 rc.17 执行契约，Basic 是主 reference/sweep/A/B/A 候选：先现场只读重建当前基线，再按 rc.14→rc.17 checkpoint 完成两次重启和最终严格验证；Core 只保留为不重启的当前状态观察对照。两台硬件档、软件版本、业务负载和测试时段不同，因此 Core 不能替代 Basic 的同机 A/B/A 因果对照。
+
+### 未完成门禁
+
+- 两台机器均需补采当前只读证据：boot ID、Debian/kernel、DVT version/status/state、strict verify、root/class qdisc、IPv4/IPv6 route/rule、3X-UI/Xray 与 Fail2ban 状态、活动 socket 与接口字节增量、CPU/steal、softnet、接口 error/drop、磁盘/流量额度、包管理锁和 `reboot-required`。Core 的只读核验不应触发重启、迁移或 HTB。
+- Basic 在迁移前需冻结维护窗口、确认控制台与快照、备份 3X-UI 配置，并确认真实客户端流量可停。迁移和主动实验期间必须消除或量化 3X-UI/Xray 背景流量；Fail2ban 可保持运行，但两次重启后均需验证恢复。
+- 固定 iperf3 endpoint 仍需确认自有或获授权、端口、版本、IPv4 源地址限制、监听与防火墙、单流持续接收能力、CPU/网卡余量和服务商额度。历史第三方 endpoint、Core 空 reference 目录、schema 1/2 plan、旧 `COMPLETED` 标记以及旧 qdisc 零丢包结论均不得复用为 rc.17 运行证据。
+- Basic 的最短有效序列为：当前只读基线 → rc.14→rc.17 迁移与两次重启验证 → 5 样本 HTB200 reference → 人工评审 → 必要时 180/190/195 sweep → 冻结唯一候选率 → 更新旧 A/B/A SOP 到 rc.17/schema 3 → 新目录运行同机 A/B/A。按 Basic 既有 campaign 的 5 样本设置，reference+sweep 计划 payload 上界为 `6.329375 GB`（约 `5.89 GiB`）；考虑协议开销、失败保守结算和重试，服务商额度建议预留 12–15 GiB。A/B/A 预算须在候选冻结后另行计算和批准。
+
+### 延期事项变化
+
+- Core 的 rc.12→rc.17 迁移和主动 HTB 实验改为有条件延期：只有用户以后接受其两次重启和维护窗口时再纳入。不得为了避免重启而绕过 rc.17 checkpoint 或手工伪造受管状态。
+- Basic 的 rc.17 迁移、endpoint 写入、服务停止、重启和主动流量仍需按具体步骤执行授权；本轮只有本地记录分析。无新增默认或持久 HTB、sysctl、3X-UI、Fail2ban 配置修改授权。
+
+### 当前成熟度判断
+
+当前达到 `BASIC_SELECTED_AS_PRIMARY_RC17_HTB_CANDIDATE_AWAITING_LIVE_READ_ONLY_BASELINE`。历史数据给出了重新验证 HTB190 的充分理由，但旧实验存在无效 B1 或缺少 A2 的关键缺口；下一步应先只读核验两台当前状态，随后仅在 Basic 上进入迁移和新 rc.17 reference，Core 保持不重启。
+
+## 本轮记录：2026-09-10（两台 200 Mbps/eth0 旧版 VPS 候选复核）
+
+### 已完成及证据
+
+- 用户补充存在两台真实 200 Mbps、默认出口 `eth0` 的 VPS，DVT 管理版本分别为 rc.12 和 rc.14；两台均已安装并运行 3X-UI 与 Fail2ban。本轮只核对仓库 rc.17 迁移、HTB 和代理验证契约，没有连接或修改任一 VPS。
+- rc.17 `dvt-migrate.sh` 明确接受 rc.1–rc.16 的来源并迁移到 rc.17，因此 rc.12 和 rc.14 在版本格式上都可以直接进入一次受控 rc.17 checkpoint，无需逐个经过中间 Release。迁移仍会固定旧版/目标 profile 摘要，先调用旧版 `verify/rollback`，要求第一次 boot ID 变化，再执行 rc.17 `preflight/apply`，要求第二次 boot ID 变化，最后完成 rc.17 `verify`。
+- 两台机器的 200 Mbps 和 `eth0` 已满足 rc.17 HTB 合同的关键静态类别，比此前提供的 500 Mbps/`eth7` VPS 更适合作为 HTB200 reference 候选。若业务重要性、硬件、线路、流量和恢复条件相同，rc.14 因生命周期差距较小可作为初始优先候选；最终选择必须由停机能力、业务负载和恢复证据决定，不能只按版本号。
+- Fail2ban 不属于 DVT 调优或 HTB 的修改范围，正常情况下可以保持运行；endpoint 只需允许测试机主动发起的出站 TCP。3X-UI/Xray 会共享同一 egress、CPU 和 qdisc 计数，若存在客户端或后台流量会污染吞吐、重传和 root/leaf 证据，因而必须在实验窗口内停止或以运行证据证明无连接、无显著字节增长。
+
+### 未完成门禁
+
+- 尚未取得两台候选机各自的 Debian/资源档、完整 rc.12/rc.14 `dvt status`、schema/state、根 qdisc、当前连接与流量、剩余额度、控制台、快照、可停机窗口和业务归属证据；不能据当前两行信息选定最终测试机。
+- 任何候选机在 HTB 流量前都必须完成 rc.17 只读 `update`、受控迁移、两次人工重启、最终 schema 4 `VERIFIED`，并用 `REQUIRE_PROXY_SERVICE=1 PROXY_SERVICE_UNITS='x-ui.service'` 做严格代理服务验证。迁移阶段对 3X-UI 的临时 NOFILE drop-in 状态和真实业务可用性必须在维护窗口分别检查；Fail2ban 状态也须在两次重启后确认。
+- 若 3X-UI 承载真实生产业务、不能在完整 reference 窗口停用，或无法接受两次迁移重启，则该机不能作为独立性能测试机。不能以“已安装服务但当前看起来空闲”代替业务所有者确认和连接/接口增量证据。
+- iperf3 endpoint 的端口、已安装版本、源地址限制和持续接收能力仍未冻结；这些门禁与测试机选择相互独立，必须在任何主动流量前完成。
+
+### 延期事项变化
+
+- 500 Mbps/`eth7` 通用化候选暂不必作为最短路径实施，因为已经出现符合 rc.17 端口/接口合同的 200 Mbps 候选机；只有两台 200 Mbps 主机都因生产或恢复约束不可用时，才重新启用该实现候选。
+- 无新增默认 HTB、持久化、sysctl、Fail2ban 或 3X-UI 配置修改授权。停止代理服务、迁移、重启、endpoint 安装和主动流量仍须按具体主机单独授权执行。
+
+### 当前成熟度判断
+
+当前达到 `RC17_HTB200_HOST_CATEGORY_FOUND_AWAITING_HOST_SELECTION_AND_LIFECYCLE_EVIDENCE`。已有两台在 200 Mbps/`eth0` 类别上匹配的候选机，rc.12/rc.14 均可由 rc.17 迁移器直接接入；但生产隔离、主机细节、迁移和 endpoint 门禁尚未闭合，不能开始 reference。
+
+## 本轮记录：2026-09-10（VMRack 500 Mbps 测试资源与 rc.17 HTB 契约适配复核）
+
+### 已完成及证据
+
+- 用户提供了一台 Debian 13、1C2G、500 Mbps、约 1 TB 剩余额度并有控制台和快照的 VMRack VPS，以及另一台自有 500 Mbps VPS 作为固定 IPv4 iperf3 endpoint 候选。本轮只读取用户提供的脱敏所需字段和仓库源码，没有连接主机、安装软件、修改防火墙或产生测试流量。
+- 测试机当前仍由 rc.16 管理，schema 4 `VERIFIED`、profile `debian13-1c2g`、状态端口 500 Mbps、默认出口 `eth7`、运行态 `BBR + fq`。用户称其不承载生产业务，但状态输出同时显示公网 Xray 443 和 wildcard x-ui 监听；因此实验前仍须用连接、流量和客户端配置证据确认窗口内没有业务，不能仅按“无生产业务”字段通过门禁。
+- 当前 rc.17 HTB 契约与该机器不匹配：`dvt-htb.sh` 明确只支持 Debian 13 rc.17、`eth0`、200 Mbps、1C1G/1C2G；HTB 执行器固定 `EXPECTED_IFACE=eth0`；runner 要求 managed state 为 rc.17 schema 4 `VERIFIED` 且 `network.port_speed_mbps == 200`；plan 固定 HTB200 reference 和 180/190/195 candidates。相关 200 Mbps/接口假设跨执行器、计划、runner、analyzer、fixture 和文档，不能通过改一条命令安全绕过。
+- endpoint 的 IPv4 与 500 Mbps 声明满足候选方向，但端口尚未冻结、iperf3 尚未安装、版本和实际持续接收能力尚无运行证据、源地址限制尚未配置。地址族 `4`、初始 parallel `1`、90 分钟窗口和 8192 MiB 账本在形式上清楚；但它们不能消除测试机契约不匹配。
+
+### 未完成门禁
+
+- 当前不得运行 rc.17 `dvt htb reference`、smoke 或 candidate sweep。把真实 500 Mbps 套餐状态改写为 200 Mbps、把 `eth7` 冒充 `eth0`，或仅把 HTB cap 设为 200 Mbps，都会使状态/恢复/预算契约失真，并且只能说明“把 500 Mbps 主机压到 200 Mbps 后的行为”，不能检验 500 Mbps 端口附近的聚合 policer。
+- 若继续使用这台测试机，必须先形成后续版本的通用接口和 provider-rate 设计与实现：从唯一默认出口安全绑定 `eth7`，以真实 500 Mbps 作为 reference，重新批准候选率集合、流量上界、暴露阈值、fixture、恢复命令和文档，再走 PR/CI/Release。候选率不能在没有 500 Mbps 基线证据时直接照搬 180/190/195 或任意指定。
+- 若坚持使用已发布 rc.17 而不改代码，则需另用真实套餐 200 Mbps、唯一默认出口 `eth0`、rc.17 schema 4 `VERIFIED` 的独立测试机。endpoint 仍须安装并固定 iperf3 版本与端口、只允许测试机源地址、验证单流和计划并发下持续接收能力，并保存防火墙和监听证据。
+- 不论选择哪条路径，正式流量前还需完成 rc.16→目标版本的受控迁移、两次 reboot/verify、稳定 HTB 执行器摘要绑定、无活动 HTB 状态、端点路径检查、背景业务冻结和服务商剩余额度复核。升级本身不会自动解决 500 Mbps/`eth7` 契约差异。
+
+### 延期事项变化
+
+- 新增一个有明确触发条件的实现候选：只有用户决定继续使用 VMRack 500 Mbps/`eth7` 机器时，才把 HTB 研究工具从单一 200 Mbps/`eth0` 合同扩展为真实 provider-rate 和唯一默认接口绑定；该工作不得改变默认 profile 或自动启用持久 HTB。
+- rc.17 的公开发布完整性不变。旧 rc.14 A/B/A 文档同步项继续保留；若实施 500 Mbps 路径，还必须先以新的 reference/sweep 结果冻结候选，再生成对应 A/B/A，而不是预设 190 Mbps。
+
+### 当前成熟度判断
+
+当前为 `RC17_RELEASE_READY_BUT_PROVIDED_TEST_HOST_INCOMPATIBLE_WITH_HTB_CONTRACT`。测试资源在控制台、快照、额度和时长方面充足，但真实端口、接口和当前服务状态不满足 rc.17 的执行契约；在选择“扩展后续版本支持 500 Mbps/eth7”或“更换 200 Mbps/eth0 测试机”前，不能进入 HTB reference 流量阶段。
+
+## 本轮记录：2026-09-10（v0.1.0-rc.17 Pre-release 发布与公开反向验证）
+
+### 已完成及证据
+
+- 用户明确授权发布 `v0.1.0-rc.17` Release。本轮从已合并且与 `origin/master` 一致的提交 `6bed55333a6483a4c5efd899d9942e7df3ced088` 导出资产，没有把本地未提交的阶段备忘纳入 tag 或发布字节。合并后的 `shell-static-checks` run `34454128159` 为 `success`，head SHA 与发布提交一致；本地 `python tools/render_profiles.py --check`、`git diff --check`、导出资产 `bash -n` 和 `sha256sum -c SHA256SUMS` 均通过。
+- 已创建并推送注释 tag `v0.1.0-rc.17`；远端 tag 对象 SHA 为 `7ec04f4fd0daf963ee7a8036c05317343ee8d23c`，GitHub tag API 确认其目标类型为 commit，目标 SHA 精确为 `6bed55333a6483a4c5efd899d9942e7df3ced088`。
+- 已发布非 Draft、Pre-release 的 [v0.1.0-rc.17](https://github.com/alieismy/debian-vps-tuning/releases/tag/v0.1.0-rc.17)，Release ID `386117329`，发布时间 `2026-09-10T08:34:26Z`。发布包含 19 个扁平资产：清单管理的 17 项，加 `SHA256SUMS` 和 `install.sh`；发布说明已使用真实 Pre-release/CI 状态，没有沿用仓库草案中的“未发布候选”表述。
+- 已从公开 Release 重新下载全部 19 个资产；资产名称集合和 GitHub API `sha256` digest 逐项一致。下载所得 `SHA256SUMS` 摘要为 `d44284ed010a5a9774fc104cea50a51bd209f8e0d1e57b9680cdf147e5bdc208`，`install.sh` 摘要为 `4fd4dde90df4524d657623c4e22e355ab9adac70a703cff61a68e41e09007cbc`；按清单逻辑路径重建目录后，17 项 `sha256sum -c` 全部为 `OK`。
+- 本轮没有连接或修改任何 VPS，没有运行公网 `iperf3`、TcpQuality 或代理业务流量，也没有启用持久 HTB、改变默认 `BBR + fq`、17 项受管 sysctl、HTB rate 或 burst/cburst 参数。
+
+### 未完成门禁
+
+- Release 完整性已经闭合，但目标测试 VPS 的 Debian/资源档/200 Mbps 套餐/`eth0`/rc.17 schema 4 `VERIFIED`/根 `fq`、服务商剩余流量、无业务负载窗口，以及自有或获授权 iperf3 endpoint、port、地址族和服务端容量仍需现场冻结和验证。
+- 正式 A/B/A 仍不能直接执行：必须先运行 HTB200 reference，必要时运行 candidate sweep 并人工冻结唯一 shortlist rate；随后须把旧 rc.14/TcpQuality A/B/A SOP 更新为 rc.17、schema 3 root/leaf qdisc 与共享预算契约，再分别生成独立 `aba` 和 `bab` 窗口。
+- 本轮发布证明的是版本、资产和证据工具完整性，不证明 aggregate shaping 能降低特定 VPS 的重传，也不证明生产 VLESS + REALITY + TCP 业务改善、重启持久性或服务商 policer 根因。
+
+### 延期事项变化
+
+- rc.17 tag、Pre-release、19 项资产和公开反向摘要校验从未完成门禁转为已完成。目标 VPS 与 endpoint 冻结、HTB200 reference、candidate sweep 和 A/B/A 仍保持分阶段授权与证据门禁。
+- 无新增默认 HTB、持久化、sysctl、burst/cburst 或生产速率授权。旧 A/B/A 文档/执行契约的 rc.17 同步仍是进入正式 A/B/A 前必须完成的修复项。
+
+### 当前成熟度判断
+
+当前达到 `RC17_PRERELEASE_PUBLISHED_AND_PUBLIC_ASSETS_VERIFIED`。rc.17 的提交、合并后 CI、注释 tag、Pre-release、19 项公开资产及摘要链已经闭合，可以作为测试 VPS 的固定安装来源；性能研究仍停在运行前准备层级，尚未达到目标 VPS reference、candidate、A/B/A 或真实业务改善证据层级。
+
+## 本轮记录：2026-09-10（HTB200 reference、candidate sweep 与 A/B/A 准备复核）
+
+### 已完成及证据
+
+- 用户表示 rc.17 的独立授权事项已经完成，并询问如何准备测试 VPS、固定 iperf3 endpoint、地址族和流量预算。实时 GitHub 复核确认 PR `#16` 已于 `2026-09-10T08:14:47Z` 合并，merge commit 为 `6bed55333a6483a4c5efd899d9942e7df3ced088`；但 `gh release view v0.1.0-rc.17` 返回 `release not found`，Git tag ref API 返回 HTTP 404，因而不能把“已合并”写成“tag、Pre-release 和公开资产反向验证已完成”。
+- 重新核对 rc.17 wrapper：`dvt htb reference/sweep` 只接受 Debian 13、`debian13-1c1g`/`debian13-1c2g`、schema 4 `VERIFIED`、200 Mbps、`eth0` 和非持久 HTB；每阶段临时执行 `HTB rate=ceil + fq`，并要求固定 Release 中 root-owned、非符号链接、不可由 group/world 写入且摘要一致的 `/usr/local/sbin/htb-aggregate-experiment`。runner 只测 upload，并在每阶段恢复根 `fq`。
+- 按默认 3 样本、10 秒有效窗口、3 秒 omit 现场复算：HTB200 reference payload 上界为 `975000000` bytes（约 `0.9080 GiB`）；180/190/195 candidate sweep payload 上界为 `4704375000` bytes（约 `4.3813 GiB`）；合计 `5679375000` bytes（约 `5.2893 GiB`）。共享账本 `8192 MiB` 可覆盖一次完整 reference+sweep，并剩余约 `2775.73 MiB` 账本空间，但不包含协议开销、重传、失败重试或服务商计费差异，服务商实际剩余额度建议至少预留 10–12 GiB。
+- 确认 `reference-screen` 和 `candidate-sweep` 已有 rc.17 自动执行、schema 3 root/leaf qdisc 健康、预算与恢复门禁；正式 A/B/A 仍只有 `experiment-plan.sh` 和一份标为 rc.14/TcpQuality 的手工 SOP。该 SOP 的适用版本、state 示例和部分直接 runner 命令未同步到 rc.17，不能在 shortlist 出现后原样执行。
+
+### 未完成门禁
+
+- 必须先补齐 `v0.1.0-rc.17` tag、Pre-release、19 项固定资产和公开反向摘要校验，随后才可从固定 Release 安装到测试 VPS。当前不得从 `master` 或工作树直接运行 HTB 流量实验。
+- 测试机的 Debian/资源档/200 Mbps 套餐/`eth0`/rc.17 schema 4 `VERIFIED`/根 `fq`、服务商控制台、剩余流量、磁盘空间和无业务负载窗口尚未提供运行证据；固定自有或获授权 iperf3 endpoint、port、地址族、iperf3 版本和服务端容量也尚未冻结。
+- A/B/A 不能在 reference 前预先授权自动执行。必须先完成 reference，必要时完成 candidate sweep 并人工冻结一个 shortlist rate；其后还需把 A/B/A SOP 升级到 rc.17、补齐与 schema 3 root/leaf 证据和共享预算一致的执行契约，再分别生成 `aba` 与 `bab` 两个独立窗口。
+
+### 延期事项变化
+
+- 新增一个文档/执行契约修复项：`docs/experiments/htb-candidate-rate-sweep.md` 和 `docs/experiments/vmiss-1c2g-200mbps-htb-aba.md` 仍含 rc.14 适用文字；A/B/A SOP 还依赖旧 TcpQuality 手工 harness。重新执行前必须同步 rc.17 版本与摘要、明确预算和 schema 3 qdisc 证据，不靠操作者手工替换版本号。
+- 无新增默认 HTB、持久化、sysctl、burst/cburst 或生产速率授权。burst 比较仍须等待候选 rate 的 A/B/A 结论关闭后再作为单独变量。
+
+### 当前成熟度判断
+
+当前达到 `PR_MERGED_EXPERIMENT_PREPARATION_BLOCKED_BY_RELEASE_AND_ABA_CONTRACT`。reference/sweep 工具实现和 CI 已通过，但固定 rc.17 Release 尚不存在，测试环境与 endpoint 尚未冻结，A/B/A 文档契约仍是旧版；因此现在只能准备资源和只读信息，不能开始 HTB 流量。
 
 ## 本轮记录：2026-09-10（rc.17 候选提交、PR 与 Linux CI）
 

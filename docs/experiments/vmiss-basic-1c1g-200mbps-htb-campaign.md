@@ -1,7 +1,7 @@
 # VMISS Basic 1C1G / 200 Mbps HTB 完整实验 SOP
 
-状态：研究专用协议；默认不执行；未形成目标机运行结论
-适用版本：`debian-vps-tuning 0.1.0-rc.13`、HTB 执行器 `0.4.0`
+状态：研究专用协议；默认不执行；本轮 Basic HTB200 reference 已完成并关闭，candidate sweep/A/B/A 未执行
+适用版本：当前实现候选为 `debian-vps-tuning 0.1.0-rc.17`、HTB 执行器 `0.4.0`；本文保留的 rc.13 命令块仅作历史协议参考
 适用套餐：Debian 13、1 vCPU、约 1 GiB RAM、10 GB 系统盘、200 Mbps 端口、500 GB 月流量
 
 > **效力变更：本文不再是业务 VPS 的升级、发布或日常验收入口。** 历史执行已经证明完整
@@ -10,10 +10,21 @@
 > endpoint，并在执行前批准完整硬流量预算和停止条件时，才可重新评审本文。不得在当前
 > 配额受限 VMISS Basic 上按本文继续 reference、sweep 或 A/B/A。
 
+2026-09-11 的 Basic 运行已在独立归档中完成三次 HTB200 单流 IPv4 reference：sender 约
+187–190 Mbit/s，sender retransmits 和主机级 `TcpRetransSegs` 增量均为 0，HTB root/FQ
+leaf drops/requeues 均为 0，HTB root `overlimits` 为正；endpoint closeout 已停止并清理
+临时 server/observer unit、TCP/5201 listener、`iperf3` 进程和临时 UFW 规则。该证据只证明
+固定 HTB200 reference 的运行与证据完整性，不证明相对默认 `fq` 的因果收益或真实代理业务
+改善。由于 reference 已满足停止条件，180/190/195 candidate sweep 不再执行；Core、default-fq
+对照、A/B/A 和持久 HTB 均未获授权。
+
+本文后续章节描述的是在未来重新授权时使用的完整研究协议，不构成当前执行指令；其中
+历史 rc.13/state 绑定、endpoint 示例和预算表不得直接套用于 rc.17 或任何生产 VPS。
+
 本 SOP 把此前分散的 `HTB200 reference → 180/190/195 candidate sweep → A/B/A → 反向窗口`
 合并为一条有阶段门禁的研究链。它只在研究条件获重新批准后作为该类实验入口。
 [旧版 VMISS Basic HTB A/B/A 文档](vmiss-basic-200mbps-htb-aba.md)只保留 v0.2.1 历史证据，
-不得再用作 rc.13 执行说明。
+不得再用作当前 rc.17 执行说明。
 
 ## 1. 结论边界
 
@@ -34,9 +45,9 @@ HTB 仅作用于 `eth0` 出站，包括该接口上的 IPv4 和 IPv6。下载方
 ## 2. 阶段状态机和授权门禁
 
 ```text
-rc.13 VERIFIED/root fq
-  → HTB200 reference（Basic 初始 5 样本）
-    → 稳定且可接受：停止，不扫描低速率
+rc.17 VERIFIED/root fq
+  → HTB200 reference（本轮实际 3 样本）
+    → 稳定且可接受：停止，不扫描低速率（本轮已关闭）
     → 测量/资源/HTB 暴露无效：停止，诊断后用全新证据目录重来
     → 有效但仍支持继续检验：人工确认
       → 180/190/195 candidate sweep

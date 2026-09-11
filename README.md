@@ -706,6 +706,14 @@ env \
 
 ### 8. 研究专用的 HTB 候选速率发现与 A/B/A
 
+截至 2026-09-11，VMISS Basic 已完成三次有效的 HTB200 reference：吞吐约
+187–190 Mbit/s，sender 与主机级重传增量均为 0，HTB root/FQ leaf drop/requeue 均为 0，
+endpoint closeout 也已完成并清理临时 listener、进程、unit 和 UFW 规则。该结果只闭合了
+本次固定 HTB200 reference 的运行与证据链；不构成 default `fq` 对照、HTB 因果收益或真实
+VLESS + REALITY + TCP 业务改善证据。Basic 的 180/190/195 candidate sweep 已停止，Core
+和 A/B/A 不因该 reference 自动启动；默认配置仍为 BBR + 根 `fq`，不启用持久 HTB。endpoint
+closeout 与 observer 原目录属于受控私有证据，不应直接作为公开 Release、issue 附件或仓库文件。
+
 > 默认不得在有月流量配额的业务 VPS 上执行本节。只有明确要验证聚合出口整形机制、使用
 > 独立高额度测试机、已经批准完整窗口的流量预算和停止条件时，才可进入下列研究流程。
 
@@ -759,8 +767,9 @@ plan；因此完成的扫描可以追溯到唯一已复核 reference，而不记
 基线；runner 在流量前执行真实 profile 的只读 `verify`，冻结 managed
 profile/version/state/port/state SHA-256，并要求每个 `benchmark-meta.json` 再次匹配。只测
 上传，因为本地 egress HTB 不能用于归因下载方向的远端 sender 重传。通用默认
-`reference-screen` 为 3 次 HTB200；VMISS Basic 完整流程提高为初始 5 次。只有人工认为有
-必要继续时，才显式生成独立 `candidate-sweep`，以相同 HTB+fq 拓扑在首尾重复 HTB200
+`reference-screen` 为 3 次 HTB200；VMISS Basic 的本轮 reference 已按三次有效样本完成并
+人工关闭。只有在新的独立授权、预算和停止条件下仍有明确机制问题时，才可重新生成独立
+`candidate-sweep`，以相同 HTB+fq 拓扑在首尾重复 HTB200
 reference，并以正序/反序轮次扫描 180/190/195 Mbit/s；每阶段至少冷却 300 秒。直接调用
 plan 生成器也必须显式 ack 并提供三项 reference 摘要，不能省略阶段授权字段；plan 生成器
 本身不读取主机，摘要真实性仍须由 `dvt htb` wrapper 或执行 SOP 校验。

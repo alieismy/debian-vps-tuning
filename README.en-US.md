@@ -8,9 +8,9 @@ The script uses BBR + fq, controlled TCP buffering, standard queue parameters, e
 
 > **System Selection Summary (as of 2026-08-04):** Newly created 1C1G, 1C2G, and 2C2G VPS instances are recommended to use Debian 13 minimal by default. Debian 13 is the current stable release; Debian 12 has transitioned to LTS and is better suited for retaining existing stable nodes or meeting explicit compatibility constraints. The OS version alone does not guarantee BBR availability, higher performance, or lower idle memory usage; virtualization type, running kernel, and target machine resources must still be verified.
 
-> The current published release candidate is `v0.1.0-rc.16`; the online commands below remain pinned to that immutable Release. The working tree contains an unpublished `v0.1.0-rc.17` implementation candidate. Do not use its installer, digests, or profiles as published assets. The official `v0.1.0` still requires [Target VPS Runtime Acceptance](docs/validation.md); do not treat either candidate as target-host, full-bandwidth, or performance acceptance.
+> The current published release candidate is `v0.1.0-rc.17`; the online commands below remain pinned to that immutable Release. It is still a pre-release candidate, not the official `v0.1.0`. The official `v0.1.0` still requires [Target VPS Runtime Acceptance](docs/validation.md); do not treat the candidate as target-host, full-bandwidth, or performance acceptance.
 
-> This English document was originally translated from the rc.11 documentation. Release-critical URLs and the rc.16 benchmark-termination and policy-routing evidence contracts are synchronized here. The Chinese [README](README.md) and [rc.16 release notes](docs/releases/v0.1.0-rc.16.md) remain authoritative for the complete traffic-budget ledger, checkpoint/resume migration, installer, TcpQuality evidence, advisory probe, and non-persistent HTB details.
+> This English document was originally translated from the rc.11 documentation. Release-critical URLs and the rc.17 benchmark-termination, policy-routing, and HTB evidence contracts are synchronized here. The Chinese [README](README.md) and [rc.17 release notes](docs/releases/v0.1.0-rc.17.md) remain authoritative for the complete traffic-budget ledger, checkpoint/resume migration, installer, TcpQuality evidence, advisory probe, and non-persistent HTB details.
 
 ## Online Installation and Verification
 
@@ -586,6 +586,15 @@ env BENCHMARK_HOST='iperf.example.com' \
 > research workflow only to test an aggregate-egress shaping mechanism on a
 > separate high-quota host, with the full traffic budget and stop conditions
 > approved in advance.
+
+As of 2026-09-11, the VMISS Basic three-sample HTB200 reference completed at about
+187–190 Mbit/s with zero sender and host-level retransmission increments, zero HTB-root/FQ-leaf
+drop/requeue growth, and positive HTB-root `overlimits`. The endpoint closeout also removed the
+temporary listener, processes, units, and UFW rule. This closes that fixed reference and its
+endpoint lifecycle only; it does not establish a default-`fq` causal comparison, real
+VLESS + REALITY + TCP improvement, or authorization for a candidate sweep, Core test, A/B/A, or
+persistent HTB. The private endpoint archive must not be published as a Release asset, issue
+attachment, or repository file.
 
 The development version of the non-persistent HTB workflow is restricted to a Debian 13 rc.17 schema-4
 `VERIFIED`, 200-Mbps `debian13-1c1g` or `debian13-1c2g` baseline. The 40-minute

@@ -1,12 +1,12 @@
 # HTB200 参考筛查与候选聚合速率发现 SOP
 
-状态：研究专用、默认不执行、非发布资产、非持久化。
+状态：研究专用、默认不执行、非发布资产、非持久化；VMISS Basic 本轮 HTB200 reference 已完成并关闭。
 
 > 本文不是版本迁移、业务 VPS 或稳定版的默认验收门禁。只有存在明确机制决策、使用独立
 > 高额度测试机和获授权 endpoint，并预先批准覆盖完整窗口及协议开销余量的硬流量预算和
 > 停止条件时，才可执行。配额受限业务 VPS 默认停在低流量生命周期和业务冒烟。
 
-适用基线：Debian 13、`debian13-1c1g`/`debian13-1c2g`、rc.14 schema 4、
+适用基线：Debian 13、`debian13-1c1g`/`debian13-1c2g`、rc.17 schema 4、
 `VERIFIED`、200 Mbps、静态根 `fq`。
 
 目标：先用重复 HTB200 reference 判断额定端口附近的测量与重传是否稳定；只有人工确认仍需
@@ -15,9 +15,11 @@ shortlist。
 
 不证明：服务商存在 policer、代理业务改善、shortlist 是最优速率，或应建立持久化 HTB。
 
-执行顺序：本文是速率发现工具链的权威子流程。VMISS Basic 1C1G 应从
+执行顺序：本文是速率发现工具链的权威子流程。VMISS Basic 1C1G 历史执行从
 [VMISS Basic 1C1G / 200 Mbps HTB 完整实验 SOP](vmiss-basic-1c1g-200mbps-htb-campaign.md)
-进入；1C2G 未先完成本文的 HTB200 reference，且在必要时完成 candidate sweep 并人工冻结
+进入；本轮 Basic 已完成三次 HTB200 reference，依据零重传、有效窗口和完整 root/leaf
+健康证据停止，不再运行 180/190/195 candidate sweep。未来任何新窗口都必须重新授权。
+1C2G 未先完成本文的 HTB200 reference，且在必要时完成 candidate sweep 并人工冻结
 一个候选速率，不得开始
 [VMISS 1C2G / 200 Mbps 临时 HTB A/B/A 实验](vmiss-1c2g-200mbps-htb-aba.md)。
 
@@ -52,7 +54,7 @@ receiver goodput 只作交叉核对。
 
 只有全部满足才继续：
 
-1. 已冻结 rc.14 apply、重启后 verify 和幂等证据；managed state 仍为 schema 4、
+1. 已冻结 rc.17 apply、重启后 verify 和幂等证据；managed state 仍为 schema 4、
    `VERIFIED`、200 Mbps，profile 为 `debian13-1c1g` 或 `debian13-1c2g`。
 2. v0.4.0 `htb-aggregate-experiment` 已按对应 SOP 完成固定 hash 校验、preflight 和
    10 秒 smoke-test；当前工具 SHA-256 以仓库和上传时现场计算结果为准。
@@ -147,7 +149,7 @@ sha256sum \
 `preflight` 中隐式安装或替换执行器。活动实验期间禁止替换该文件。
 
 实际 profile 路径按目标机调整，但必须是与管理状态相符、固定 hash、root 所有且不能被
-group/world 写入的 rc.14 standalone profile。runner 会在流量前执行该 profile 的只读
+group/world 写入的 rc.17 standalone profile。runner 会在流量前执行该 profile 的只读
 `verify`，并冻结 managed profile/version/state/port/state SHA-256；每个 benchmark 的
 `benchmark-meta.json` 必须再次匹配该绑定。不要使用可变分支 URL 直接执行脚本。
 
