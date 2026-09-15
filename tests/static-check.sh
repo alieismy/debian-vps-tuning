@@ -40,7 +40,7 @@ fi
 "$python_cmd" tools/render_profiles.py --check
 bash -n "${scripts[@]}" "$controller" "$tcpquality_tool" "$installer" "$probe_tool" "$htb_wrapper" \
   "$traffic_budget_tool" "$migration_tool" tools/profile-template.sh.in \
-  tests/static-check.sh tests/controller-check.sh tests/installer-check.sh tests/rc17-check.sh
+  tests/static-check.sh tests/controller-check.sh tests/installer-check.sh tests/rc18-check.sh
 
 bash tests/controller-check.sh
 
@@ -98,7 +98,7 @@ if [ "$(od -An -tx1 -N3 "$tcpquality_tool" | tr -d ' \n')" = 'efbbbf' ]; then
   printf 'UTF-8 BOM detected: %s\n' "$tcpquality_tool" >&2
   exit 1
 fi
-grep -Fq "TOOL_VERSION='0.1.0-rc.17'" "$tcpquality_tool"
+grep -Fq "TOOL_VERSION='0.1.0-rc.18'" "$tcpquality_tool"
 grep -Fq "SUPPORTED_RELEASE_TAG='v1.00013'" "$tcpquality_tool"
 grep -Fq "SUPPORTED_COMMIT='73606e2460bde21bb2e253842971f8ca8c9eb51c'" "$tcpquality_tool"
 grep -Fq "SUPPORTED_ROOTFS_MANIFEST_SHA256='555a53df40cbdd2778771c089d1bc2c2e1c0a52b5565ad15d2e01d52b90dd0f6'" "$tcpquality_tool"
@@ -140,7 +140,7 @@ expected_keys=17
 for script in "${scripts[@]}"; do
   actual="$(awk '/^PROFILE_SYSCTL_KEYS=\(/,/^\)/ {if ($1 ~ /^(net\.|vm\.)/) count++} END {print count+0}' "$script")"
   [ "$actual" -eq "$expected_keys" ] || { printf 'unexpected managed-key count: %s (%s)\n' "$script" "$actual" >&2; exit 1; }
-  grep -Fq "SCRIPT_VERSION='0.1.0-rc.17'" "$script"
+  grep -Fq "SCRIPT_VERSION='0.1.0-rc.18'" "$script"
   grep -Eq '^STATE_SCHEMA_VERSION=4$' "$script"
   grep -Eq '^LEGACY_STATE_SCHEMA_VERSION=3$' "$script"
   grep -Fq 'PROFILE_CPU_MIN=' "$script"
@@ -327,8 +327,8 @@ for script in "${scripts[@]}"; do
   }
 done
 
-grep -Fq "CONTROLLER_VERSION='0.1.0-rc.17'" "$controller"
-grep -Fq "RELEASE_TAG='v0.1.0-rc.17'" "$controller"
+grep -Fq "CONTROLLER_VERSION='0.1.0-rc.18'" "$controller"
+grep -Fq "RELEASE_TAG='v0.1.0-rc.18'" "$controller"
 grep -Fq "DEFAULT_PORT_SPEED_MBPS=200" "$controller"
 grep -Fq 'verify_profile_contract' "$controller"
 grep -Fq 'debian12-1c512m-vps-tuning.sh' "$controller"
@@ -356,7 +356,7 @@ if grep -Eq 'raw\.githubusercontent\.com|/master/|/main/|releases/latest|http://
   exit 1
 fi
 
-grep -Fq "RELEASE_TAG='v0.1.0-rc.17'" "$installer"
+grep -Fq "RELEASE_TAG='v0.1.0-rc.18'" "$installer"
 grep -Eq "EXPECTED_MANIFEST_SHA256='[0-9a-f]{64}'" "$installer"
 if grep -Fq "EXPECTED_MANIFEST_SHA256='0000000000000000000000000000000000000000000000000000000000000000'" "$installer"; then
   printf 'installer manifest digest placeholder was not finalized\n' >&2
@@ -369,7 +369,7 @@ manifest_hash="$(sha256sum SHA256SUMS | awk '{print $1}')"
 grep -Fq "EXPECTED_MANIFEST_SHA256='${manifest_hash}'" "$installer"
 installer_hash="$(sha256sum "$installer" | awk '{print $1}')"
 grep -Fq "$installer_hash" README.md
-grep -Fq "$manifest_hash" docs/releases/v0.1.0-rc.17.md
+grep -Fq "$manifest_hash" docs/releases/v0.1.0-rc.18.md
 if grep -Eq 'raw\.githubusercontent\.com|/master/|/main/|releases/latest|http://' "$installer"; then
   printf 'mutable or insecure installer download source detected\n' >&2
   exit 1
@@ -1394,7 +1394,7 @@ EXIT_USAGE=2
 EXIT_UNSUPPORTED=3
 EXIT_CONFLICT=4
 EXIT_VERIFY=5
-SCRIPT_VERSION='0.1.0-rc.17'
+SCRIPT_VERSION='0.1.0-rc.18'
 PROFILE_ID='debian13-1c1g'
 STATE_FILE="$test_root/no-state.json"
 ensure_required_tools() { :; }
@@ -1598,7 +1598,7 @@ PACKET_SIZE=0
 PARALLEL=16
 ROOTFS_SHA256='c624b5cc611b7177c42608110024764e59dfd0a88150257137ae4e6d7f9f9d18'
 GET_NODES_URL='https://nodes.example.test/getNodes'
-TOOL_VERSION='0.1.0-rc.17'
+TOOL_VERSION='0.1.0-rc.18'
 MODE='local-evidence'
 mkdir "$EVIDENCE_DIR" "$PIN_DIR"
 : >"$PIN_DIR/SHA256SUMS"
@@ -1621,7 +1621,7 @@ cross_version_apply_test="$tmp_dir/cross-version-apply-test.sh"
   awk '/^apply_settings\(\)/,/^}/' "${scripts[0]}"
   cat <<'EOF_CROSS_VERSION_APPLY_TEST'
 EXIT_CONFLICT=4
-SCRIPT_VERSION='0.1.0-rc.17'
+SCRIPT_VERSION='0.1.0-rc.18'
 PORT_SPEED_MBPS=200
 BUFFER_TARGET_RTT_MS=200
 BUF_MAX=16777216
@@ -1652,7 +1652,7 @@ parameter_mismatch_apply_test="$tmp_dir/parameter-mismatch-apply-test.sh"
   awk '/^apply_settings\(\)/,/^}/' "${scripts[0]}"
   cat <<'EOF_PARAMETER_MISMATCH_APPLY_TEST'
 EXIT_CONFLICT=4
-SCRIPT_VERSION='0.1.0-rc.17'
+SCRIPT_VERSION='0.1.0-rc.18'
 PORT_SPEED_MBPS=100
 BUFFER_TARGET_RTT_MS=200
 BUF_MAX=16777216
@@ -2559,7 +2559,7 @@ STATE_DIR='/var/lib/proxy-vps-tuning'
 SYSCTL_SCAN_ROOT='/etc'
 STATE_SCHEMA_VERSION=4
 LEGACY_STATE_SCHEMA_VERSION=3
-SCRIPT_VERSION='0.1.0-rc.17'
+SCRIPT_VERSION='0.1.0-rc.18'
 PROFILE_ID='debian12-1c1g'
 UPDATE_PREFLIGHT=0
 stat() { printf '%s\n' '0'; }
@@ -2578,7 +2578,7 @@ for fixture in empty whitespace null object multiple; do
   fi
 done
 
-printf '%s\n' '{"schema_version":4,"script_version":"0.1.0-rc.17","profile":{"id":"debian12-1c1g"},"state":"PREPARED","network":{},"original_sysctls":{},"qdisc":{"file":"/tmp/qdisc","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"swap":{},"provider_sysctl_transfer":{"required":false,"source_path":"/etc/sysctl.conf","backup_path":"/var/lib/proxy-vps-tuning/provider-sysctl.conf.original","original_sha256":null,"backup_sha256":null,"transferred_sha256":null,"original_uid":null,"original_gid":null,"original_mode":null,"keys":[],"state":"NOT_REQUIRED"},"managed_files":[],"timestamps":{}}' >"$STATE_FILE"
+printf '%s\n' '{"schema_version":4,"script_version":"0.1.0-rc.18","profile":{"id":"debian12-1c1g"},"state":"PREPARED","network":{},"original_sysctls":{},"qdisc":{"file":"/tmp/qdisc","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"swap":{},"provider_sysctl_transfer":{"required":false,"source_path":"/etc/sysctl.conf","backup_path":"/var/lib/proxy-vps-tuning/provider-sysctl.conf.original","original_sha256":null,"backup_sha256":null,"transferred_sha256":null,"original_uid":null,"original_gid":null,"original_mode":null,"keys":[],"state":"NOT_REQUIRED"},"managed_files":[],"timestamps":{}}' >"$STATE_FILE"
 state_file_is_valid
 
 cp -- "$STATE_FILE" "${STATE_FILE}.valid"
@@ -2889,6 +2889,22 @@ printf '%s\n' '[{"interface":"eth0","qdiscs":[{"dev":"eth0","kind":"pfifo_fast",
 fixture_hash="$(sha256sum "$QDISC_STATE_FILE" | awk '{print $1}')"
 TC_VARIANT='pfifo_match'
 qdisc_snapshot_matches_current
+
+printf '%s\n' '[{"interface":"eth0","qdiscs":[{"dev":"eth0","kind":"mq","handle":"0:","root":true,"options":{}},{"dev":"eth0","kind":"fq_codel","handle":"0:","parent":":1","options":{"limit":10240,"ecn":true,"target":5000,"interval":100000}},{"dev":"eth0","kind":"fq_codel","handle":"0:","parent":":2","options":{"limit":10240,"ecn":true,"target":5000,"interval":100000}},{"dev":"eth0","kind":"ingress","handle":"ffff:","parent":"ffff:fff1","options":{}}]}]' >"$QDISC_STATE_FILE"
+fixture_hash="$(sha256sum "$QDISC_STATE_FILE" | awk '{print $1}')"
+TC_VARIANT='mq_addressable_match'
+tc() {
+  case "$TC_VARIANT" in
+    mq_addressable_match) printf '%s\n' '[{"dev":"eth0","kind":"mq","handle":"1:","root":true,"options":{}},{"dev":"eth0","kind":"fq_codel","handle":"8001:","parent":"1:1","options":{"limit":10240,"ecn":true,"target":4999,"interval":99999}},{"dev":"eth0","kind":"fq_codel","handle":"8002:","parent":"1:2","options":{"limit":10240,"ecn":true,"target":4999,"interval":99999}},{"dev":"eth0","kind":"ingress","handle":"ffff:","parent":"ffff:fff1","options":{}}]' ;;
+    mq_wrong_minor) printf '%s\n' '[{"dev":"eth0","kind":"mq","handle":"1:","root":true,"options":{}},{"dev":"eth0","kind":"fq_codel","handle":"8001:","parent":"1:1","options":{"limit":10240,"ecn":true,"target":4999,"interval":99999}},{"dev":"eth0","kind":"fq_codel","handle":"8003:","parent":"1:3","options":{"limit":10240,"ecn":true,"target":4999,"interval":99999}},{"dev":"eth0","kind":"ingress","handle":"ffff:","parent":"ffff:fff1","options":{}}]' ;;
+  esac
+}
+qdisc_snapshot_matches_current
+TC_VARIANT='mq_wrong_minor'
+if qdisc_snapshot_matches_current; then
+  printf 'mq semantic matcher ignored a queue-minor change\n' >&2
+  exit 1
+fi
 EOF_QDISC_MATCH_TEST
 } >"$qdisc_match_test"
 bash "$qdisc_match_test"
@@ -2921,6 +2937,103 @@ expected='qdisc replace dev eth0 root handle 1234: fq_codel limit 10240 ecn'
 EOF_FQ_CODEL_RESTORE_TEST
 } >"$fq_codel_restore_test"
 bash "$fq_codel_restore_test"
+
+mq_restore_test="$tmp_dir/mq-restore-test.sh"
+{
+  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  for function_name in \
+    qdisc_snapshot_for_iface mq_root_handle_from_snapshot mq_root_major_from_snapshot \
+    mq_parent_minor mq_leaf_rows_from_snapshot mq_leaf_minors_from_rows \
+    mq_leaf_rows_are_supported mq_select_free_major_from_snapshot ensure_addressable_mq_root \
+    restore_fq_codel restore_qdiscs qdisc_snapshot_file_is_valid \
+    qdisc_snapshot_semantically_matches_current; do
+    awk -v name="$function_name" '$0 ~ ("^" name "\\(\\) \\{") {inside=1} inside {print} inside && /^}/ {inside=0}' "${scripts[0]}"
+  done
+  cat <<'EOF_MQ_RESTORE_TEST'
+test_root="$(mktemp -d)"
+trap 'rm -rf -- "$test_root"' EXIT
+QDISC_STATE_FILE="$test_root/qdisc-original.json"
+TC_STATE="$test_root/current.json"
+TC_LOG="$test_root/tc.log"
+cat >"$QDISC_STATE_FILE" <<'EOF_MQ_SAVED'
+[{"interface":"eth0","qdiscs":[{"kind":"mq","handle":"0:","root":true,"options":{}},{"kind":"fq_codel","handle":"0:","parent":":1","options":{"limit":10240,"target":5000,"interval":100000,"ecn":true}},{"kind":"fq_codel","handle":"0:","parent":"0:2","options":{"limit":10240,"target":5000,"interval":100000,"ecn":true}},{"kind":"ingress","handle":"ffff:","parent":"ffff:fff1","options":{}}]}]
+EOF_MQ_SAVED
+fixture_hash="$(sha256sum "$QDISC_STATE_FILE" | awk '{print $1}')"
+state_get() { printf '%s\n' "$fixture_hash"; }
+stat() { printf '0\n'; }
+error() { printf '[x] %s\n' "$*" >&2; }
+tc() {
+  if [ "$*" = '-j qdisc show dev eth0' ]; then
+    cat "$TC_STATE"
+    return 0
+  fi
+  printf '%s\n' "$*" >>"$TC_LOG"
+  case "$*" in
+    'qdisc replace dev eth0 root handle 1: mq')
+      jq 'map(if .root == true and .kind == "mq" then .handle="1:"
+              elif .parent == ":1" or .parent == "0:1" then .parent="1:1"
+              elif .parent == ":2" or .parent == "0:2" then .parent="1:2"
+              else . end)' "$TC_STATE" >"${TC_STATE}.tmp"
+      mv -f "${TC_STATE}.tmp" "$TC_STATE"
+      ;;
+    *' parent 1:1 '* | *' parent 1:2 '*)
+      parent=''
+      previous=''
+      for argument in "$@"; do
+        if [ "$previous" = 'parent' ]; then parent="$argument"; break; fi
+        previous="$argument"
+      done
+      [ -n "$parent" ] || return 64
+      jq --arg parent "$parent" 'map(if .parent == $parent then
+        .kind="fq_codel" | .options={"limit":10240,"target":5000,"interval":100000,"ecn":true}
+        else . end)' "$TC_STATE" >"${TC_STATE}.tmp"
+      mv -f "${TC_STATE}.tmp" "$TC_STATE"
+      ;;
+    *) return 64 ;;
+  esac
+}
+
+cat >"$TC_STATE" <<'EOF_MQ_CURRENT_EXPLICIT'
+[{"kind":"mq","handle":"1:","root":true,"options":{}},{"kind":"fq","handle":"9001:","parent":"1:1","options":{}},{"kind":"fq","handle":"9002:","parent":"1:2","options":{}},{"kind":"ingress","handle":"ffff:","parent":"ffff:fff1","options":{}}]
+EOF_MQ_CURRENT_EXPLICIT
+: >"$TC_LOG"
+restore_qdiscs || {
+  printf 'mq rollback from an explicit root failed\n' >&2
+  cat "$TC_LOG" >&2
+  exit 1
+}
+[ "$(grep -c 'parent 1:' "$TC_LOG")" -eq 2 ] && ! grep -Eq 'parent (:|0:)' "$TC_LOG" || {
+  printf 'mq rollback did not remap saved auto parents to the current root major\n' >&2
+  cat "$TC_LOG" >&2
+  exit 1
+}
+qdisc_snapshot_semantically_matches_current || {
+  printf 'mq semantic matcher rejected restored addressable parents: %s\n' "$QDISC_MATCH_REASON" >&2
+  exit 1
+}
+
+cat >"$TC_STATE" <<'EOF_MQ_CURRENT_AUTO'
+[{"kind":"mq","handle":"0:","root":true,"options":{}},{"kind":"fq","handle":"9001:","parent":":1","options":{}},{"kind":"fq","handle":"9002:","parent":":2","options":{}},{"kind":"ingress","handle":"ffff:","parent":"ffff:fff1","options":{}}]
+EOF_MQ_CURRENT_AUTO
+: >"$TC_LOG"
+restore_qdiscs || {
+  printf 'mq rollback from an auto root failed\n' >&2
+  cat "$TC_LOG" >&2
+  exit 1
+}
+first_command="$(sed -n '1p' "$TC_LOG")"
+[ "$first_command" = 'qdisc replace dev eth0 root handle 1: mq' ] || {
+  printf 'mq rollback did not normalize an auto root before leaf restore\n' >&2
+  cat "$TC_LOG" >&2
+  exit 1
+}
+qdisc_snapshot_semantically_matches_current || {
+  printf 'mq rollback from auto root did not restore semantic equivalence: %s\n' "$QDISC_MATCH_REASON" >&2
+  exit 1
+}
+EOF_MQ_RESTORE_TEST
+} >"$mq_restore_test"
+bash "$mq_restore_test"
 
 rollback_postcheck_test="$tmp_dir/rollback-postcheck-test.sh"
 {
@@ -2994,12 +3107,137 @@ for script in "${scripts[@]}"; do
   awk "/^  write_managed_file .*FQ_HELPER.*<<'EOF_HELPER'/ {inside=1; next} /^EOF_HELPER$/ {inside=0} inside" "$script" >"$helper"
   [ -s "$helper" ] || { printf 'failed to extract helper: %s\n' "$script" >&2; exit 1; }
   bash -n "$helper"
-  grep -Fq 'select(has("parent") and .kind == "fq_codel")' "$helper"
-  if grep -Fq 'select(has("parent")) | .parent' "$helper"; then
-    printf 'helper still replaces every mq leaf: %s\n' "$script" >&2
+  grep -Fq 'ensure_addressable_mq_root' "$helper"
+  grep -Fq 'apply_fq_to_mq' "$helper"
+  if grep -Fq 'tc qdisc replace dev "$iface" parent "$parent" fq' "$helper" &&
+    ! grep -Fq '[ "$kind" = '\''fq_codel'\'' ] || continue' "$helper"; then
+    printf 'helper replaces mq leaves without a fq_codel guard: %s\n' "$script" >&2
     exit 1
   fi
 done
+
+mq_helper="${tmp_dir}/${scripts[0]}.helper"
+sed -i 's|^PATH=.*|PATH="${PATH}"|' "$mq_helper"
+mq_helper_fixture="$tmp_dir/mq-helper-fixture"
+mkdir -p "$mq_helper_fixture/bin"
+cat >"$mq_helper_fixture/bin/ip" <<'EOF_MQ_HELPER_IP'
+#!/usr/bin/env bash
+if [ "$*" = '-o -4 route show default' ]; then
+  printf '%s\n' 'default via 192.0.2.1 dev eth0'
+fi
+EOF_MQ_HELPER_IP
+cat >"$mq_helper_fixture/bin/tc" <<'EOF_MQ_HELPER_TC'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if [ "$*" = '-j qdisc show dev eth0' ]; then
+  cat "$TC_STATE"
+  exit 0
+fi
+printf '%s\n' "$*" >>"$TC_LOG"
+case "$*" in
+  'qdisc replace dev eth0 root handle 1: mq')
+    [ "${FAIL_ROOT:-0}" = 0 ] || exit 1
+    jq '
+      map(if .root == true and .kind == "mq" then .handle="1:"
+          elif .parent == ":1" or .parent == "0:1" then .parent="1:1"
+          elif .parent == ":2" or .parent == "0:2" then .parent="1:2"
+          else . end) |
+      if env.DRIFT_MINOR == "1" then map(select(.parent != "1:2")) else . end
+    ' "$TC_STATE" >"${TC_STATE}.tmp"
+    mv -f "${TC_STATE}.tmp" "$TC_STATE"
+    ;;
+  'qdisc replace dev eth0 parent 1:1 fq'|'qdisc replace dev eth0 parent 1:2 fq'|'qdisc replace dev eth0 parent 2:1 fq'|'qdisc replace dev eth0 parent 2:2 fq')
+    parent="${*: -2:1}"
+    jq --arg parent "$parent" 'map(if .parent == $parent then .kind="fq" else . end)' \
+      "$TC_STATE" >"${TC_STATE}.tmp"
+    mv -f "${TC_STATE}.tmp" "$TC_STATE"
+    ;;
+  *' parent :'* | *' parent 0:'*) exit 1 ;;
+  *) exit 64 ;;
+esac
+EOF_MQ_HELPER_TC
+chmod 0700 "$mq_helper_fixture/bin/ip" "$mq_helper_fixture/bin/tc"
+bash -n "$mq_helper_fixture/bin/ip" "$mq_helper_fixture/bin/tc"
+
+run_mq_helper_fixture() {
+  env PATH="$mq_helper_fixture/bin:${PATH}" \
+    TC_STATE="$mq_helper_fixture/state.json" TC_LOG="$mq_helper_fixture/tc.log" \
+    FAIL_ROOT="${FAIL_ROOT:-0}" DRIFT_MINOR="${DRIFT_MINOR:-0}" bash "$mq_helper"
+}
+
+cat >"$mq_helper_fixture/state.json" <<'EOF_MQ_ZERO_FQ_CODEL'
+[{"kind":"mq","handle":"0:","root":true,"options":{}},{"kind":"fq_codel","handle":"8001:","parent":":1","options":{}},{"kind":"fq_codel","handle":"8002:","parent":":2","options":{}},{"kind":"ingress","handle":"ffff:","parent":"ffff:fff1","options":{}}]
+EOF_MQ_ZERO_FQ_CODEL
+: >"$mq_helper_fixture/tc.log"
+run_mq_helper_fixture
+expected_commands=$'qdisc replace dev eth0 root handle 1: mq\nqdisc replace dev eth0 parent 1:1 fq\nqdisc replace dev eth0 parent 1:2 fq'
+[ "$(cat "$mq_helper_fixture/tc.log")" = "$expected_commands" ] || {
+  printf 'mq 0: helper command sequence is wrong\n' >&2
+  cat "$mq_helper_fixture/tc.log" >&2
+  exit 1
+}
+jq -e '([.[] | select(.root == true and .kind == "mq" and .handle == "1:")] | length) == 1 and
+  ([.[] | select((.parent == "1:1" or .parent == "1:2") and .kind == "fq")] | length) == 2 and
+  ([.[] | select(.kind == "ingress" and .parent == "ffff:fff1")] | length) == 1' \
+  "$mq_helper_fixture/state.json" >/dev/null
+
+cat >"$mq_helper_fixture/state.json" <<'EOF_MQ_ZERO_FQ'
+[{"kind":"mq","handle":"0:","root":true,"options":{}},{"kind":"fq","handle":"8001:","parent":":1","options":{}},{"kind":"fq","handle":"8002:","parent":":2","options":{}}]
+EOF_MQ_ZERO_FQ
+: >"$mq_helper_fixture/tc.log"
+run_mq_helper_fixture
+[ ! -s "$mq_helper_fixture/tc.log" ] && jq -e '.[0].handle == "0:"' "$mq_helper_fixture/state.json" >/dev/null || {
+  printf 'all-fq mq 0: was modified instead of preserved\n' >&2
+  exit 1
+}
+
+cat >"$mq_helper_fixture/state.json" <<'EOF_MQ_ZERO_MIXED'
+[{"kind":"mq","handle":"0:","root":true,"options":{}},{"kind":"fq","handle":"8001:","parent":":1","options":{"limit":1234}},{"kind":"fq_codel","handle":"8002:","parent":":2","options":{}}]
+EOF_MQ_ZERO_MIXED
+: >"$mq_helper_fixture/tc.log"
+if run_mq_helper_fixture >/dev/null 2>&1; then
+  printf 'mixed fq/fq_codel mq 0: was accepted\n' >&2
+  exit 1
+fi
+[ ! -s "$mq_helper_fixture/tc.log" ] && jq -e '.[0].handle == "0:" and .[1].options.limit == 1234' \
+  "$mq_helper_fixture/state.json" >/dev/null || {
+  printf 'mixed mq 0: changed before failing closed\n' >&2
+  exit 1
+}
+
+cat >"$mq_helper_fixture/state.json" <<'EOF_MQ_EXPLICIT_MIXED'
+[{"kind":"mq","handle":"2:","root":true,"options":{}},{"kind":"fq","handle":"8001:","parent":"2:1","options":{"limit":1234}},{"kind":"fq_codel","handle":"8002:","parent":"2:2","options":{}}]
+EOF_MQ_EXPLICIT_MIXED
+: >"$mq_helper_fixture/tc.log"
+run_mq_helper_fixture
+[ "$(cat "$mq_helper_fixture/tc.log")" = 'qdisc replace dev eth0 parent 2:2 fq' ] &&
+  jq -e '.[0].handle == "2:" and .[1].options.limit == 1234 and .[2].kind == "fq"' \
+    "$mq_helper_fixture/state.json" >/dev/null || {
+  printf 'explicit mq mixed-leaf handling is wrong\n' >&2
+  exit 1
+}
+
+cat >"$mq_helper_fixture/state.json" <<'EOF_MQ_ZERO_FQ_CODEL_FAIL'
+[{"kind":"mq","handle":"0:","root":true,"options":{}},{"kind":"fq_codel","handle":"8001:","parent":":1","options":{}},{"kind":"fq_codel","handle":"8002:","parent":":2","options":{}}]
+EOF_MQ_ZERO_FQ_CODEL_FAIL
+: >"$mq_helper_fixture/tc.log"
+FAIL_ROOT=1
+if run_mq_helper_fixture >/dev/null 2>&1; then
+  printf 'mq root normalization failure was ignored\n' >&2
+  exit 1
+fi
+FAIL_ROOT=0
+
+cat >"$mq_helper_fixture/state.json" <<'EOF_MQ_ZERO_FQ_CODEL_DRIFT'
+[{"kind":"mq","handle":"0:","root":true,"options":{}},{"kind":"fq_codel","handle":"8001:","parent":":1","options":{}},{"kind":"fq_codel","handle":"8002:","parent":":2","options":{}}]
+EOF_MQ_ZERO_FQ_CODEL_DRIFT
+: >"$mq_helper_fixture/tc.log"
+DRIFT_MINOR=1
+if run_mq_helper_fixture >/dev/null 2>&1; then
+  printf 'mq root normalization accepted queue-minor drift\n' >&2
+  exit 1
+fi
+DRIFT_MINOR=0
 
 if [ "${RUN_LOCAL_SHELLCHECK:-0}" = 1 ]; then
   command -v shellcheck >/dev/null 2>&1 || {
@@ -3013,7 +3251,7 @@ if [ "${RUN_LOCAL_SHELLCHECK:-0}" = 1 ]; then
     experiments/htb-aggregate/rate-sweep-plan.sh \
     experiments/htb-aggregate/rate-sweep-run.sh \
     experiments/htb-aggregate/rate-sweep-analyze.sh \
-    tests/static-check.sh tests/controller-check.sh tests/installer-check.sh tests/rc17-check.sh
+    tests/static-check.sh tests/controller-check.sh tests/installer-check.sh tests/rc18-check.sh
   for helper in "$tmp_dir"/*.helper; do shellcheck -x "$helper"; done
 else
   printf '[INFO] deterministic syntax/fixture checks complete; pinned ShellCheck runs in its dedicated CI step\n' >&2

@@ -59,7 +59,7 @@ install -o root -g root -m 0755 \
   /root/htb-aggregate-experiment.sh \
   /usr/local/sbin/htb-aggregate-experiment
 
-EXPECTED_HTB_SHA256='141478e620af230dd9ff15cda6620947f941ab27cc0abccd125b62c65f19afa3'
+EXPECTED_HTB_SHA256='bde55edee419a6253d33f3a98b7f392040878a04a30a2d395cc2249272d7b87b'
 printf '%s  %s\n' "$EXPECTED_HTB_SHA256" \
   /usr/local/sbin/htb-aggregate-experiment | sha256sum -c -
 

@@ -1,6 +1,22 @@
 # Changelog
 
-## [0.1.0-rc.17] - Unreleased
+## [0.1.0-rc.18] - Unreleased
+
+### Fixed
+
+- 修复 Linux 内核自动创建的 `mq 0:` 根 qdisc 无法通过显示出来的 `parent :N`/`0:N` 直接替换叶 qdisc 的问题：对全 `fq_codel` 拓扑选择无冲突的非零根 handle，重建后重新读取队列，再逐叶切换为 `fq`。
+- 回滚按当前可寻址 `mq` 根 handle 与保存的队列 minor 重建 parent，并在语义比较中仅规范化同一 `mq` 下的 parent 表示，避免把 ingress/clsact 或其他 qdisc 误判为等价。
+- `mq 0:` 混合自定义 `fq`/`fq_codel` 拓扑在任何写入前拒绝处理，防止根 qdisc 重建静默丢失现有 `fq` 参数。
+
+### Added
+
+- 增加 OCI 类 `mq 0:` 的状态化 fixture，覆盖全 `fq_codel` 转换、全 `fq` 无操作、混合拓扑拒绝、显式非零 `mq`、根重建失败、队列 minor 漂移和卸载恢复。
+
+### Unchanged
+
+- 保持 rc.17 的 17 项受管 sysctl、资源感知 BDP 缓冲、默认 `BBR + fq`、schema 4 managed state、schema 3 benchmark 摘要、共享预算 ledger、非持久 HTB 与生产授权边界。
+
+## [0.1.0-rc.17] - 2026-09-10
 
 ### Fixed
 
