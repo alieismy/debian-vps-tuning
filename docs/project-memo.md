@@ -1637,10 +1637,11 @@ rc.18 已达到“源码、fixture、生成资产、文档和当前环境可执�
 - 首轮 push/PR 工作流 `34936990885`、`34937027702` 的生成检查和 Linux root installer lifecycle 已通过，固定 `ShellCheck 0.11.0` 因 jq/fixture 有意保留的单引号字面量、跨 fixture PATH 误报及三个 `A && B || fail` 测试表达式失败。没有绕过门禁：增加有理由的最窄 ShellCheck 指令，并把测试条件改为明确 `if`；重新生成六份 profile、更新摘要链并重跑本地完整门禁。
 - 修复提交为 `02187aa5f99638adc69d281895a963ae390e2aa2`。对应 push 工作流 `34937634799` 和 PR 工作流 `34937637045` 均为 `success`，且 head SHA 精确匹配该提交；生成 profile/结构检查、Linux root installer lifecycle 和固定 `ShellCheck 0.11.0` 全部通过。PR 当前为 open、非 draft、`MERGEABLE`/`CLEAN`。
 - 摘要链因生成 profile 增加 ShellCheck 说明而更新：`SHA256SUMS` SHA-256 为 `33f5c6476ed87cf3a487dc36e82cdd9aa8a4cc5ca8797b077f771d5d5a9ed896`，`install.sh` SHA-256 为 `19819187b5a4dd9b936768f59661f91d5e7ae232d10d8f1f53e3c8d29bae635c`；17 个清单资产全部通过。最终本地 `tests/static-check.sh`、HTB 独立静态套件、模板生成检查和 `git diff --check` 均返回 0。
+- CodeRabbit 对实现提交形成一条 Minor 文档 finding：英文 README 把通过已安装 `current` 获取的 rc.17 HTB bundle 与 rc.18 runner 契约连续描述，可能让读者误以为该命令验证 rc.18。源码和中英文对应段核对后确认成立；两份 README 均改为明确区分“已发布 rc.17 示例”和“未发布 rc.18 完整同版本本地 bundle”，并禁止混用 wrapper、执行器和 manifest。
 
 ### 未完成门禁
 
-- PR 尚未合并，CodeRabbit 自动评论在检查时仍显示处理中且没有形成正式 review；本轮未把第三方自动摘要当作 required gate，也未自动执行合并。
+- PR 尚未合并。CodeRabbit 已审查首个实现提交并提出的一条有效 finding 已修正；后续增量复审因其配额限制未执行，不能写成第三方已覆盖最终 HEAD，也不构成 required gate。本轮未自动执行合并。
 - 尚未创建 rc.18 tag 或 Pre-release，未上传或公开反向验证 19 个 Release 资产，也未连接真实 OCI A1 VPS。真实 `tc` apply/rollback、幂等、驱动队列变化、重启持久性和代理业务验收仍然未验证。
 - CI 的 `actions/checkout@v4` 仍有 Node.js 20 弃用告警，但本轮所有作业成功；该依赖维护不影响 mq 修复正确性，不在本次缺陷修复中顺带升级。
 

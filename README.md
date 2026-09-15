@@ -717,9 +717,10 @@ closeout 与 observer 原目录属于受控私有证据，不应直接作为公�
 > 默认不得在有月流量配额的业务 VPS 上执行本节。只有明确要验证聚合出口整形机制、使用
 > 独立高额度测试机、已经批准完整窗口的流量预算和停止条件时，才可进入下列研究流程。
 
-安装后的短命令把原有工具链包装为带阶段门禁的入口。HTB watchdog 要求执行器从稳定路径
-运行；`dvt htb preflight` 不会隐式写入该路径。确认没有活动 HTB 后，先从同一固定 Release
-显式安装并按 manifest 校验：
+下面的可执行示例属于已经发布的 rc.17 非持久 HTB 工作流，只接受 Debian 13 rc.17 schema 4、
+`VERIFIED`、200 Mbps 的 `debian13-1c1g` 或 `debian13-1c2g` 基线。安装后的短命令把原有工具链
+包装为带阶段门禁的入口。HTB watchdog 要求执行器从稳定路径运行；`dvt htb preflight` 不会
+隐式写入该路径。确认没有活动 HTB 后，先从同一固定 rc.17 Release 显式安装并按 manifest 校验：
 
 ```bash
 DVT_ROOT="$(readlink -f /usr/local/lib/debian-vps-tuning/current)"
@@ -753,6 +754,11 @@ dvt htb sweep \
   --output-dir /root/htb-candidate-sweep-a1
 ```
 
+这些命令通过已安装的 `current` 符号链接解析 `DVT_ROOT`，因此既不会暂存也不能验证 rc.18。
+rc.18 发布前，只能从同时包含 rc.18 wrapper、执行器、伴随脚本、profile 和 `SHA256SUMS` 的完整
+同版本本地 bundle 做分阶段验证；不得把已发布的 rc.17 wrapper 或 manifest 与 rc.18 执行器混用，
+也不得把上面的 rc.17 示例写成 rc.18 验证。
+
 `--ack-reference-reviewed` 只是证明操作者已检查 reference 证据，不授权永久整形。wrapper
 还会把该 reference 的 `SHA256SUMS`、`sweep-analysis.json` 和 `COMPLETED` 摘要写入 candidate
 plan；因此完成的扫描可以追溯到唯一已复核 reference，而不记录目标机绝对路径。wrapper
@@ -763,8 +769,9 @@ plan；因此完成的扫描可以追溯到唯一已复核 reference，而不记
 
 `experiments/htb-aggregate/rate-sweep-plan.sh`、`rate-sweep-run.sh` 和
 `rate-sweep-analyze.sh` 把候选发现分成 schema 3 只读计划、显式流量/临时 qdisc 执行和只读
-分析三层。开发候选边界只接受 rc.18 schema 4、`VERIFIED`、200 Mbps 的 Debian 13 1C1G/1C2G
-基线；runner 在流量前执行真实 profile 的只读 `verify`，冻结 managed
+分析三层。已发布 rc.17 路径只接受 rc.17 schema 4 的对应基线；当前工作树 rc.18 runner 只有从
+完整同版本 rc.18 bundle 和状态调用时才应用 rc.18 边界。两条路径都要求 `VERIFIED`、200 Mbps 的
+Debian 13 1C1G/1C2G 基线；runner 在流量前执行真实 profile 的只读 `verify`，冻结 managed
 profile/version/state/port/state SHA-256，并要求每个 `benchmark-meta.json` 再次匹配。只测
 上传，因为本地 egress HTB 不能用于归因下载方向的远端 sender 重传。通用默认
 `reference-screen` 为 3 次 HTB200；VMISS Basic 的本轮 reference 已按三次有效样本完成并

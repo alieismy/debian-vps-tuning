@@ -590,11 +590,11 @@ VLESS + REALITY + TCP improvement, or authorization for a candidate sweep, Core 
 persistent HTB. The private endpoint archive must not be published as a Release asset, issue
 attachment, or repository file.
 
-The development version of the non-persistent HTB workflow is restricted to a Debian 13 rc.18 schema-4
-`VERIFIED`, 200-Mbps `debian13-1c1g` or `debian13-1c2g` baseline. The 40-minute
+The executable example below is the published rc.17 non-persistent HTB workflow. It is restricted to a
+Debian 13 rc.17 schema-4 `VERIFIED`, 200-Mbps `debian13-1c1g` or `debian13-1c2g` baseline. The 40-minute
 watchdog requires the executor to run from a stable path. `dvt htb preflight`
 does not install it implicitly; while no HTB transaction is active, install the
-executor from the same pinned Release and verify it against that Release's
+executor from the same pinned rc.17 Release and verify it against that Release's
 manifest:
 
 ```bash
@@ -613,9 +613,16 @@ dvt htb preflight
 dvt htb smoke --rate 190 --hold-seconds 10
 ```
 
+These commands resolve `DVT_ROOT` through the installed `current` symlink, so they neither stage nor
+verify rc.18. Before rc.18 is published, its workflow may be tested only from one complete, matching
+local bundle containing the rc.18 wrapper, executor, companion scripts, profiles, and `SHA256SUMS`.
+Do not mix the published rc.17 wrapper or manifest with an rc.18 executor, and do not describe the
+example above as rc.18 verification.
+
 Rate discovery is split into a schema-3 read-only plan, an explicitly invoked
-traffic/qdisc runner, and a read-only analyzer. Before traffic, the runner calls
-the selected rc.18 profile's `verify`, freezes the managed
+traffic/qdisc runner, and a read-only analyzer. In the published rc.17 path, before traffic, the runner
+calls the selected rc.17 profile's `verify`; the worktree rc.18 runner applies the same contract only
+when invoked from a complete matching rc.18 bundle and state. The runner freezes the managed
 profile/version/state/port/state SHA-256, and requires every
 `benchmark-meta.json` to match. Every sample must have a valid measurement
 window, complete schema-3 HTB-to-FQ root/leaf evidence, positive HTB root
