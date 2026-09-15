@@ -2100,6 +2100,8 @@ qdisc_snapshot_semantically_matches_current() {
   QDISC_MATCH_REASON=''
   qdisc_snapshot_file_is_valid || { QDISC_MATCH_REASON="快照缺失、为空、所有权异常或结构无效：${QDISC_STATE_FILE}"; return 1; }
   local count i iface saved current filter
+  # jq variables must remain literal until jq evaluates this filter.
+  # shellcheck disable=SC2016
   filter='
     . as $qdiscs |
     ([ $qdiscs[] | select(.root == true and .kind == "mq") ][0].handle // "") as $mq_handle |

@@ -1612,7 +1612,7 @@ rc.17 对 root fq、显式可寻址 mq，以及 `mq 0:` 下叶子已经全部为
 - 按已授权方案完成 rc.18 本地工作树候选：模板和六份生成 profile 在 `mq 0:` 全 `fq_codel` 拓扑下选择无冲突的非零 root major，重建 `mq` 后重新读取 root、叶 kind 和 queue minor 集，再通过当前 `MAJOR:MINOR` parent 逐叶切换为 `fq`；已经全 `fq` 时保持无写入，混合自定义 `fq`/`fq_codel` 时在任何写入前 fail closed，显式非零 `mq` 则只替换 `fq_codel` 叶子。
 - 完成 mq 回滚和语义匹配收紧：恢复路径使用“当前非零 mq root major + 保存的 queue minor”重建 parent，不再复用不可寻址的 `:N`/`0:N`；parent 规范化仅限同一 mq 队列，ingress、clsact 和其他 qdisc 仍按原语义精确比较。根重建失败、root kind/handle 异常和 queue minor 漂移均停止后续叶修改。
 - 增加状态化 fake-`tc` fixture，覆盖 OCI 类 `mq 0:` 全 `fq_codel` 转换、全 `fq` 无操作、混合叶拒绝、显式非零 `mq`、根重建失败、队列漂移和卸载恢复；同时补齐 mq 快照语义匹配 fixture。Windows Git Bash 下暴露的 TSV `CRLF`、`sort` 管道、fixture `PATH` 和 fake shell 分支语法问题均已在测试边界内修正，不改变生产 helper 的固定 `PATH`。
-- 同步 rc.18 版本、模板、六份生成 profile、控制器/安装器/迁移/预算/HTB 与实验工具版本、CI 入口、README、CHANGELOG、验证矩阵和发布说明草案。最终 `SHA256SUMS` SHA-256 为 `2390b10970f999b2f1a760dad1704b619f2792e6c320ec95f6d93680badaae69`，`install.sh` SHA-256 为 `eb74a9bca560045088d5f9a86b4c09dd02e3b7341a27d2820a96fa51568a9180`，安装器内置摘要和文档记录一致。
+- 同步 rc.18 版本、模板、六份生成 profile、控制器/安装器/迁移/预算/HTB 与实验工具版本、CI 入口、README、CHANGELOG、验证矩阵和发布说明草案。最终 `SHA256SUMS` SHA-256 为 `33f5c6476ed87cf3a487dc36e82cdd9aa8a4cc5ca8797b077f771d5d5a9ed896`，`install.sh` SHA-256 为 `19819187b5a4dd9b936768f59661f91d5e7ae232d10d8f1f53e3c8d29bae635c`，安装器内置摘要和文档记录一致。
 - 本地最终门禁通过：`bash tests/static-check.sh` 输出 `static checks passed for 6 scripts`，`bash experiments/htb-aggregate/tests/static-check.sh` 输出 `HTB aggregate experiment static checks passed` 且退出码为 0；`python tools/render_profiles.py --check` 无漂移；`sha256sum -c SHA256SUMS` 的 17 个清单资产全部 `OK`；`git diff --check` 无错误。
 
 ### 未完成门禁

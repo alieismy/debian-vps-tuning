@@ -3109,6 +3109,8 @@ for script in "${scripts[@]}"; do
   bash -n "$helper"
   grep -Fq 'ensure_addressable_mq_root' "$helper"
   grep -Fq 'apply_fq_to_mq' "$helper"
+  # These literals assert generated helper source and must not expand here.
+  # shellcheck disable=SC2016
   if grep -Fq 'tc qdisc replace dev "$iface" parent "$parent" fq' "$helper" &&
     ! grep -Fq '[ "$kind" = '\''fq_codel'\'' ] || continue' "$helper"; then
     printf 'helper replaces mq leaves without a fq_codel guard: %s\n' "$script" >&2
@@ -3117,6 +3119,8 @@ for script in "${scripts[@]}"; do
 done
 
 mq_helper="${tmp_dir}/${scripts[0]}.helper"
+# Leave ${PATH} literal so the extracted helper expands the fixture PATH at runtime.
+# shellcheck disable=SC2016
 sed -i 's|^PATH=.*|PATH="${PATH}"|' "$mq_helper"
 mq_helper_fixture="$tmp_dir/mq-helper-fixture"
 mkdir -p "$mq_helper_fixture/bin"
@@ -3160,6 +3164,8 @@ chmod 0700 "$mq_helper_fixture/bin/ip" "$mq_helper_fixture/bin/tc"
 bash -n "$mq_helper_fixture/bin/ip" "$mq_helper_fixture/bin/tc"
 
 run_mq_helper_fixture() {
+  # A prior PATH assignment is confined to a separate fixture subshell.
+  # shellcheck disable=SC2031
   env PATH="$mq_helper_fixture/bin:${PATH}" \
     TC_STATE="$mq_helper_fixture/state.json" TC_LOG="$mq_helper_fixture/tc.log" \
     FAIL_ROOT="${FAIL_ROOT:-0}" DRIFT_MINOR="${DRIFT_MINOR:-0}" bash "$mq_helper"
@@ -3186,10 +3192,11 @@ cat >"$mq_helper_fixture/state.json" <<'EOF_MQ_ZERO_FQ'
 EOF_MQ_ZERO_FQ
 : >"$mq_helper_fixture/tc.log"
 run_mq_helper_fixture
-[ ! -s "$mq_helper_fixture/tc.log" ] && jq -e '.[0].handle == "0:"' "$mq_helper_fixture/state.json" >/dev/null || {
+if [ -s "$mq_helper_fixture/tc.log" ] ||
+  ! jq -e '.[0].handle == "0:"' "$mq_helper_fixture/state.json" >/dev/null; then
   printf 'all-fq mq 0: was modified instead of preserved\n' >&2
   exit 1
-}
+fi
 
 cat >"$mq_helper_fixture/state.json" <<'EOF_MQ_ZERO_MIXED'
 [{"kind":"mq","handle":"0:","root":true,"options":{}},{"kind":"fq","handle":"8001:","parent":":1","options":{"limit":1234}},{"kind":"fq_codel","handle":"8002:","parent":":2","options":{}}]
@@ -3199,23 +3206,24 @@ if run_mq_helper_fixture >/dev/null 2>&1; then
   printf 'mixed fq/fq_codel mq 0: was accepted\n' >&2
   exit 1
 fi
-[ ! -s "$mq_helper_fixture/tc.log" ] && jq -e '.[0].handle == "0:" and .[1].options.limit == 1234' \
-  "$mq_helper_fixture/state.json" >/dev/null || {
+if [ -s "$mq_helper_fixture/tc.log" ] ||
+  ! jq -e '.[0].handle == "0:" and .[1].options.limit == 1234' \
+    "$mq_helper_fixture/state.json" >/dev/null; then
   printf 'mixed mq 0: changed before failing closed\n' >&2
   exit 1
-}
+fi
 
 cat >"$mq_helper_fixture/state.json" <<'EOF_MQ_EXPLICIT_MIXED'
 [{"kind":"mq","handle":"2:","root":true,"options":{}},{"kind":"fq","handle":"8001:","parent":"2:1","options":{"limit":1234}},{"kind":"fq_codel","handle":"8002:","parent":"2:2","options":{}}]
 EOF_MQ_EXPLICIT_MIXED
 : >"$mq_helper_fixture/tc.log"
 run_mq_helper_fixture
-[ "$(cat "$mq_helper_fixture/tc.log")" = 'qdisc replace dev eth0 parent 2:2 fq' ] &&
-  jq -e '.[0].handle == "2:" and .[1].options.limit == 1234 and .[2].kind == "fq"' \
-    "$mq_helper_fixture/state.json" >/dev/null || {
+if [ "$(cat "$mq_helper_fixture/tc.log")" != 'qdisc replace dev eth0 parent 2:2 fq' ] ||
+  ! jq -e '.[0].handle == "2:" and .[1].options.limit == 1234 and .[2].kind == "fq"' \
+    "$mq_helper_fixture/state.json" >/dev/null; then
   printf 'explicit mq mixed-leaf handling is wrong\n' >&2
   exit 1
-}
+fi
 
 cat >"$mq_helper_fixture/state.json" <<'EOF_MQ_ZERO_FQ_CODEL_FAIL'
 [{"kind":"mq","handle":"0:","root":true,"options":{}},{"kind":"fq_codel","handle":"8001:","parent":":1","options":{}},{"kind":"fq_codel","handle":"8002:","parent":":2","options":{}}]
