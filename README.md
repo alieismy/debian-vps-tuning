@@ -6,10 +6,10 @@ Debian VPS Tuning 用于配置 Debian 12/13 小型云 VPS 的主机网络。主�
 
 > 系统选择（信息日期：2026-08-04）：新建的 1C1G、1C2G 和 2C2G VPS 默认使用 Debian 13 minimal。Debian 13 是当前 stable；Debian 12 已转入 LTS，适用于保留既有稳定节点或满足明确兼容约束的场景。系统版本不能单独证明 BBR 可用、性能更高或空载内存更低，仍需检查虚拟化类型、运行内核和目标机资源。
 
-> 当前已发布预发行候选为 `v0.1.0-rc.16`，以下联网命令继续固定到该不可变 Release。工作树正在形成未发布的 `v0.1.0-rc.17` 实现候选；不得把工作树中的 rc.17 installer、摘要或 profile 当作已发布资产使用。正式 `v0.1.0` 仍以 [目标 VPS 运行验收](docs/validation.md) 为发布条件；候选版本不代表已完成目标机、全带宽或性能验收。
+> 当前已发布预发行候选为 `v0.1.0-rc.17`，以下联网命令固定到该不可变 Release。工作树正在形成未发布的 `v0.1.0-rc.18` 实现候选；不得把工作树中的 rc.18 installer、摘要或 profile 当作已发布资产使用。正式 `v0.1.0` 仍以 [目标 VPS 运行验收](docs/validation.md) 为发布条件；候选版本不代表已完成目标机、全带宽或性能验收。
 
-rc.17 当前工作树候选的 `install.sh` SHA-256 为
-`4fd4dde90df4524d657623c4e22e355ab9adac70a703cff61a68e41e09007cbc`。该值只用于本地完整性门禁；在 tag、Release 和公开反向校验完成前没有可执行的 rc.17 联网安装入口。
+rc.18 当前工作树候选的 `install.sh` SHA-256 为
+`19819187b5a4dd9b936768f59661f91d5e7ae232d10d8f1f53e3c8d29bae635c`。该值只用于本地完整性门禁；在 tag、Release 和公开反向校验完成前没有可执行的 rc.18 联网安装入口。
 
 ## 联网安装与验证
 
@@ -17,13 +17,13 @@ rc.17 当前工作树候选的 `install.sh` SHA-256 为
 
 ### 1. 联网安装
 
-rc.16 Release 发布并通过公开资产复核后，可使用下面的固定版本安装入口。它保留“先完整下载、再核对固定 SHA-256、最后执行”三个门禁，不会从 `main`/`master`/`latest` 下载，也不会在安装过程中自动执行调优或产生测试流量：
+rc.17 Release 已发布并通过公开资产复核，可使用下面的固定版本安装入口。它保留“先完整下载、再核对固定 SHA-256、最后执行”三个门禁，不会从 `main`/`master`/`latest` 下载，也不会在安装过程中自动执行调优或产生测试流量：
 
 ```bash
-(set -Eeuo pipefail; dvt_i="$(mktemp)"; trap 'rm -f -- "$dvt_i"' EXIT; curl --fail --show-error --silent --location --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 120 -o "$dvt_i" https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.16/install.sh; printf '%s  %s\n' '83d4f739918309b7585c0a0b6be7ac09252512dd7516d0dc6044b058cd17a15d' "$dvt_i" | sha256sum -c -; bash "$dvt_i")
+(set -Eeuo pipefail; dvt_i="$(mktemp)"; trap 'rm -f -- "$dvt_i"' EXIT; curl --fail --show-error --silent --location --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 120 -o "$dvt_i" https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.17/install.sh; printf '%s  %s\n' '4fd4dde90df4524d657623c4e22e355ab9adac70a703cff61a68e41e09007cbc' "$dvt_i" | sha256sum -c -; bash "$dvt_i")
 ```
 
-安装器先核对内置固定的 `SHA256SUMS` 摘要，再逐一核对总控、六份 profile、预算账本、迁移编排、证据工具和 HTB 实验工具；通过后安装到 `/usr/local/lib/debian-vps-tuning/0.1.0-rc.16`，原子更新 `/usr/local/lib/debian-vps-tuning/current`，并创建 `/usr/local/bin/dvt`。已有同版本目录只有在全部文件重新校验通过时才复用，内容不一致时拒绝覆盖。交互终端随后打开菜单；也可加 `--no-launch` 只安装。
+安装器先核对内置固定的 `SHA256SUMS` 摘要，再逐一核对总控、六份 profile、预算账本、迁移编排、证据工具和 HTB 实验工具；通过后安装到 `/usr/local/lib/debian-vps-tuning/0.1.0-rc.17`，原子更新 `/usr/local/lib/debian-vps-tuning/current`，并创建 `/usr/local/bin/dvt`。已有同版本目录只有在全部文件重新校验通过时才复用，内容不一致时拒绝覆盖。交互终端随后打开菜单；也可加 `--no-launch` 只安装。
 
 安装后常用命令：
 
@@ -68,10 +68,10 @@ reboot
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.16/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.17/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    '9ba31b2c5caa8c11e8e99fb339d8e5a82752d0c998f6284c2eed4d22f5c6631c' \
+    '2530f70a5a675c4733d5bc0109ccbcc35daee23a9e460d920a4b346a3216bfc7' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   bash "$dvt_tmp/debian-vps-tuning.sh" verify
@@ -99,10 +99,10 @@ printf 'verify_after_reboot_exit=%s\n' "$?"
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.16/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.17/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    '9ba31b2c5caa8c11e8e99fb339d8e5a82752d0c998f6284c2eed4d22f5c6631c' \
+    '2530f70a5a675c4733d5bc0109ccbcc35daee23a9e460d920a4b346a3216bfc7' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   env \
@@ -118,9 +118,9 @@ printf 'strict_verify_after_3xui_exit=%s\n' "$?"
 
 ### 4. 从早期 rc 版本执行只读升级检查
 
-由 rc.9–rc.15 管理的 VPS，在 rc.16 发布后可下载 rc.16 总控并执行 `update`。该操作读取状态中的资源档和端口带宽，校验当前 profile、目标 `SHA256SUMS` 和目标总控脚本，然后依次运行当前版本的 `verify` 与目标版本的只读 `update-preflight`。输出包括维护窗口所需的固定 URL、SHA-256 和迁移顺序。`update` 不执行 `rollback`、purge、`apply`、`reconfigure` 或重启，也不替换已发布的旧 Release 资产。
+由 rc.9–rc.16 管理的 VPS，在 rc.17 发布后可下载 rc.17 总控并执行 `update`。该操作读取状态中的资源档和端口带宽，校验当前 profile、目标 `SHA256SUMS` 和目标总控脚本，然后依次运行当前版本的 `verify` 与目标版本的只读 `update-preflight`。输出包括维护窗口所需的固定 URL、SHA-256 和迁移顺序。`update` 不执行 `rollback`、purge、`apply`、`reconfigure` 或重启，也不替换已发布的旧 Release 资产。
 
-总控、`SHA256SUMS` 和 profile 构成一个不可拆分的 Release 包。不同版本的资产不得放在同一目录。例如，rc.15 总控不能与 rc.16 的 `SHA256SUMS` 和 profile 混放；总控检测到版本不一致时会拒绝执行，且不会自动改用联网下载。以下联网命令和后续回滚示例均使用独立的 `mktemp -d` 目录。
+总控、`SHA256SUMS` 和 profile 构成一个不可拆分的 Release 包。不同版本的资产不得放在同一目录。例如，rc.16 总控不能与 rc.17 的 `SHA256SUMS` 和 profile 混放；总控检测到版本不一致时会拒绝执行，且不会自动改用联网下载。以下联网命令和后续回滚示例均使用独立的 `mktemp -d` 目录。
 
 ```bash
 (
@@ -135,17 +135,17 @@ printf 'strict_verify_after_3xui_exit=%s\n' "$?"
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.16/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.17/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    '9ba31b2c5caa8c11e8e99fb339d8e5a82752d0c998f6284c2eed4d22f5c6631c' \
+    '2530f70a5a675c4733d5bc0109ccbcc35daee23a9e460d920a4b346a3216bfc7' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   bash "$dvt_tmp/debian-vps-tuning.sh" update
 )
 ```
 
-使用 `update --target v0.1.0-rc.16` 可指定目标版本。自动发现不跨 `major.minor` 发布线：当前版本为 rc 时，可选择同线更高 rc 或稳定版；当前版本为稳定版时，自动排除 prerelease。跨线升级必须通过 `--target` 指定目标，且仍会拒绝降级和重复升级。显式指定 prerelease 视为主动选择，不受稳定通道的自动排除规则限制。
+使用 `update --target v0.1.0-rc.17` 可指定目标版本。自动发现不跨 `major.minor` 发布线：当前版本为 rc 时，可选择同线更高 rc 或稳定版；当前版本为稳定版时，自动排除 prerelease。跨线升级必须通过 `--target` 指定目标，且仍会拒绝降级和重复升级。显式指定 prerelease 视为主动选择，不受稳定通道的自动排除规则限制。
 
 `update` 只检查升级兼容性并生成操作计划，不改写磁盘上的旧脚本、系统配置或 3X-UI。检查通过不表示升级完成。维护窗口内仍需按输出和本文顺序执行 rollback/purge、重启、目标版本的 `preflight`/`apply`、再次重启及 `verify`。GitHub API 查询失败或触发匿名速率限制时，可用已审阅的 `--target` 跳过自动发现；目标 Release 资产仍会接受校验。
 
@@ -160,9 +160,9 @@ printf 'strict_verify_after_3xui_exit=%s\n' "$?"
 
 - 仅支持厂商最小化 Debian 12/13、`x86_64/amd64` 和本文列出的四个 CPU/内存资源档；其他组合会被拒绝；
 - 端口带宽填写服务商套餐上限，不要填写虚拟网卡显示的链路速率；默认 200 Mbps，允许 100–1000 Mbps；
-- 联网入口固定到 `v0.1.0-rc.16`，不会回退到 `master`、`main`、`latest`、HTTP 或第三方镜像；该 Release 尚未发布时入口不可用；
-- 发布后，上述命令在执行总控前核对 rc.16 总控资产的固定 SHA-256；总控随后下载固定 Release 的 `SHA256SUMS` 和对应 profile，并再次校验；
-- 总控、`SHA256SUMS` 和 profile 必须来自同一 Release；不同版本使用不同的临时目录，不要把 rc.15 与 rc.16 资产混放在 `/root` 或同一工作目录；
+- 联网入口固定到 `v0.1.0-rc.17`，不会回退到 `master`、`main`、`latest`、HTTP 或第三方镜像；
+- 上述命令在执行总控前核对 rc.17 总控资产的固定 SHA-256；总控随后下载固定 Release 的 `SHA256SUMS` 和对应 profile，并再次校验；
+- 总控、`SHA256SUMS` 和 profile 必须来自同一 Release；不同版本使用不同的临时目录，不要把 rc.16 与 rc.17 资产混放在 `/root` 或同一工作目录；
 - 发布后不应移动 tag 或替换同名资产，发现缺陷时应发布新版本；
 - `update` 是只读升级检查，不自动迁移配置；检查通过后仍需在维护窗口人工完成 rollback/apply 和两次重启；
 - 脚本不配置或放行 UFW 端口，不要把 UFW 状态提示当成防火墙已配置；先确保 SSH 管理端口不会被锁死；
@@ -717,9 +717,10 @@ closeout 与 observer 原目录属于受控私有证据，不应直接作为公�
 > 默认不得在有月流量配额的业务 VPS 上执行本节。只有明确要验证聚合出口整形机制、使用
 > 独立高额度测试机、已经批准完整窗口的流量预算和停止条件时，才可进入下列研究流程。
 
-安装后的短命令把原有工具链包装为带阶段门禁的入口。HTB watchdog 要求执行器从稳定路径
-运行；`dvt htb preflight` 不会隐式写入该路径。确认没有活动 HTB 后，先从同一固定 Release
-显式安装并按 manifest 校验：
+下面的可执行示例属于已经发布的 rc.17 非持久 HTB 工作流，只接受 Debian 13 rc.17 schema 4、
+`VERIFIED`、200 Mbps 的 `debian13-1c1g` 或 `debian13-1c2g` 基线。安装后的短命令把原有工具链
+包装为带阶段门禁的入口。HTB watchdog 要求执行器从稳定路径运行；`dvt htb preflight` 不会
+隐式写入该路径。确认没有活动 HTB 后，先从同一固定 rc.17 Release 显式安装并按 manifest 校验：
 
 ```bash
 DVT_ROOT="$(readlink -f /usr/local/lib/debian-vps-tuning/current)"
@@ -753,6 +754,11 @@ dvt htb sweep \
   --output-dir /root/htb-candidate-sweep-a1
 ```
 
+这些命令通过已安装的 `current` 符号链接解析 `DVT_ROOT`，因此既不会暂存也不能验证 rc.18。
+rc.18 发布前，只能从同时包含 rc.18 wrapper、执行器、伴随脚本、profile 和 `SHA256SUMS` 的完整
+同版本本地 bundle 做分阶段验证；不得把已发布的 rc.17 wrapper 或 manifest 与 rc.18 执行器混用，
+也不得把上面的 rc.17 示例写成 rc.18 验证。
+
 `--ack-reference-reviewed` 只是证明操作者已检查 reference 证据，不授权永久整形。wrapper
 还会把该 reference 的 `SHA256SUMS`、`sweep-analysis.json` 和 `COMPLETED` 摘要写入 candidate
 plan；因此完成的扫描可以追溯到唯一已复核 reference，而不记录目标机绝对路径。wrapper
@@ -763,8 +769,9 @@ plan；因此完成的扫描可以追溯到唯一已复核 reference，而不记
 
 `experiments/htb-aggregate/rate-sweep-plan.sh`、`rate-sweep-run.sh` 和
 `rate-sweep-analyze.sh` 把候选发现分成 schema 3 只读计划、显式流量/临时 qdisc 执行和只读
-分析三层。开发候选边界只接受 rc.17 schema 4、`VERIFIED`、200 Mbps 的 Debian 13 1C1G/1C2G
-基线；runner 在流量前执行真实 profile 的只读 `verify`，冻结 managed
+分析三层。已发布 rc.17 路径只接受 rc.17 schema 4 的对应基线；当前工作树 rc.18 runner 只有从
+完整同版本 rc.18 bundle 和状态调用时才应用 rc.18 边界。两条路径都要求 `VERIFIED`、200 Mbps 的
+Debian 13 1C1G/1C2G 基线；runner 在流量前执行真实 profile 的只读 `verify`，冻结 managed
 profile/version/state/port/state SHA-256，并要求每个 `benchmark-meta.json` 再次匹配。只测
 上传，因为本地 egress HTB 不能用于归因下载方向的远端 sender 重传。通用默认
 `reference-screen` 为 3 次 HTB200；VMISS Basic 的本轮 reference 已按三次有效样本完成并
@@ -810,7 +817,7 @@ bash ./experiments/htb-aggregate/experiment-plan.sh \
 
 较低速率控制必须等候选结果分析关闭后另建窗口，例如 `--control-rate 180` 会附加独立的 `A-control-before → C1 → A-control-after`，不会自动执行或授权 180 Mbit/s。候选扫描不能替代该 A/B/A 和反序复验。
 
-开发候选执行器 v0.4.0 只接受 rc.17 schema 4、`VERIFIED`、200 Mbps 的
+开发候选执行器 v0.4.0 只接受 rc.18 schema 4、`VERIFIED`、200 Mbps 的
 `debian13-1c1g` 或 `debian13-1c2g` 基线；200 仅用于同拓扑 reference，不授权超过端口
 上限。正式 B stage 必须使用 `TCPQUALITY_RUNS=1`，避免三轮 TcpQuality 超过 40 分钟
 watchdog。1C2G 见独立 [A/B/A SOP](docs/experiments/vmiss-1c2g-200mbps-htb-aba.md)。原
@@ -894,7 +901,7 @@ env PORT_SPEED_MBPS=1000 \
 
 状态更新先由 `jq` 写入同目录临时文件。只有命令退出码、非空检查、单一 JSON 对象和完整结构校验全部通过后，才原子替换 `state.json`。空文件、空白文件、多个 JSON 文档或更新失败均不能覆盖上一个有效状态。
 
-服务商扩容或降配端口后，使用 `dvt reconfigure --port <MBPS>`。开发候选只接受同一 rc.17 版本和 profile 的 `VERIFIED` 状态，先执行完整 `verify`，再保留现有 RTT；自动 buffer 按新带宽重算，显式 buffer 保持原值。同值请求只验证不写入。普通 `apply` 的参数不一致门禁没有放宽，不得手工编辑 `state.json` 代替重配置。
+服务商扩容或降配端口后，使用 `dvt reconfigure --port <MBPS>`。开发候选只接受同一 rc.18 版本和 profile 的 `VERIFIED` 状态，先执行完整 `verify`，再保留现有 RTT；自动 buffer 按新带宽重算，显式 buffer 保持原值。同值请求只验证不写入。普通 `apply` 的参数不一致门禁没有放宽，不得手工编辑 `state.json` 代替重配置。
 
 重配置把旧 state 和 sysctl 管理文件保存为 root-only 固定备份，先提交 `RECONFIGURING`，再更新候选文件、必要的运行时 buffer、管理哈希并执行完整候选验证。任何失败会尝试恢复旧 sysctl 和旧 `VERIFIED` 状态；恢复失败时状态保留为 `DEGRADED`，`status` 显示事务和失败证据，普通 `verify`/`rollback`/`apply` 均拒绝越过，必须先执行 `dvt recover`。
 

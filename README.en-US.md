@@ -8,9 +8,9 @@ The script uses BBR + fq, controlled TCP buffering, standard queue parameters, e
 
 > **System Selection Summary (as of 2026-08-04):** Newly created 1C1G, 1C2G, and 2C2G VPS instances are recommended to use Debian 13 minimal by default. Debian 13 is the current stable release; Debian 12 has transitioned to LTS and is better suited for retaining existing stable nodes or meeting explicit compatibility constraints. The OS version alone does not guarantee BBR availability, higher performance, or lower idle memory usage; virtualization type, running kernel, and target machine resources must still be verified.
 
-> The current published release candidate is `v0.1.0-rc.17`; the online commands below remain pinned to that immutable Release. It is still a pre-release candidate, not the official `v0.1.0`. The official `v0.1.0` still requires [Target VPS Runtime Acceptance](docs/validation.md); do not treat the candidate as target-host, full-bandwidth, or performance acceptance.
+> The current published release candidate is `v0.1.0-rc.17`; the online commands below remain pinned to that immutable Release. The working tree is forming an unpublished `v0.1.0-rc.18` implementation candidate, whose installer, manifest, and profiles are not online installation assets. The official `v0.1.0` still requires [Target VPS Runtime Acceptance](docs/validation.md); do not treat either candidate as target-host, full-bandwidth, or performance acceptance.
 
-> This English document was originally translated from the rc.11 documentation. Release-critical URLs and the rc.17 benchmark-termination, policy-routing, and HTB evidence contracts are synchronized here. The Chinese [README](README.md) and [rc.17 release notes](docs/releases/v0.1.0-rc.17.md) remain authoritative for the complete traffic-budget ledger, checkpoint/resume migration, installer, TcpQuality evidence, advisory probe, and non-persistent HTB details.
+> This English document was originally translated from the rc.11 documentation. Release-critical URLs and the current development contracts are synchronized here. The Chinese [README](README.md) and the [rc.18 draft release notes](docs/releases/v0.1.0-rc.18.md) remain authoritative for the complete traffic-budget ledger, checkpoint/resume migration, installer, TcpQuality evidence, advisory probe, non-persistent HTB, and `mq 0:` handling details.
 
 ## Online Installation and Verification
 
@@ -18,28 +18,22 @@ The following commands assume you have entered the VPS root shell (prompt usuall
 
 ### 1. Online Installation
 
-After the rc.16 Release is published and passes public asset verification, its pinned main entry can be used. It automatically detects Debian 12/13, amd64, CPU, and memory tiers, runs read-only `preflight` first by default, and executes `apply` only after an explicit `y` confirmation:
+The published rc.17 Release can be installed through the following immutable entry after verifying the installer before execution. It does not fall back to `main`, `master`, or `latest`, and installation itself does not run tuning or generate test traffic:
 
 ```bash
 (
-  set -e
-
-  dvt_tmp="$(mktemp -d)"
-  trap 'rm -rf -- "$dvt_tmp"' EXIT
-
+  set -Eeuo pipefail
+  dvt_i="$(mktemp)"
+  trap 'rm -f -- "$dvt_i"' EXIT
   curl --fail --show-error --silent --location \
-    --proto '=https' \
-    --proto-redir '=https' \
-    --connect-timeout 15 \
-    --max-time 120 \
-    -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.16/debian-vps-tuning.sh
-
+    --proto '=https' --proto-redir '=https' \
+    --connect-timeout 15 --max-time 120 \
+    -o "$dvt_i" \
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.17/install.sh
   printf '%s  %s\n' \
-    '9ba31b2c5caa8c11e8e99fb339d8e5a82752d0c998f6284c2eed4d22f5c6631c' \
-    "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
-
-  bash "$dvt_tmp/debian-vps-tuning.sh"
+    '4fd4dde90df4524d657623c4e22e355ab9adac70a703cff61a68e41e09007cbc' \
+    "$dvt_i" | sha256sum -c -
+  bash "$dvt_i"
 )
 ```
 
@@ -74,10 +68,10 @@ Execute after re-logging into the VPS. `verify` is read-only validation and will
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.16/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.17/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    '9ba31b2c5caa8c11e8e99fb339d8e5a82752d0c998f6284c2eed4d22f5c6631c' \
+    '2530f70a5a675c4733d5bc0109ccbcc35daee23a9e460d920a4b346a3216bfc7' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   bash "$dvt_tmp/debian-vps-tuning.sh" verify
@@ -105,10 +99,10 @@ The recommended order is to complete tuning and reboot verification first, then 
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.16/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.17/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    '9ba31b2c5caa8c11e8e99fb339d8e5a82752d0c998f6284c2eed4d22f5c6631c' \
+    '2530f70a5a675c4733d5bc0109ccbcc35daee23a9e460d920a4b346a3216bfc7' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   env \
@@ -124,9 +118,9 @@ Strict verification requires `x-ui.service` to be active, and checks that the sy
 
 ### 4. Execute Read-Only Upgrade Check from Early rc Versions
 
-After rc.16 is published, VPS instances managed by rc.9 through rc.15 can download its main entry and execute `update`. It reads the resource tier and port bandwidth from state, verifies the current profile, target `SHA256SUMS`, and target main entry, then runs the current version's `verify` and the target's read-only `update-preflight`. The output includes the fixed URLs, SHA-256 values, and migration order required for the maintenance window. `update` does not perform rollback, purge, apply, reconfigure, or reboot, and never replaces previously published assets.
+VPS instances managed by rc.9 through rc.16 can download the published rc.17 main entry and execute `update`. It reads the resource tier and port bandwidth from state, verifies the current profile, target `SHA256SUMS`, and target main entry, then runs the current version's `verify` and the target's read-only `update-preflight`. The output includes the fixed URLs, SHA-256 values, and migration order required for the maintenance window. `update` does not perform rollback, purge, apply, reconfigure, or reboot, and never replaces previously published assets.
 
-The main entry, `SHA256SUMS`, and profile are an indivisible Release package. **Assets from different versions must not be placed in the same directory.** For example, do not place rc.16 `SHA256SUMS` and profile next to the rc.15 main entry; otherwise integrity checks reject execution without falling back to an online download. Use independent `mktemp -d` directories for each version.
+The main entry, `SHA256SUMS`, and profile are an indivisible Release package. **Assets from different versions must not be placed in the same directory.** For example, do not place rc.17 `SHA256SUMS` and profile next to the rc.16 main entry; otherwise integrity checks reject execution without falling back to an online download. Use independent `mktemp -d` directories for each version.
 
 ```bash
 (
@@ -141,17 +135,17 @@ The main entry, `SHA256SUMS`, and profile are an indivisible Release package. **
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.16/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.17/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    '9ba31b2c5caa8c11e8e99fb339d8e5a82752d0c998f6284c2eed4d22f5c6631c' \
+    '2530f70a5a675c4733d5bc0109ccbcc35daee23a9e460d920a4b346a3216bfc7' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   bash "$dvt_tmp/debian-vps-tuning.sh" update
 )
 ```
 
-Specify the target version using `update --target v0.1.0-rc.16`. Auto-discovery does not cross `major.minor` release lines: when on an rc, it can select a higher rc on the same line or the stable release; stable installations automatically exclude prereleases. Cross-line upgrades require explicit `--target`; downgrades and duplicate upgrades remain rejected.
+Specify the target version using `update --target v0.1.0-rc.17`. Auto-discovery does not cross `major.minor` release lines: when on an rc, it can select a higher rc on the same line or the stable release; stable installations automatically exclude prereleases. Cross-line upgrades require explicit `--target`; downgrades and duplicate upgrades remain rejected.
 
 `update` is only an upgrade compatibility check and plan generator; it will not rewrite old scripts on disk, system tuning configurations, or 3X-UI. A passed check does not mean the upgrade is complete; during the maintenance window, manually execute rollback/purge, reboot, target preflight/apply, reboot again, and verify according to the output and this README. If GitHub API queries fail or are subject to anonymous rate limits, using a reviewed `--target` can skip auto-discovery, but target Release assets will still be verified.
 
@@ -161,9 +155,9 @@ A cross-version upgrade may remove the old managed version before installing the
 
 - Only supports vendor minimal Debian 12/13, `x86_64/amd64`, and the four CPU/memory resource tiers listed in the README; other combinations will be rejected;
 - Port bandwidth should be the provider's plan limit, not the link speed shown by the virtual NIC; default is 200 Mbps, allows 100–1000 Mbps;
-- Online entry is pinned to `v0.1.0-rc.16` and never falls back to `master`, `main`, `latest`, HTTP, or third-party mirrors; it is unavailable until that Release exists;
-- After publication, the commands verify the fixed SHA-256 of the rc.16 main entry before execution; the controller then verifies the Release `SHA256SUMS` and selected profile again;
-- Main entry, `SHA256SUMS`, and profile must come from one Release; do not mix rc.15 and rc.16 assets in `/root` or one working directory;
+- Online entry is pinned to `v0.1.0-rc.17` and never falls back to `master`, `main`, `latest`, HTTP, or third-party mirrors;
+- The commands verify the fixed SHA-256 of the rc.17 main entry before execution; the controller then verifies the Release `SHA256SUMS` and selected profile again;
+- Main entry, `SHA256SUMS`, and profile must come from one Release; do not mix rc.16 and rc.17 assets in `/root` or one working directory;
 - Tags should not be moved or same-named assets replaced after publication; release a new version when defects are found;
 - `update` is a read-only upgrade check and will not automatically migrate configurations; after a passed check, you must still choose another maintenance window to complete manual rollback/apply and two reboots;
 - The script does not configure or allow UFW ports; do not treat UFW status prompts as the firewall being configured; ensure the SSH management port will not be locked out first;
@@ -596,11 +590,11 @@ VLESS + REALITY + TCP improvement, or authorization for a candidate sweep, Core 
 persistent HTB. The private endpoint archive must not be published as a Release asset, issue
 attachment, or repository file.
 
-The development version of the non-persistent HTB workflow is restricted to a Debian 13 rc.17 schema-4
-`VERIFIED`, 200-Mbps `debian13-1c1g` or `debian13-1c2g` baseline. The 40-minute
+The executable example below is the published rc.17 non-persistent HTB workflow. It is restricted to a
+Debian 13 rc.17 schema-4 `VERIFIED`, 200-Mbps `debian13-1c1g` or `debian13-1c2g` baseline. The 40-minute
 watchdog requires the executor to run from a stable path. `dvt htb preflight`
 does not install it implicitly; while no HTB transaction is active, install the
-executor from the same pinned Release and verify it against that Release's
+executor from the same pinned rc.17 Release and verify it against that Release's
 manifest:
 
 ```bash
@@ -619,9 +613,16 @@ dvt htb preflight
 dvt htb smoke --rate 190 --hold-seconds 10
 ```
 
+These commands resolve `DVT_ROOT` through the installed `current` symlink, so they neither stage nor
+verify rc.18. Before rc.18 is published, its workflow may be tested only from one complete, matching
+local bundle containing the rc.18 wrapper, executor, companion scripts, profiles, and `SHA256SUMS`.
+Do not mix the published rc.17 wrapper or manifest with an rc.18 executor, and do not describe the
+example above as rc.18 verification.
+
 Rate discovery is split into a schema-3 read-only plan, an explicitly invoked
-traffic/qdisc runner, and a read-only analyzer. Before traffic, the runner calls
-the selected rc.17 profile's `verify`, freezes the managed
+traffic/qdisc runner, and a read-only analyzer. In the published rc.17 path, before traffic, the runner
+calls the selected rc.17 profile's `verify`; the worktree rc.18 runner applies the same contract only
+when invoked from a complete matching rc.18 bundle and state. The runner freezes the managed
 profile/version/state/port/state SHA-256, and requires every
 `benchmark-meta.json` to match. Every sample must have a valid measurement
 window, complete schema-3 HTB-to-FQ root/leaf evidence, positive HTB root

@@ -6,24 +6,23 @@
 
 本文件是项目控制面，只维护当前阶段、效力、路由、边界和完成规则。详细文档方法由对应 RD Skill 单一维护，代码实现和发布遵循仓库既有入口与全局实现纪律。
 
-## 当前项目阶段：rc.17 HTB/FQ 证据完整性实现候选
+## 当前项目阶段：rc.18 `mq 0:` 句柄完整性实现候选
 
-用户已于 2026-09-10 明确授权按 tcpfit 整形专项再评估结论进入实现阶段。本阶段形成未发布的 `v0.1.0-rc.17` 工作树候选；提交、推送、tag、Release 和真实 VPS 操作仍未授权。所有任务的时间、范围和完成判据必须优先服务于以下目标：
+`v0.1.0-rc.17` 已作为 Pre-release 发布，其 tag、Release 和公开资产保持不可变。用户已于 2026-09-14 明确授权修复内核自动创建的 `mq 0:` 根 qdisc 无法用 `parent :N` 直接寻址的问题；本阶段形成未发布的 `v0.1.0-rc.18` 工作树候选。提交、推送、tag、Release 和真实 VPS 操作仍未授权。所有任务的时间、范围和完成判据必须优先服务于以下目标：
 
-1. 修复 benchmark 对 HTB `parent MAJOR:MINOR` 下 FQ 叶子的识别，保留 `mq parent :N`，并排除 ingress/clsact；
-2. 将 benchmark phase summary 升级为 schema 3，分别保存 root/leaf qdisc totals 和 drop/requeue 健康状态，不把两层 bytes 相加；
-3. 使候选速率 analyzer 对旧摘要、缺失 HTB→FQ 叶子、任一 root/leaf drop 或 requeue fail closed 为 `REVIEW_BLOCKED`；HTB root `overlimits` 只表示整形暴露；
-4. 扩展脱敏 `ss -tin` 辅助证据，纳入 pacing、delivery、min RTT、DSACK、乱序和窗口字段，同时继续排除 endpoint、端口、PID、进程名和 inode；
-5. 保持 17 项受管 sysctl、资源感知 BDP 缓冲、默认 `BBR + fq`、非持久 HTB、managed-state schema 4、预算 ledger 和迁移 checkpoint 边界，不直接改变 HTB rate/burst/cburst 或启用持久整形；
-6. 使源模板、六份生成 profile、runner/analyzer、fixture、验证说明、版本和摘要链一致，并明确区分本地/fixture 与目标 VPS、重启、真实业务和性能证据。
+1. 对 `mq 0:` 且全部叶子为 `fq_codel` 的拓扑，先选择无冲突的非零根 handle，重建 `mq` 后重新读取并核对队列 minor 集，再把当前叶子替换为 `fq`；
+2. 对已经全部为 `fq` 的 `mq 0:` 保持无写入；对包含自定义 `fq` 与 `fq_codel` 的 `mq 0:` 混合拓扑在任何写入前 fail closed，避免重建根 qdisc 丢失不可完整恢复的自定义叶参数；
+3. 回滚时不复用不可寻址的保存 parent，而是按当前非零 `mq` 根 handle 与保存的队列 minor 重建 parent；语义比较只在同一 `mq` 队列内规范化 `:N`、`0:N` 和 `MAJOR:N`，不放宽 ingress/clsact 或其他 qdisc；
+4. 用状态化 fixture 覆盖 OCI 类 `mq 0:` 转换、无操作、混合拓扑拒绝、显式非零 `mq`、根重建失败、队列漂移和卸载恢复；同步模板、六份生成 profile、版本、摘要链与验证说明；
+5. 保持 rc.17 的 17 项受管 sysctl、资源感知 BDP 缓冲、默认 `BBR + fq`、非持久 HTB、managed-state schema 4、benchmark schema 3、预算 ledger 和迁移 checkpoint 边界，不改变 HTB rate/burst/cburst 或启用持久整形。
 
-本阶段不得扩展为永久 HTB、通用 UDP 调参、网络安全专项、全面生产加固、安全扫描、渗透、攻击面分析或新的高流量性能 campaign。不得连接或修改真实 VPS、创建高额度测试资源或运行公网测速，除非用户另行明确授权。只有直接阻断 rc.17 实现候选与本地验证且可用最小充分工作处理的事项才可纳入；其他事项登记到 [项目阶段备忘](docs/project-memo.md)。
+本阶段不得扩展为永久 HTB、通用 UDP 调参、网络安全专项、全面生产加固、安全扫描、渗透、攻击面分析或新的高流量性能 campaign。不得连接或修改真实 VPS、创建高额度测试资源或运行公网测速，除非用户另行明确授权。只有直接阻断 rc.18 实现候选与本地验证且可用最小充分工作处理的事项才可纳入；其他事项登记到 [项目阶段备忘](docs/project-memo.md)。
 
-rc.16 及更早公开 tag、Release 和资产视为不可变；本轮修复只能进入 rc.17 或后续版本。预算、迁移、benchmark、HTB 或策略路由证据功能不得通过兼容名义绕过所有权、完整性、流量、重启或恢复门禁。
+rc.17 及更早公开 tag、Release 和资产视为不可变；本轮修复只能进入 rc.18 或后续版本。预算、迁移、benchmark、HTB 或策略路由证据功能不得通过兼容名义绕过所有权、完整性、流量、重启或恢复门禁。
 
 每次完成本项目的一轮对话工作、准备最终回复前，必须更新 [项目阶段备忘](docs/project-memo.md)，记录本轮完成内容及证据、未完成门禁、新增或变化的延期事项，以及当前阶段成熟度判断。没有新增延期事项时也应明确记录“无新增”，避免无法判断是否完成过检查。备忘是资料性状态记录，不替代 `AGENTS.md`、验证矩阵、发布说明或用户授权。
 
-当前实现阶段只有在 rc.17 源码、fixture、生成资产、文档和本地适用门禁闭合后才算完成。PR/CI、tag、Pre-release、公开资产反向验证、目标 VPS 生命周期、真实信号中断、重启持久性和真实业务验收均属于后续单独授权或明确未验证项，不得写成已通过。阶段完成后再提出发布阶段建议，不自动执行远程操作。
+当前实现阶段只有在 rc.18 源码、fixture、生成资产、文档和本地适用门禁闭合后才算完成。PR/CI、tag、Pre-release、公开资产反向验证、目标 VPS 生命周期、真实 `tc`/信号中断、重启持久性和真实业务验收均属于后续单独授权或明确未验证项，不得写成已通过。阶段完成后再提出发布阶段建议，不自动执行远程操作。
 
 ## 核心执行契约
 

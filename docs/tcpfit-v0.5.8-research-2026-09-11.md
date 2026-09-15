@@ -92,3 +92,18 @@ README/安装器的一键路径下载可变 `main` 分支脚本；`install.sh` �
 4. 取得独立授权后再决定是否修改 profile、生成资产、schema 和发布门禁。
 
 在上述条件出现前，rc.17 保持现有 17 项 sysctl、资源感知 buffer、默认 `BBR + fq`、非持久 HTB、预算 ledger、schema 4 managed state 和证据分层；本轮不修改网络实现，不运行第三方脚本，不执行目标 VPS 或公网测速。
+
+## 2026-09-14 补充更正：`mq 0:` 句柄寻址
+
+后续 Oracle Cloud VM.Standard.A1.Flex 证据暴露了一个此前结论没有覆盖的窄问题：Linux
+自动创建的根 `mq` 可以显示为 handle `0:`，其叶子 parent 显示为 `:N` 或 `0:N`；这些
+字符串可由 `tc qdisc show` 输出，但不能据此假定 `tc qdisc replace ... parent :N`
+可寻址。tcpfit 为此先把根 `mq` 规范化到非零 handle，再替换叶 qdisc。该机制对本项目
+有实际增量价值，因此上文“最有价值的部分已经存在”的判断在这一点上由本补充取代。
+
+rc.18 吸收的是“建立可寻址根 handle 后重新发现叶子”的机制，不照搬“重建根 `mq` 后
+原叶配置仍然存在”的假设。内核会重新创建 `mq` 的叶 qdisc，所以全 `fq_codel` 拓扑可以
+在核对队列 minor 集后继续转换；已经全 `fq` 时不写入；包含自定义 `fq` 的 `mq 0:` 混合
+拓扑则在任何写入前 fail closed。回滚还必须按当前非零根 handle 重建 parent，并把保存的
+`:N`/`0:N` 与当前 `MAJOR:N` 只在同一个 `mq` 队列内做语义归一化。真实 OCI A1 的 apply、
+rollback、队列变化和重启行为仍需独立运行证据；本补充不把源码或 fixture 等同于目标机验收。

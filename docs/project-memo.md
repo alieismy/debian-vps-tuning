@@ -1,8 +1,8 @@
 # 项目阶段备忘
 
 文档性质：资料性状态与延期事项记录
-当前阶段：rc.17 Pre-release 已发布并反向验证（Basic HTB200 reference 已完成；default-fq 对照、A/B/A 与 Core 尚未执行）
-更新日期：2026-09-11（Asia/Singapore）
+当前阶段：未发布 rc.18 `mq 0:` 句柄完整性实现候选（rc.17 Pre-release 保持不可变）
+更新日期：2026-09-15（Asia/Singapore）
 
 本文件是 `AGENTS.md` 指定的唯一项目阶段备忘入口，用于记录每轮对话工作的闭环状态，以及当前阶段不主动展开的后续候选事项。它不构成需求批准、生产变更授权、发布授权或下一阶段启动决定；控制规则以 [项目级 AGENTS.md](../AGENTS.md) 为准，具体验证事实以 [验证矩阵](validation.md) 和对应发布说明为准。
 
@@ -1581,3 +1581,74 @@ Ubuntu 支持技术上有条件可行，产品和运行证据尚不足以承诺�
 ### 当前成熟度判断
 
 rc.17 的 Debian-only 源码、生成资产、静态 fixture、CI、tag、Pre-release 和公开资产完整性已复核闭合；项目仍处于验证和文档闭环阶段。当前剩余缺口属于目标环境和业务层证据，不改变 rc.17 的发行版范围，也不自动授权下一阶段或真实 VPS 操作。
+
+## 本轮记录：2026-09-14（mq 0: 叶 qdisc 寻址缺口评审）
+
+### 已完成及证据
+
+- 只读复核当前 `master`、`v0.1.0-rc.17` tag、`tools/profile-template.sh.in`、六份生成 profile 和 `tests/static-check.sh`。tag 与当前模板/生成 profile 的 fq helper 实现一致：mq 分支读取 `fq_codel` 叶子的 `.parent` 后原样执行 `tc qdisc replace ... parent "$parent" fq`，没有处理内核自建 `mq 0:` 下不可直接寻址的 `parent :N`。
+- 用户提供的 OCI `VM.Standard.A1.Flex` 运行证据显示 `qdisc mq 0: root`、`qdisc fq_codel 0: parent :1/:2`，并且 `tc qdisc replace ... parent :2 fq` 返回 `Error: Failed to find specified qdisc.`；当前 tcpfit `0.5.8` 固定 HEAD `76331588af487a973d3445a1bf8bba7037d566ca` 也显式处理该失败路径。结合 DVT 当前源码，确认 rc.17 对“mq root handle 为 0 且至少一个叶子仍需从 fq_codel 切换为 fq”的拓扑存在高置信度实现缺口；它不是 OCI、BBR 或 fq 能力缺失，也不影响已经全部为 fq 的 mq 叶子。
+- 当前静态套件仍输出 `static checks passed for 6 scripts`。现有 `mq parent :1/:2` fixture 只验证 benchmark qdisc 计数分类；helper 门禁只做提取、`bash -n` 和选择器文本检查，没有执行有状态的 `tc` mock。因此现有通过结果不能反驳该缺口。
+- 核对 Linux `sch_mq` 当前源码：创建新的 mq root 会为各发送队列创建默认叶 qdisc 并 graft 到队列。因而 tcpfit 注释中的“只改句柄、叶子原样保留”不能直接作为 DVT 的恢复不变量；规范化 root handle 后必须重新读取、限定并验证当前 mq 叶子。
+
+### 未完成门禁
+
+- 本轮是独立评审，未修改模板、生成 profile、版本、清单或 Release。建议在后续明确授权的 rc.18 实现中增加事务化 mq 地址规范化：仅在确有 `fq_codel` 叶子需要替换且 root handle 为 `0:`/缺失时，选择无冲突的非零 root major，执行 `replace root ... mq`，重新读取当前父句柄后替换叶子，并对 root kind、非零 handle、队列 minor 集合、叶子数量和最终全 fq 状态 fail closed。
+- rollback 不能继续使用快照中的原始 `parent :N`。需要按“保存的 mq 队列 minor + 当前 mq root major”重建可寻址 parent；语义比较也只能在 mq 边界内把 `:N`、`0:N` 和当前显式 `MAJOR:N` 规范化为同一队列 minor，不能全局忽略 parent major。原始 root handle 为 `0:` 时允许恢复后使用显式非零 handle，延续现有 handle-0 通配语义，但必须恢复并核对叶子 kind/options 和队列集合。
+- 尚缺有状态 helper fixture、mq rollback/语义比较 fixture、Linux root 多队列 smoke，以及 OCI A1 上 apply 失败自动回滚、修复后首次 apply、重启后 helper 幂等、rollback 和真实业务连通性证据。没有这些证据不得声称 OCI 路径已修复。
+
+### 延期事项变化
+
+- 无新增延期事项。该缺口直接影响已声明支持的 mq 路径，应作为下一候选版本的范围内修复，不登记为长期优化；网络安全专项、全面生产加固、Ubuntu 支持和性能 campaign 的既有延期状态不变。
+
+### 当前成熟度判断
+
+rc.17 对 root fq、显式可寻址 mq，以及 `mq 0:` 下叶子已经全部为 fq 的路径不因本轮证据而失效；但对 `mq 0:` + `fq_codel parent :N` 的首次应用不应再判定为可用。该问题在受影响主机上阻断 apply，预计会由现有事务路径 fail closed 并尝试自动回滚，但自动回滚尚无该 OCI 拓扑的本轮实机证据。修复应进入新的 rc.18 或后续不可变候选，而不是改写 rc.17 tag/Release。
+
+## 本轮记录：2026-09-15（rc.18 mq 0: 句柄完整性实现候选）
+
+### 已完成及证据
+
+- 按已授权方案完成 rc.18 本地工作树候选：模板和六份生成 profile 在 `mq 0:` 全 `fq_codel` 拓扑下选择无冲突的非零 root major，重建 `mq` 后重新读取 root、叶 kind 和 queue minor 集，再通过当前 `MAJOR:MINOR` parent 逐叶切换为 `fq`；已经全 `fq` 时保持无写入，混合自定义 `fq`/`fq_codel` 时在任何写入前 fail closed，显式非零 `mq` 则只替换 `fq_codel` 叶子。
+- 完成 mq 回滚和语义匹配收紧：恢复路径使用“当前非零 mq root major + 保存的 queue minor”重建 parent，不再复用不可寻址的 `:N`/`0:N`；parent 规范化仅限同一 mq 队列，ingress、clsact 和其他 qdisc 仍按原语义精确比较。根重建失败、root kind/handle 异常和 queue minor 漂移均停止后续叶修改。
+- 增加状态化 fake-`tc` fixture，覆盖 OCI 类 `mq 0:` 全 `fq_codel` 转换、全 `fq` 无操作、混合叶拒绝、显式非零 `mq`、根重建失败、队列漂移和卸载恢复；同时补齐 mq 快照语义匹配 fixture。Windows Git Bash 下暴露的 TSV `CRLF`、`sort` 管道、fixture `PATH` 和 fake shell 分支语法问题均已在测试边界内修正，不改变生产 helper 的固定 `PATH`。
+- 同步 rc.18 版本、模板、六份生成 profile、控制器/安装器/迁移/预算/HTB 与实验工具版本、CI 入口、README、CHANGELOG、验证矩阵和发布说明草案。最终 `SHA256SUMS` SHA-256 为 `33f5c6476ed87cf3a487dc36e82cdd9aa8a4cc5ca8797b077f771d5d5a9ed896`，`install.sh` SHA-256 为 `19819187b5a4dd9b936768f59661f91d5e7ae232d10d8f1f53e3c8d29bae635c`，安装器内置摘要和文档记录一致。
+- 本地最终门禁通过：`bash tests/static-check.sh` 输出 `static checks passed for 6 scripts`，`bash experiments/htb-aggregate/tests/static-check.sh` 输出 `HTB aggregate experiment static checks passed` 且退出码为 0；`python tools/render_profiles.py --check` 无漂移；`sha256sum -c SHA256SUMS` 的 17 个清单资产全部 `OK`；`git diff --check` 无错误。
+
+### 未完成门禁
+
+- 当前 Windows 环境没有可用的本地 ShellCheck，也不是 Linux root；固定版本 ShellCheck、`tests/installer-check.sh` 和 `tests/rc18-check.sh` 仍须由后续 GitHub Actions/Linux root 门禁验证。本机 root-only 入口分别停在 `installer check requires root` 和 `[dvt-traffic-budget][FAIL] 必须以 root 运行。`，不能写成已通过。
+- 尚未创建 PR、运行 rc.18 CI、提交、推送、打 tag、创建 Pre-release 或反向下载公开资产；rc.17 的 tag、Release 和公开资产未被改写。
+- 尚未在 OCI `VM.Standard.A1.Flex` 或其他真实多队列 Debian VPS 上验证 `tc` 生命周期、apply 失败自动回滚、首次应用、幂等重应用、显式 rollback、驱动队列变化、重启持久性和真实 VLESS + REALITY + TCP 业务连通性。状态化 fixture 只证明本地模型中的命令与状态契约，不能替代目标机证据。
+
+### 延期事项变化
+
+- 无新增延期事项。Ubuntu 支持、网络安全专项、全面生产加固、持久 HTB 和新的高流量性能 campaign 继续保持既有延期或未授权状态；OCI A1 实机验证是 rc.18 后续验收门禁，不作为长期优化延期。
+
+### 当前成熟度判断
+
+rc.18 已达到“源码、fixture、生成资产、文档和当前环境可执行的本地门禁闭合”的未发布实现候选状态；它不是已发布版本，也没有 Linux root、CI 或真实 OCI 运行证明。进入提交/PR/CI、Pre-release 或目标 VPS 验收均需要后续明确授权，并应继续把静态实现、CI、目标机运行和业务验收作为不同证据层级报告。
+
+## 本轮记录：2026-09-15（rc.18 PR 与 Linux CI 闭环）
+
+### 已完成及证据
+
+- 从与 `origin/master` 一致的基线 `ca92aea3c10c454cd1bad8b55ce054d67d26ab91` 创建 `codex/fix-mq0-qdisc-rc18`，选择性暂存 rc.18 范围，保留工作区既有 `AGENTS.md` 通用规则修订、tcpfit 二次深读记录和 `.zcode/` 不进入提交。实现提交为 `1cba6b7876800feb60cd94ab4a34aa68e750ad7e`，已推送并创建 [PR #17](https://github.com/alieismy/debian-vps-tuning/pull/17)。
+- 首轮 push/PR 工作流 `34936990885`、`34937027702` 的生成检查和 Linux root installer lifecycle 已通过，固定 `ShellCheck 0.11.0` 因 jq/fixture 有意保留的单引号字面量、跨 fixture PATH 误报及三个 `A && B || fail` 测试表达式失败。没有绕过门禁：增加有理由的最窄 ShellCheck 指令，并把测试条件改为明确 `if`；重新生成六份 profile、更新摘要链并重跑本地完整门禁。
+- 修复提交为 `02187aa5f99638adc69d281895a963ae390e2aa2`。对应 push 工作流 `34937634799` 和 PR 工作流 `34937637045` 均为 `success`，且 head SHA 精确匹配该提交；生成 profile/结构检查、Linux root installer lifecycle 和固定 `ShellCheck 0.11.0` 全部通过。PR 当前为 open、非 draft、`MERGEABLE`/`CLEAN`。
+- 摘要链因生成 profile 增加 ShellCheck 说明而更新：`SHA256SUMS` SHA-256 为 `33f5c6476ed87cf3a487dc36e82cdd9aa8a4cc5ca8797b077f771d5d5a9ed896`，`install.sh` SHA-256 为 `19819187b5a4dd9b936768f59661f91d5e7ae232d10d8f1f53e3c8d29bae635c`；17 个清单资产全部通过。最终本地 `tests/static-check.sh`、HTB 独立静态套件、模板生成检查和 `git diff --check` 均返回 0。
+- CodeRabbit 对实现提交形成一条 Minor 文档 finding：英文 README 把通过已安装 `current` 获取的 rc.17 HTB bundle 与 rc.18 runner 契约连续描述，可能让读者误以为该命令验证 rc.18。源码和中英文对应段核对后确认成立；两份 README 均改为明确区分“已发布 rc.17 示例”和“未发布 rc.18 完整同版本本地 bundle”，并禁止混用 wrapper、执行器和 manifest。
+
+### 未完成门禁
+
+- PR 尚未合并。CodeRabbit 已审查首个实现提交并提出的一条有效 finding 已修正；后续增量复审因其配额限制未执行，不能写成第三方已覆盖最终 HEAD，也不构成 required gate。本轮未自动执行合并。
+- 尚未创建 rc.18 tag 或 Pre-release，未上传或公开反向验证 19 个 Release 资产，也未连接真实 OCI A1 VPS。真实 `tc` apply/rollback、幂等、驱动队列变化、重启持久性和代理业务验收仍然未验证。
+- CI 的 `actions/checkout@v4` 仍有 Node.js 20 弃用告警，但本轮所有作业成功；该依赖维护不影响 mq 修复正确性，不在本次缺陷修复中顺带升级。
+
+### 延期事项变化
+
+- 无新增延期事项。OCI A1 实机验收仍是 rc.18 后续运行门禁；Ubuntu、网络安全专项、全面生产加固、持久 HTB、checkout Action 升级和新性能 campaign 继续保持既有延期或独立维护边界。
+
+### 当前成熟度判断
+
+rc.18 已从本地实现候选推进到“开放 PR、Linux root 与固定 ShellCheck CI 通过、可进入合并决策”的状态。CI 只证明仓库 fixture 和 Linux runner 生命周期，不证明真实 OCI mq 驱动行为；合并、发布和目标 VPS 验收仍是三个独立的后续授权与证据层级。

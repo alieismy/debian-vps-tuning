@@ -7,7 +7,7 @@ IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 
-SCRIPT_VERSION='0.1.0-rc.17'
+SCRIPT_VERSION='0.1.0-rc.18'
 STATE_SCHEMA_VERSION=4
 LEGACY_STATE_SCHEMA_VERSION=3
 NAMESPACE='proxy-vps'
@@ -587,6 +587,129 @@ qdisc_snapshot_for_iface() {
   tc -j qdisc show dev "$iface" | jq --arg iface "$iface" '{interface:$iface,qdiscs:.}'
 }
 
+mq_root_handle_from_snapshot() {
+  local snapshot="$1"
+  jq -er '
+    def qdiscs: if type == "array" then . else .qdiscs end;
+    [qdiscs[] | select(.root == true and .kind == "mq")] as $roots |
+    if ($roots | length) == 1 then ($roots[0].handle // "")
+    else error("expected exactly one mq root") end
+  ' <<<"$snapshot"
+}
+
+mq_root_major_from_snapshot() {
+  local snapshot="$1" handle major
+  handle="$(mq_root_handle_from_snapshot "$snapshot")" || return 1
+  case "$handle" in
+    '' | '0:') printf '0\n' ;;
+    *:)
+      major="${handle%:}"
+      [[ "$major" =~ ^[0-9A-Fa-f]+$ ]] || return 1
+      printf '%s\n' "${major,,}"
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+mq_parent_minor() {
+  local root_major="$1" parent="$2" minor
+  if [ "$root_major" = '0' ]; then
+    if [[ "$parent" =~ ^:([0-9A-Fa-f]+)$ ]] || [[ "$parent" =~ ^0:([0-9A-Fa-f]+)$ ]]; then
+      minor="${BASH_REMATCH[1]}"
+    else
+      return 1
+    fi
+  elif [[ "$parent" =~ ^${root_major}:([0-9A-Fa-f]+)$ ]]; then
+    minor="${BASH_REMATCH[1]}"
+  else
+    return 1
+  fi
+  printf '%s\n' "${minor,,}"
+}
+
+mq_leaf_rows_from_snapshot() {
+  local snapshot="$1" root_major="$2" kind parent minor
+  while IFS=$'\t' read -r kind parent; do
+    kind="${kind%$'\r'}"
+    parent="${parent%$'\r'}"
+    [ -n "$kind" ] && [ -n "$parent" ] || continue
+    if minor="$(mq_parent_minor "$root_major" "$parent")"; then
+      printf '%s\t%s\t%s\n' "$minor" "$kind" "$parent"
+    fi
+  done < <(jq -r '
+    def qdiscs: if type == "array" then . else .qdiscs end;
+    qdiscs[] | select(has("parent")) | [(.kind // ""), (.parent // "")] | @tsv
+  ' <<<"$snapshot")
+}
+
+mq_leaf_minors_from_rows() {
+  jq -Rsc '[splits("\n") | select(length > 0) | split("\t")[0]] | sort' <<<"$1"
+}
+
+mq_leaf_rows_are_supported() {
+  local rows="$1"
+  [ -n "$rows" ] || return 1
+  awk -F '\t' '
+    NF >= 3 {
+      count++
+      if (seen[$1]++) duplicate=1
+      if ($2 != "fq" && $2 != "fq_codel") unsupported=1
+    }
+    END {exit !(count > 0 && !duplicate && !unsupported)}
+  ' <<<"$rows"
+}
+
+mq_select_free_major_from_snapshot() {
+  local snapshot="$1" candidate
+  for candidate in 1 2 3 4 5 6 7 8 d18 d19 d1a d1b; do
+    if ! jq -e --arg handle "${candidate}:" '
+      def qdiscs: if type == "array" then . else .qdiscs end;
+      any(qdiscs[]; (.handle // "") == $handle)
+    ' <<<"$snapshot" >/dev/null; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+ensure_addressable_mq_root() {
+  local iface="$1" expected_minors="$2" snapshot root_major selected rows current_minors
+  snapshot="$(qdisc_snapshot_for_iface "$iface")" || return 1
+  root_major="$(mq_root_major_from_snapshot "$snapshot")" || return 1
+  if [ "$root_major" != '0' ]; then
+    printf '%s\n' "$root_major"
+    return 0
+  fi
+  selected="$(mq_select_free_major_from_snapshot "$snapshot")" || {
+    error "${iface}: 无法为 mq 选择无冲突的非零 root handle。"
+    return 1
+  }
+  # 内核自建 mq 0: 的 :N parent 可显示但不可可靠寻址；重建 root 会重建叶子，
+  # 所以调用方必须先限定可无损处理的拓扑，并在下方重新读取和核对队列集合。
+  if ! tc qdisc replace dev "$iface" root handle "${selected}:" mq; then
+    error "${iface}: 无法把内核自建 mq 0: 转换为可寻址的 mq ${selected}:。"
+    return 1
+  fi
+  snapshot="$(qdisc_snapshot_for_iface "$iface")" || return 1
+  root_major="$(mq_root_major_from_snapshot "$snapshot")" || return 1
+  [ "$root_major" = "$selected" ] || {
+    error "${iface}: mq root handle 规范化后不是预期的 ${selected}:。"
+    return 1
+  }
+  rows="$(mq_leaf_rows_from_snapshot "$snapshot" "$root_major")"
+  mq_leaf_rows_are_supported "$rows" || {
+    error "${iface}: mq root handle 规范化后叶子缺失、重复或类型不受支持。"
+    return 1
+  }
+  current_minors="$(mq_leaf_minors_from_rows "$rows")"
+  [ "$current_minors" = "$expected_minors" ] || {
+    error "${iface}: mq root handle 规范化改变了发送队列 minor 集合。"
+    return 1
+  }
+  printf '%s\n' "$root_major"
+}
+
 is_conventional_pfifo_fast_snapshot() {
   jq -e '
     (.qdiscs | length) == 1 and
@@ -602,7 +725,8 @@ is_conventional_pfifo_fast_snapshot() {
 }
 
 validate_qdisc_topology() {
-  local iface snapshot root_kind unsupported leaf_count unknown_options
+  local iface snapshot root_kind root_major rows unsupported leaf_count unknown_options
+  local fq_count fq_codel_count parent options
   mapfile -t IFACES < <(default_route_ifaces)
   [ "${#IFACES[@]}" -gt 0 ] || die "$EXIT_UNSUPPORTED" '没有发现常规 IPv4 或 IPv6 默认路由网卡。'
 
@@ -623,13 +747,41 @@ validate_qdisc_topology() {
         ;;
       noqueue) warn "${iface}: 根 qdisc 为 noqueue，将跳过即时替换。" ;;
       mq)
-        leaf_count="$(jq '[.qdiscs[] | select(has("parent"))] | length' <<<"$snapshot")"
+        root_major="$(mq_root_major_from_snapshot "$snapshot")" ||
+          die "$EXIT_UNSUPPORTED" "${iface}: mq root handle 无法解析。"
+        rows="$(mq_leaf_rows_from_snapshot "$snapshot" "$root_major")"
+        mq_leaf_rows_are_supported "$rows" ||
+          die "$EXIT_UNSUPPORTED" "${iface}: mq 叶子缺失、重复、父句柄不匹配或类型不受支持。"
+        leaf_count="$(awk -F '\t' 'NF >= 3 {count++} END {print count+0}' <<<"$rows")"
         [ "$leaf_count" -gt 0 ] || die "$EXIT_UNSUPPORTED" "${iface}: mq 没有可识别的叶子 qdisc。"
-        unsupported="$(jq -r '.qdiscs[] | select(has("parent")) | select(.kind != "fq" and .kind != "fq_codel") | .kind' <<<"$snapshot" | sort -u)"
+        unsupported="$(awk -F '\t' '$2 != "fq" && $2 != "fq_codel" {print $2}' <<<"$rows" | sort -u)"
         [ -z "$unsupported" ] || die "$EXIT_UNSUPPORTED" "${iface}: mq 包含不支持的叶子 qdisc：${unsupported}"
-        unknown_options="$(jq -r '[.qdiscs[] | select(has("parent") and .kind == "fq_codel") | .options // {} | keys[] | select(. != "limit" and . != "flows" and . != "quantum" and . != "target" and . != "interval" and . != "memory_limit" and . != "ecn" and . != "ce_threshold" and . != "drop_batch")] | unique | join(",")' <<<"$snapshot")"
+        fq_count="$(awk -F '\t' '$2 == "fq" {count++} END {print count+0}' <<<"$rows")"
+        fq_codel_count="$(awk -F '\t' '$2 == "fq_codel" {count++} END {print count+0}' <<<"$rows")"
+        if [ "$root_major" = '0' ] && [ "$fq_count" -gt 0 ] && [ "$fq_codel_count" -gt 0 ]; then
+          die "$EXIT_UNSUPPORTED" "${iface}: mq 0: 混合 fq/fq_codel；规范化 root 会重建叶子，无法证明既有 fq 参数可无损保留。"
+        fi
+        unknown_options=''
+        while IFS=$'\t' read -r _ kind parent; do
+          [ "$kind" = 'fq_codel' ] || continue
+          options="$(jq -r --arg parent "$parent" '
+            [.qdiscs[] | select(.parent == $parent and .kind == "fq_codel") |
+             (.options // {}) | keys[] |
+             select(. != "limit" and . != "flows" and . != "quantum" and
+                    . != "target" and . != "interval" and . != "memory_limit" and
+                    . != "ecn" and . != "ce_threshold" and . != "drop_batch")] |
+            unique | join(",")
+          ' <<<"$snapshot")"
+          [ -z "$options" ] || unknown_options="${unknown_options}${unknown_options:+,}${options}"
+        done <<<"$rows"
         [ -z "$unknown_options" ] || die "$EXIT_UNSUPPORTED" "${iface}: mq 叶子含有无法可靠恢复的选项：${unknown_options}"
-        info "${iface}: 将保留 mq 根，仅对叶子应用 fq。"
+        if [ "$root_major" = '0' ] && [ "$fq_codel_count" -gt 0 ]; then
+          mq_select_free_major_from_snapshot "$snapshot" >/dev/null ||
+            die "$EXIT_UNSUPPORTED" "${iface}: mq 0: 没有可用的非零 root handle。"
+          info "${iface}: apply 将先把 mq 0: 规范化为可寻址的非零 handle，再应用 fq 叶子。"
+        else
+          info "${iface}: 将保留 mq 根，仅对需要的叶子应用 fq。"
+        fi
         ;;
       '') die "$EXIT_UNSUPPORTED" "${iface}: 无法识别根 qdisc。" ;;
       *) die "$EXIT_UNSUPPORTED" "${iface}: 不支持自动修改复杂根 qdisc ${root_kind}。" ;;
@@ -963,6 +1115,166 @@ write_fq_helper() {
 # Managed by debian-vps-tuning; namespace=proxy-vps
 set -Eeuo pipefail
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+fq_error() { printf '[proxy-vps-fq] %s\n' "$*" >&2; }
+qdisc_snapshot_for_iface() {
+  local iface="$1"
+  tc -j qdisc show dev "$iface" | jq --arg iface "$iface" '{interface:$iface,qdiscs:.}'
+}
+mq_root_handle_from_snapshot() {
+  local snapshot="$1"
+  jq -er '
+    def qdiscs: if type == "array" then . else .qdiscs end;
+    [qdiscs[] | select(.root == true and .kind == "mq")] as $roots |
+    if ($roots | length) == 1 then ($roots[0].handle // "")
+    else error("expected exactly one mq root") end
+  ' <<<"$snapshot"
+}
+mq_root_major_from_snapshot() {
+  local snapshot="$1" handle major
+  handle="$(mq_root_handle_from_snapshot "$snapshot")" || return 1
+  case "$handle" in
+    '' | '0:') printf '0\n' ;;
+    *:)
+      major="${handle%:}"
+      [[ "$major" =~ ^[0-9A-Fa-f]+$ ]] || return 1
+      printf '%s\n' "${major,,}"
+      ;;
+    *) return 1 ;;
+  esac
+}
+mq_parent_minor() {
+  local root_major="$1" parent="$2" minor
+  if [ "$root_major" = '0' ]; then
+    if [[ "$parent" =~ ^:([0-9A-Fa-f]+)$ ]] || [[ "$parent" =~ ^0:([0-9A-Fa-f]+)$ ]]; then
+      minor="${BASH_REMATCH[1]}"
+    else
+      return 1
+    fi
+  elif [[ "$parent" =~ ^${root_major}:([0-9A-Fa-f]+)$ ]]; then
+    minor="${BASH_REMATCH[1]}"
+  else
+    return 1
+  fi
+  printf '%s\n' "${minor,,}"
+}
+mq_leaf_rows_from_snapshot() {
+  local snapshot="$1" root_major="$2" kind parent minor
+  while IFS=$'\t' read -r kind parent; do
+    kind="${kind%$'\r'}"
+    parent="${parent%$'\r'}"
+    [ -n "$kind" ] && [ -n "$parent" ] || continue
+    if minor="$(mq_parent_minor "$root_major" "$parent")"; then
+      printf '%s\t%s\t%s\n' "$minor" "$kind" "$parent"
+    fi
+  done < <(jq -r '
+    def qdiscs: if type == "array" then . else .qdiscs end;
+    qdiscs[] | select(has("parent")) | [(.kind // ""), (.parent // "")] | @tsv
+  ' <<<"$snapshot")
+}
+mq_leaf_minors_from_rows() {
+  jq -Rsc '[splits("\n") | select(length > 0) | split("\t")[0]] | sort' <<<"$1"
+}
+mq_leaf_rows_are_supported() {
+  local rows="$1"
+  [ -n "$rows" ] || return 1
+  awk -F '\t' '
+    NF >= 3 {
+      count++
+      if (seen[$1]++) duplicate=1
+      if ($2 != "fq" && $2 != "fq_codel") unsupported=1
+    }
+    END {exit !(count > 0 && !duplicate && !unsupported)}
+  ' <<<"$rows"
+}
+mq_select_free_major_from_snapshot() {
+  local snapshot="$1" candidate
+  for candidate in 1 2 3 4 5 6 7 8 d18 d19 d1a d1b; do
+    if ! jq -e --arg handle "${candidate}:" '
+      def qdiscs: if type == "array" then . else .qdiscs end;
+      any(qdiscs[]; (.handle // "") == $handle)
+    ' <<<"$snapshot" >/dev/null; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+ensure_addressable_mq_root() {
+  local iface="$1" expected_minors="$2" snapshot root_major selected rows current_minors
+  snapshot="$(qdisc_snapshot_for_iface "$iface")" || return 1
+  root_major="$(mq_root_major_from_snapshot "$snapshot")" || return 1
+  if [ "$root_major" != '0' ]; then
+    printf '%s\n' "$root_major"
+    return 0
+  fi
+  selected="$(mq_select_free_major_from_snapshot "$snapshot")" || {
+    fq_error "${iface}: cannot select a collision-free mq root handle"
+    return 1
+  }
+  # Kernel-created mq 0: parents are printable but not reliably addressable.
+  # Replacing the root recreates leaves, so callers constrain scope and we re-read minors below.
+  if ! tc qdisc replace dev "$iface" root handle "${selected}:" mq; then
+    fq_error "${iface}: failed to make kernel-created mq 0: addressable"
+    return 1
+  fi
+  snapshot="$(qdisc_snapshot_for_iface "$iface")" || return 1
+  root_major="$(mq_root_major_from_snapshot "$snapshot")" || return 1
+  [ "$root_major" = "$selected" ] || {
+    fq_error "${iface}: mq root handle differs after normalization"
+    return 1
+  }
+  rows="$(mq_leaf_rows_from_snapshot "$snapshot" "$root_major")"
+  mq_leaf_rows_are_supported "$rows" || {
+    fq_error "${iface}: invalid mq leaves after root normalization"
+    return 1
+  }
+  current_minors="$(mq_leaf_minors_from_rows "$rows")"
+  [ "$current_minors" = "$expected_minors" ] || {
+    fq_error "${iface}: mq queue minors changed during root normalization"
+    return 1
+  }
+  printf '%s\n' "$root_major"
+}
+apply_fq_to_mq() {
+  local iface="$1" snapshot root_major rows expected_minors fq_count fq_codel_count
+  local _ kind parent final_rows final_minors
+  snapshot="$(qdisc_snapshot_for_iface "$iface")" || return 1
+  root_major="$(mq_root_major_from_snapshot "$snapshot")" || return 1
+  rows="$(mq_leaf_rows_from_snapshot "$snapshot" "$root_major")"
+  mq_leaf_rows_are_supported "$rows" || {
+    fq_error "${iface}: mq leaves are missing, duplicated, mismatched, or unsupported"
+    return 1
+  }
+  expected_minors="$(mq_leaf_minors_from_rows "$rows")"
+  fq_count="$(awk -F '\t' '$2 == "fq" {count++} END {print count+0}' <<<"$rows")"
+  fq_codel_count="$(awk -F '\t' '$2 == "fq_codel" {count++} END {print count+0}' <<<"$rows")"
+  [ "$fq_codel_count" -gt 0 ] || return 0
+  if [ "$root_major" = '0' ]; then
+    if [ "$fq_count" -gt 0 ]; then
+      fq_error "${iface}: refusing to rebuild mixed fq/fq_codel leaves under mq 0:"
+      return 1
+    fi
+    root_major="$(ensure_addressable_mq_root "$iface" "$expected_minors")" || return 1
+    snapshot="$(qdisc_snapshot_for_iface "$iface")" || return 1
+    rows="$(mq_leaf_rows_from_snapshot "$snapshot" "$root_major")"
+  fi
+  while IFS=$'\t' read -r _ kind parent; do
+    [ "$kind" = 'fq_codel' ] || continue
+    tc qdisc replace dev "$iface" parent "$parent" fq || return 1
+  done <<<"$rows"
+  snapshot="$(qdisc_snapshot_for_iface "$iface")" || return 1
+  root_major="$(mq_root_major_from_snapshot "$snapshot")" || return 1
+  final_rows="$(mq_leaf_rows_from_snapshot "$snapshot" "$root_major")"
+  mq_leaf_rows_are_supported "$final_rows" || return 1
+  final_minors="$(mq_leaf_minors_from_rows "$final_rows")"
+  [ "$final_minors" = "$expected_minors" ] || return 1
+  if awk -F '\t' 'NF >= 3 && $2 != "fq" {exit 1}' <<<"$final_rows"; then
+    :
+  else
+    fq_error "${iface}: one or more mq leaves are not fq after apply"
+    return 1
+  fi
+}
 ifaces="$({ ip -o -4 route show default 2>/dev/null || true; ip -o -6 route show default 2>/dev/null || true; } |
   awk '{for(i=1;i<=NF;i++) if($i=="dev" && (i+1)<=NF) print $(i+1)}' | awk 'NF && !seen[$0]++')"
 [ -n "$ifaces" ] || exit 0
@@ -972,17 +1284,7 @@ while IFS= read -r iface; do
   case "$root_kind" in
     fq) ;;
     noqueue) ;;
-    mq)
-      unsupported="$(tc -j qdisc show dev "$iface" | jq -r '.[] | select(has("parent")) | select(.kind != "fq" and .kind != "fq_codel") | .kind' | sort -u)"
-      if [ -n "$unsupported" ]; then
-        printf '[proxy-vps-fq] unsupported mq leaf qdisc on %s: %s\n' "$iface" "$unsupported" >&2
-        exit 1
-      fi
-      tc -j qdisc show dev "$iface" | jq -r '.[] | select(has("parent") and .kind == "fq_codel") | .parent' |
-        while IFS= read -r parent; do
-          [ -n "$parent" ] && tc qdisc replace dev "$iface" parent "$parent" fq
-        done
-      ;;
+    mq) apply_fq_to_mq "$iface" ;;
     fq_codel | pfifo_fast) tc qdisc replace dev "$iface" root fq ;;
     *) printf '[proxy-vps-fq] unsupported qdisc on %s: %s\n' "$iface" "$root_kind" >&2; exit 1 ;;
   esac
@@ -1184,15 +1486,24 @@ managed_sysctl_value() {
 }
 
 verify_current_qdiscs() {
-  local iface root_kind bad failures=0
+  local iface snapshot root_kind root_major rows bad failures=0
   while IFS= read -r iface; do
     [ -n "$iface" ] || continue
-    root_kind="$(tc -j qdisc show dev "$iface" | jq -r '.[] | select(.root == true) | .kind' | head -n1)"
+    snapshot="$(qdisc_snapshot_for_iface "$iface")" || { error "${iface}: 无法读取 qdisc。"; failures=$((failures + 1)); continue; }
+    root_kind="$(jq -r '.qdiscs[] | select(.root == true) | .kind' <<<"$snapshot" | head -n1)"
     case "$root_kind" in
       fq) ;;
       noqueue) warn "${iface}: noqueue，未执行即时 fq 替换。" ;;
       mq)
-        bad="$(tc -j qdisc show dev "$iface" | jq -r '.[] | select(has("parent") and .kind != "fq") | .kind' | sort -u)"
+        root_major="$(mq_root_major_from_snapshot "$snapshot")" || {
+          error "${iface}: mq root handle 无法解析。"; failures=$((failures + 1)); continue; }
+        rows="$(mq_leaf_rows_from_snapshot "$snapshot" "$root_major")"
+        if ! mq_leaf_rows_are_supported "$rows"; then
+          error "${iface}: mq 叶子缺失、重复、父句柄不匹配或类型不受支持。"
+          failures=$((failures + 1))
+          continue
+        fi
+        bad="$(awk -F '\t' '$2 != "fq" && !seen[$2]++ {values=(values ? values "," : "") $2} END {print values}' <<<"$rows")"
         if [ -n "$bad" ]; then error "${iface}: mq 叶子不是 fq：${bad}"; failures=$((failures + 1)); fi
         ;;
       *) error "${iface}: 实际根 qdisc 不是 fq：${root_kind:-missing}"; failures=$((failures + 1)) ;;
@@ -1628,7 +1939,9 @@ restore_qdiscs() {
     error "qdisc 原始快照哈希不匹配：expected=${expected_hash} actual=${actual_hash}"
     return 1
   }
-  local count i iface root_json root_kind leaf_count j leaf_json parent kind
+  local count i iface root_json root_kind leaf_json parent kind
+  local saved_snapshot saved_root_major saved_rows saved_minors current_snapshot current_root_major
+  local current_rows current_minors fq_codel_count minor
   count="$(jq 'length' "$QDISC_STATE_FILE")"
   for ((i=0; i<count; i++)); do
     iface="$(jq -r ".[$i].interface" "$QDISC_STATE_FILE")"
@@ -1640,13 +1953,39 @@ restore_qdiscs() {
       pfifo_fast) tc qdisc replace dev "$iface" root pfifo_fast || return 1 ;;
       noqueue) ;;
       mq)
-        [ "$(tc -j qdisc show dev "$iface" | jq -r '.[] | select(.root == true) | .kind' | head -n1)" = 'mq' ] || return 1
-        leaf_count="$(jq ".[$i].qdiscs | map(select(has(\"parent\"))) | length" "$QDISC_STATE_FILE")"
-        for ((j=0; j<leaf_count; j++)); do
-          leaf_json="$(jq -c ".[$i].qdiscs | map(select(has(\"parent\"))) | .[$j]" "$QDISC_STATE_FILE")"
-          parent="$(jq -r '.parent' <<<"$leaf_json")"; kind="$(jq -r '.kind' <<<"$leaf_json")"
+        saved_snapshot="$(jq -c ".[$i]" "$QDISC_STATE_FILE")" || return 1
+        saved_root_major="$(mq_root_major_from_snapshot "$saved_snapshot")" || return 1
+        saved_rows="$(mq_leaf_rows_from_snapshot "$saved_snapshot" "$saved_root_major")"
+        mq_leaf_rows_are_supported "$saved_rows" || return 1
+        saved_minors="$(mq_leaf_minors_from_rows "$saved_rows")"
+        current_snapshot="$(qdisc_snapshot_for_iface "$iface")" || return 1
+        [ "$(jq -r '.qdiscs[] | select(.root == true) | .kind' <<<"$current_snapshot" | head -n1)" = 'mq' ] || return 1
+        current_root_major="$(mq_root_major_from_snapshot "$current_snapshot")" || return 1
+        if [ "$saved_root_major" != '0' ] && [ "$current_root_major" != "$saved_root_major" ]; then
+          error "${iface}: 当前 mq root handle 与原始显式 handle 不一致；拒绝恢复。"
+          return 1
+        fi
+        current_rows="$(mq_leaf_rows_from_snapshot "$current_snapshot" "$current_root_major")"
+        mq_leaf_rows_are_supported "$current_rows" || return 1
+        current_minors="$(mq_leaf_minors_from_rows "$current_rows")"
+        [ "$current_minors" = "$saved_minors" ] || {
+          error "${iface}: 当前 mq 发送队列 minor 集合与原始快照不一致；拒绝恢复。"
+          return 1
+        }
+        fq_codel_count="$(awk -F '\t' '$2 == "fq_codel" {count++} END {print count+0}' <<<"$saved_rows")"
+        if [ "$current_root_major" = '0' ] && [ "$fq_codel_count" -gt 0 ]; then
+          current_root_major="$(ensure_addressable_mq_root "$iface" "$saved_minors")" || return 1
+        fi
+        while IFS=$'\t' read -r minor kind parent; do
+          minor="${minor%$'\r'}"
+          kind="${kind%$'\r'}"
+          parent="${parent%$'\r'}"
+          leaf_json="$(jq -c --arg parent "$parent" '.qdiscs[] | select(.parent == $parent)' <<<"$saved_snapshot" | head -n1)"
+          [ -n "$minor" ] && [ -n "$kind" ] && [ -n "$leaf_json" ] || return 1
+          # 保存的 :N/0:N 只提供队列 minor；恢复命令必须使用当前可寻址的 root major。
+          parent="${current_root_major}:${minor}"
           case "$kind" in fq) : ;; fq_codel) restore_fq_codel "$iface" leaf "$parent" "$leaf_json" || return 1 ;; *) return 1 ;; esac
-        done
+        done <<<"$saved_rows"
         ;;
       *) return 1 ;;
     esac
@@ -1761,7 +2100,25 @@ qdisc_snapshot_semantically_matches_current() {
   QDISC_MATCH_REASON=''
   qdisc_snapshot_file_is_valid || { QDISC_MATCH_REASON="快照缺失、为空、所有权异常或结构无效：${QDISC_STATE_FILE}"; return 1; }
   local count i iface saved current filter
-  filter='map({base:{kind,parent:(.parent // ""),root:(.root // false),options:((.options // {}) | del(.target,.interval,.ce_threshold))},handle:(.handle // ""),times:{target:(.options.target // null),interval:(.options.interval // null),ce_threshold:(.options.ce_threshold // null)}}) | sort_by([.base.root,.base.parent,.base.kind])'
+  # jq variables must remain literal until jq evaluates this filter.
+  # shellcheck disable=SC2016
+  filter='
+    . as $qdiscs |
+    ([ $qdiscs[] | select(.root == true and .kind == "mq") ][0].handle // "") as $mq_handle |
+    ($mq_handle | rtrimstr(":") | ascii_downcase) as $mq_major |
+    map(
+      ((.parent // "") as $parent |
+       ($parent | ascii_downcase) as $parent_lower |
+       if $parent == "" or $mq_handle == "" then $parent
+       elif ($mq_major == "0" and ($parent_lower | test("^(:|0:)[0-9a-f]+$"))) then
+         "mq-queue:" + ($parent_lower | sub("^(:|0:)"; ""))
+       elif ($mq_major != "0" and ($parent_lower | startswith($mq_major + ":")) and
+             (($parent_lower | ltrimstr($mq_major + ":")) | test("^[0-9a-f]+$"))) then
+         "mq-queue:" + ($parent_lower | ltrimstr($mq_major + ":"))
+       else $parent end) as $canonical_parent |
+      {base:{kind,parent:$canonical_parent,root:(.root // false),options:((.options // {}) | del(.target,.interval,.ce_threshold))},handle:(.handle // ""),times:{target:(.options.target // null),interval:(.options.interval // null),ce_threshold:(.options.ce_threshold // null)}}
+    ) | sort_by([.base.root,.base.parent,.base.kind])
+  '
   count="$(jq 'length' "$QDISC_STATE_FILE")"
   for ((i=0; i<count; i++)); do
     iface="$(jq -r ".[$i].interface" "$QDISC_STATE_FILE")"
