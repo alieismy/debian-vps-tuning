@@ -1628,3 +1628,26 @@ rc.17 对 root fq、显式可寻址 mq，以及 `mq 0:` 下叶子已经全部为
 ### 当前成熟度判断
 
 rc.18 已达到“源码、fixture、生成资产、文档和当前环境可执行的本地门禁闭合”的未发布实现候选状态；它不是已发布版本，也没有 Linux root、CI 或真实 OCI 运行证明。进入提交/PR/CI、Pre-release 或目标 VPS 验收均需要后续明确授权，并应继续把静态实现、CI、目标机运行和业务验收作为不同证据层级报告。
+
+## 本轮记录：2026-09-15（rc.18 PR 与 Linux CI 闭环）
+
+### 已完成及证据
+
+- 从与 `origin/master` 一致的基线 `ca92aea3c10c454cd1bad8b55ce054d67d26ab91` 创建 `codex/fix-mq0-qdisc-rc18`，选择性暂存 rc.18 范围，保留工作区既有 `AGENTS.md` 通用规则修订、tcpfit 二次深读记录和 `.zcode/` 不进入提交。实现提交为 `1cba6b7876800feb60cd94ab4a34aa68e750ad7e`，已推送并创建 [PR #17](https://github.com/alieismy/debian-vps-tuning/pull/17)。
+- 首轮 push/PR 工作流 `34936990885`、`34937027702` 的生成检查和 Linux root installer lifecycle 已通过，固定 `ShellCheck 0.11.0` 因 jq/fixture 有意保留的单引号字面量、跨 fixture PATH 误报及三个 `A && B || fail` 测试表达式失败。没有绕过门禁：增加有理由的最窄 ShellCheck 指令，并把测试条件改为明确 `if`；重新生成六份 profile、更新摘要链并重跑本地完整门禁。
+- 修复提交为 `02187aa5f99638adc69d281895a963ae390e2aa2`。对应 push 工作流 `34937634799` 和 PR 工作流 `34937637045` 均为 `success`，且 head SHA 精确匹配该提交；生成 profile/结构检查、Linux root installer lifecycle 和固定 `ShellCheck 0.11.0` 全部通过。PR 当前为 open、非 draft、`MERGEABLE`/`CLEAN`。
+- 摘要链因生成 profile 增加 ShellCheck 说明而更新：`SHA256SUMS` SHA-256 为 `33f5c6476ed87cf3a487dc36e82cdd9aa8a4cc5ca8797b077f771d5d5a9ed896`，`install.sh` SHA-256 为 `19819187b5a4dd9b936768f59661f91d5e7ae232d10d8f1f53e3c8d29bae635c`；17 个清单资产全部通过。最终本地 `tests/static-check.sh`、HTB 独立静态套件、模板生成检查和 `git diff --check` 均返回 0。
+
+### 未完成门禁
+
+- PR 尚未合并，CodeRabbit 自动评论在检查时仍显示处理中且没有形成正式 review；本轮未把第三方自动摘要当作 required gate，也未自动执行合并。
+- 尚未创建 rc.18 tag 或 Pre-release，未上传或公开反向验证 19 个 Release 资产，也未连接真实 OCI A1 VPS。真实 `tc` apply/rollback、幂等、驱动队列变化、重启持久性和代理业务验收仍然未验证。
+- CI 的 `actions/checkout@v4` 仍有 Node.js 20 弃用告警，但本轮所有作业成功；该依赖维护不影响 mq 修复正确性，不在本次缺陷修复中顺带升级。
+
+### 延期事项变化
+
+- 无新增延期事项。OCI A1 实机验收仍是 rc.18 后续运行门禁；Ubuntu、网络安全专项、全面生产加固、持久 HTB、checkout Action 升级和新性能 campaign 继续保持既有延期或独立维护边界。
+
+### 当前成熟度判断
+
+rc.18 已从本地实现候选推进到“开放 PR、Linux root 与固定 ShellCheck CI 通过、可进入合并决策”的状态。CI 只证明仓库 fixture 和 Linux runner 生命周期，不证明真实 OCI mq 驱动行为；合并、发布和目标 VPS 验收仍是三个独立的后续授权与证据层级。
