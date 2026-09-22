@@ -11,9 +11,11 @@
 | swap 管道 | `tests/test_shell_adoption.py`：合法长路径列表、空列表、生产者失败 | Windows Bash 输出 fixture，不是实际 swapon 生命周期 |
 | 锁诊断 | `tests/test_shell_adoption.py`：PID/starttime、持锁时间、陈旧/无效内容、竞争者不截断；有 flock 的 Linux 另外运行真实文件锁竞争 | Windows 缺 flock 时明确 skip；Linux 结果须单独记录 |
 | 版本与派生资产 | `tools/render_profiles.py --check`、`tests/static-check.sh`、installer/迁移套件、摘要链及 pinned ShellCheck | 本地/CI/目标 VPS 分别报告；rc.18 公开资产不改写 |
-| rc.19 迁移来源边界 | `tests/rc18-check.sh`：分别执行 rc.17→rc.19、rc.18→rc.19；核对来源/state hash、prepare 不改 state、rollback 清除旧 state、两次 boot ID 不变时拒绝且保持阶段/状态、最终 COMPLETE/VERIFIED；拒绝 rc.19/rc.20 来源并检查具体版本诊断及无 checkpoint 写入 | Bash 语法与 ShellCheck 0.11.0 已通过；Linux root 动态 fixture 待执行。boot ID 为模拟值，不代表真实重启验收；既有 GitHub Actions 已调用此入口 |
+| rc.19 迁移来源边界 | `tests/rc18-check.sh`：分别执行 rc.17→rc.19、rc.18→rc.19；核对来源/state hash、prepare 不改 state、rollback 清除旧 state、两次 boot ID 不变时拒绝且保持阶段/状态、最终 COMPLETE/VERIFIED；拒绝 rc.19/rc.20 来源并检查具体版本诊断及无 checkpoint 写入 | Bash 语法、ShellCheck 0.11.0 和 Linux root 动态 fixture 已通过，见下方 CI 证据；boot ID 为模拟值，不代表真实重启验收 |
 
 新增 Python 用例已并入原静态入口；使用说明见 [实测校准第一阶段](measured-calibration.md)。本轮实际结果与未完成门禁以 [项目备忘](project-memo.md) 的最新记录为准。
+
+2026-09-22，[Linux CI 35717516096](https://github.com/alieismy/debian-vps-tuning/actions/runs/35717516096) 对提交 `53951ec48a72935cab1fec5f4d38aa174bb8a0cc` 全部通过：27 个 Python 测试无跳过（包括真实 flock 竞争）、完整静态/HTB 套件、root installer、两条迁移来源 fixture、预算/benchmark 进程 fixture 和 ShellCheck 0.11.0。该证据不证明真实 probe 输入兼容性、目标 VPS 重启/恢复或性能收益，也不构成发布批准。
 
 ## 证据分层
 

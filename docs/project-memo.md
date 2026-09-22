@@ -1,7 +1,7 @@
 # 项目阶段备忘
 
 文档性质：资料性状态与延期事项记录
-当前阶段：未发布 rc.19 实现候选，校准器修复通过本地门禁，迁移来源 fixture 已补齐；Linux 动态门禁与真实 probe 兼容性仍待完成（已发布 rc.18 及更早资产保持不可变）
+当前阶段：未发布 rc.19 实现候选，独立分支已推送且 Linux CI 通过；真实 probe 兼容性和目标机验收仍待完成（已发布 rc.18 及更早资产保持不可变）
 更新日期：2026-09-22（Asia/Singapore）
 
 本文件是 `AGENTS.md` 指定的唯一项目阶段备忘入口，用于记录每轮对话工作的闭环状态，以及当前阶段不主动展开的后续候选事项。它不构成需求批准、生产变更授权、发布授权或下一阶段启动决定；控制规则以 [项目级 AGENTS.md](../AGENTS.md) 为准，具体验证事实以 [验证矩阵](validation.md) 和对应发布说明为准。
@@ -10,7 +10,10 @@
 
 - 用户明确授权将整套 rc.19 候选（含前几轮实现）提交到新分支 `codex/rc19-calibration-validation` 并推送，触发现有 Linux CI。本轮授权覆盖该独立分支的提交、推送和范围内 CI 整改，不包含合并、tag、Release、真实 VPS 或公网测速。
 - 提交对象包括离线校准及 SC-01/SC-02 回归、receiver 背离提示、swap 管道修复、锁只读诊断、rc.19 版本/摘要链、迁移来源 fixture 和配套文档。提交前生成 profile 检查和 diff 检查通过，远端同名分支不存在；忽略目录的本地证据与演示数据不纳入 Git。
-- Linux CI 结果待本轮运行后补记。真实 probe 兼容性和目标机/业务验收仍未完成；无新增延期事项，当前仍为未发布实现候选。
+- 实现提交 `53951ec48a72935cab1fec5f4d38aa174bb8a0cc`（`feat(calibration): add rc.19 measured evidence review`）已推送到指定分支，共 32 个文件。提交前对 Git 暂存区再次核对 17 项安装资产摘要和有限敏感信息/本机路径规则，通过；工作区临时证据未提交。
+- [Linux CI run 35717516096](https://github.com/alieismy/debian-vps-tuning/actions/runs/35717516096) 绑定上述提交，2026-09-22 10:44:09 UTC 完成，结论 success。ubuntu-24.04 下 27 个 Python 测试全部通过、无 skip，包括真实 flock 竞争；完整静态/HTB 套件、root installer 生命周期、rc.17→rc.19 与 rc.18→rc.19 迁移 fixture、流量预算/benchmark 进程 fixture 和 ShellCheck 0.11.0 全部通过。迁移 boot ID 为 fixture 模拟值，不等同实际重启或目标 VPS 验收。
+- 本轮将 CI 证据同步到验证矩阵和 rc.19 发布说明草案，作为单独文档提交推送；该提交不修改实现和测试，其 push 仍由原工作流验证。最终最新提交和对应 CI 在本轮最终回复中报告，避免把实现提交的绿灯直接当作文档提交的 CI 结果。
+- 原 Linux CI、真实 flock 和迁移 fixture 待办已闭合。真实完整 probe 兼容性、目标机生命周期/重启/tc/恢复、业务验收和发布仍未完成。新增延期维护项仅现有 `actions/checkout@v4` 的 Node.js 20 弃用提示（当前 runner 强制 Node.js 24 且实际通过）；另行维护工作流，不阻断此候选。未创建 PR、合并、tag 或 Release。
 
 ## 本轮记录：2026-09-22（迁移来源回归与 Linux/probe 前置核对）
 
