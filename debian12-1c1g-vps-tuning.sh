@@ -7,7 +7,7 @@ IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 
-SCRIPT_VERSION='0.1.0-rc.18'
+SCRIPT_VERSION='0.1.0-rc.19'
 STATE_SCHEMA_VERSION=4
 LEGACY_STATE_SCHEMA_VERSION=3
 NAMESPACE='proxy-vps'
@@ -142,10 +142,41 @@ need_root() {
   [ "${EUID}" -eq 0 ] || die "$EXIT_UNSUPPORTED" '必须以 root 权限运行。'
 }
 
+lock_process_start() {
+  # comm 可包含空格和括号；移除到最后一个右括号后，starttime 是第 20 列。
+  local stat_line
+  IFS= read -r stat_line <"/proc/$1/stat" 2>/dev/null || return 1
+  printf '%s\n' "${stat_line##*) }" | awk '{print $20}'
+}
+
+lock_uptime_seconds() {
+  awk '{printf "%.0f\n", int($1)}' /proc/uptime 2>/dev/null
+}
+
+lock_conflict_details() {
+  local pid start acquired extra current now
+  IFS=' ' read -r pid start acquired extra <"$LOCK_FILE" || return 0
+  [[ "$pid" =~ ^[1-9][0-9]*$ && "$start" =~ ^[0-9]+$ && "$acquired" =~ ^[0-9]+$ ]] || return 0
+  [ -z "$extra" ] || return 0
+  current="$(lock_process_start "$pid")" || return 0
+  [ "$current" = "$start" ] || return 0
+  now="$(lock_uptime_seconds)" || return 0
+  [[ "$now" =~ ^[0-9]+$ ]] && [ "$now" -ge "$acquired" ] || return 0
+  printf ' owner_pid=%s held_seconds=%s（观测值）' "$pid" "$((now - acquired))"
+}
+
 acquire_lock() {
+  local start acquired owner_pid="$BASHPID"
   mkdir -p "$(dirname "$LOCK_FILE")"
-  exec 9>"$LOCK_FILE"
-  flock -n 9 || die "$EXIT_CONFLICT" '另一个 proxy-vps-tuning 进程正在运行。'
+  # 竞争者不能在获取锁之前截断持有者的诊断信息；flock 仍是唯一仲裁依据。
+  exec 9>>"$LOCK_FILE"
+  flock -n 9 || die "$EXIT_CONFLICT" "另一个 proxy-vps-tuning 进程正在运行。$(lock_conflict_details)"
+  : >"$LOCK_FILE"
+  start="$(lock_process_start "$owner_pid")" || start=''
+  acquired="$(lock_uptime_seconds)" || acquired=''
+  if [[ "$start" =~ ^[0-9]+$ && "$acquired" =~ ^[0-9]+$ ]]; then
+    printf '%s %s %s\n' "$owner_pid" "$start" "$acquired" >"$LOCK_FILE"
+  fi
 }
 
 is_bool() { [ "$1" = '0' ] || [ "$1" = '1' ]; }
@@ -791,7 +822,8 @@ validate_qdisc_topology() {
 
 check_swap_preconditions() {
   [ "$ENABLE_SWAP" = '1' ] || return 0
-  if swapon --show=NAME --noheadings 2>/dev/null | grep -q '[^[:space:]]'; then
+  # 消费完整列表，避免合法的长路径列表在 pipefail 下触发上游 SIGPIPE。
+  if swapon --show=NAME --noheadings 2>/dev/null | grep '[^[:space:]]' >/dev/null; then
     info '系统已有活动 swap，不会创建新的 swap。'
     return 0
   fi
@@ -1357,7 +1389,7 @@ create_swap_if_needed() {
     info "跳过自动创建 swap：${SWAP_SKIP_REASON:-根文件系统不在支持范围内}。"
     return 0
   fi
-  if swapon --show=NAME --noheadings 2>/dev/null | grep -q '[^[:space:]]'; then return 0; fi
+  if swapon --show=NAME --noheadings 2>/dev/null | grep '[^[:space:]]' >/dev/null; then return 0; fi
   [ ! -e "$SWAP_FILE" ] || die "$EXIT_CONFLICT" "${SWAP_FILE} 已存在，拒绝覆盖。"
   info "创建 ${SWAP_MB} MiB 应急 swap：${SWAP_FILE}"
   if command -v fallocate >/dev/null 2>&1 && fallocate -l "${SWAP_MB}M" "$SWAP_FILE"; then :; else
@@ -1572,7 +1604,7 @@ verify_settings_common() {
   if state_get '.swap.created_by_script' | grep -qx true; then
     [ "$(stat -c '%d' "$SWAP_FILE" 2>/dev/null || true)" = "$(state_get '.swap.device')" ] || { error 'swap 设备号与所有权状态不匹配。'; failures=$((failures + 1)); }
     [ "$(stat -c '%i' "$SWAP_FILE" 2>/dev/null || true)" = "$(state_get '.swap.inode')" ] || { error 'swap inode 与所有权状态不匹配。'; failures=$((failures + 1)); }
-    swapon --show=NAME --noheadings | awk '{$1=$1;print}' | grep -Fxq "$SWAP_FILE" || { error '脚本创建的 swap 未激活。'; failures=$((failures + 1)); }
+    swapon --show=NAME --noheadings | awk '{$1=$1;print}' | grep -Fx -- "$SWAP_FILE" >/dev/null || { error '脚本创建的 swap 未激活。'; failures=$((failures + 1)); }
     grep -Fqx "${SWAP_FILE} none swap sw 0 0" /etc/fstab || { error 'swap 的 fstab 行缺失。'; failures=$((failures + 1)); }
   fi
   verify_proxy_services || failures=$((failures + 1))
@@ -2030,7 +2062,7 @@ purge_owned_swap() {
   [ -f "$SWAP_FILE" ] && [ ! -L "$SWAP_FILE" ] || return 1
   [ "$(stat -c '%d' "$SWAP_FILE")" = "$(state_get '.swap.device')" ] || return 1
   [ "$(stat -c '%i' "$SWAP_FILE")" = "$(state_get '.swap.inode')" ] || return 1
-  if swapon --show=NAME --noheadings | awk '{$1=$1;print}' | grep -Fxq "$SWAP_FILE"; then
+  if swapon --show=NAME --noheadings | awk '{$1=$1;print}' | grep -Fx -- "$SWAP_FILE" >/dev/null; then
     swapoff "$SWAP_FILE" || return 1
   fi
   remove_fstab_swap_line || return 1

@@ -1,6 +1,23 @@
 # Changelog
 
-## [0.1.0-rc.18] - Unreleased
+## [0.1.0-rc.19] - Unreleased
+
+### Added
+
+- 增加仓库内离线工具 `tools/calibrate_probe.py`，验证现有 probe 的双层摘要与完成标记，按路径/方向生成负载 RTT 画像和受资源约束的 buffer 实验候选；不增加主动流量，不自动应用或推断服务商限速器。
+- HTB 分析器增加 sender 改善而 receiver 退化的 median/MAD 描述性复核提示，不改变原有 shortlist、暴露和恢复门禁。
+- profile 锁冲突显示经进程身份核对的 PID 与持锁秒数；信息不完整时保留通用冲突提示，不接管或终止其他进程。
+
+### Fixed
+
+- 定向修复四处 swap 列表的提前退出管道，避免合法长路径列表在 `pipefail` 下出现 SIGPIPE 假阴性；保留生产者失败状态。
+
+### Boundaries
+
+- 本轮只实现实测校准第一阶段；默认 BBR + fq、17 项 sysctl、BDP 档位、非持久 HTB 和 schema 边界不变。
+- rc.18 已于 2026-09-15 发布且保持不可变；rc.19 是新的未发布实现候选。迁移器允许 rc.1–rc.18 来源进入 rc.19，既有 checkpoint/重启门禁不变。
+
+## [0.1.0-rc.18] - 2026-09-15
 
 ### Fixed
 
