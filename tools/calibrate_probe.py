@@ -78,10 +78,11 @@ def manifest_entries(data):
 
 
 class ProbeEvidence:
-    """仅消费一次读取并已验摘要的字节，避免解析时重新打开输入文件。"""
+    """测量内容解析顶层已验字节；子控制文件通过已验 result 绑定。"""
 
     def __init__(self, root):
         self.root = Path(root).resolve()
+        self.bytes_read = 0
         require(self.root.is_dir(), "probe 证据目录不存在")
         require(not (self.root / "INCOMPLETE").exists(), "probe 仍有 INCOMPLETE")
         manifest = self.read("SHA256SUMS")
@@ -89,11 +90,8 @@ class ProbeEvidence:
         require(completed.get("evidence_manifest_sha256") == digest(manifest), "probe 清单摘要不符")
         entries = manifest_entries(manifest)
         self.files = {}
-        total = 0
         for name, sha in entries.items():
             data = self.read(name)
-            total += len(data)
-            require(total <= 256 * 1024 * 1024, "证据超过离线工具的 256 MiB 输入上限")
             require(digest(data) == sha, "probe 文件摘要不符")
             self.files[name] = data
         require(completed.get("result_sha256") == digest(self.get("probe-result.json")),
@@ -108,7 +106,10 @@ class ProbeEvidence:
         require(path.resolve().is_relative_to(self.root), "证据路径越界")
         require(path.is_file() and path.stat().st_size <= 32 * 1024 * 1024,
                 "证据文件缺失或超过 32 MiB")
-        return path.read_bytes()
+        data = path.read_bytes()
+        self.bytes_read += len(data)
+        require(self.bytes_read <= 256 * 1024 * 1024, "证据超过离线工具的 256 MiB 输入上限")
+        return data
 
     def get(self, name):
         require(name in self.files, "必要输入没有纳入 probe 摘要清单")
@@ -119,8 +120,9 @@ class ProbeEvidence:
 
     def benchmark(self, prefix):
         require(not (self.root / prefix / "INCOMPLETE").exists(), "子样本仍有 INCOMPLETE")
-        completed = marker(self.get(prefix + "/COMPLETED"))
-        manifest = self.get(prefix + "/SHA256SUMS")
+        # probe 顶层清单排除各层控制文件；子清单通过顶层已验的 result 反向绑定。
+        completed = marker(self.read(prefix + "/COMPLETED"))
+        manifest = self.read(prefix + "/SHA256SUMS")
         sha = digest(manifest)
         require(completed.get("evidence_manifest_sha256") == sha, "子样本清单摘要不符")
         entries = manifest_entries(manifest)

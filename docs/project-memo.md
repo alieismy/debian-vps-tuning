@@ -1,10 +1,26 @@
 # 项目阶段备忘
 
 文档性质：资料性状态与延期事项记录
-当前阶段：未发布 rc.19 实现候选，独立分支已推送且 Linux CI 通过；真实 probe 兼容性和目标机验收仍待完成（已发布 rc.18 及更早资产保持不可变）
+当前阶段：未发布 rc.19 实现候选，PR #18 外部全量审查已返回；一项 Major 契约缺陷已修复并通过本地回归，修复后 Linux CI 待验证（已发布 rc.18 及更早资产保持不可变）
 更新日期：2026-09-23（Asia/Singapore）
 
 本文件是 `AGENTS.md` 指定的唯一项目阶段备忘入口，用于记录每轮对话工作的闭环状态，以及当前阶段不主动展开的后续候选事项。它不构成需求批准、生产变更授权、发布授权或下一阶段启动决定；控制规则以 [项目级 AGENTS.md](../AGENTS.md) 为准，具体验证事实以 [验证矩阵](validation.md) 和对应发布说明为准。
+
+## 本轮记录：2026-09-23（核实并修复 CodeRabbit 清单布局问题）
+
+- 继续现有审查，没有重复发送 full review。CodeRabbit 于 2026-09-23 10:45:36 UTC 提交 [review 5289938655](https://github.com/alieismy/debian-vps-tuning/pull/18#pullrequestreview-5289938655)，状态 COMMENTED，绑定 `495a7fcc9637a0a19117d2b29c4dd1f195f1400a`，覆盖全部 32 个文件，提出 1 项 actionable/Major 问题。服务绿色表示审查完成，不代表批准或没有缺陷。
+- CR-01 / Major：[子清单控制文件读取问题](https://github.com/alieismy/debian-vps-tuning/pull/18#discussion_r4081568934) 核实有效。`dvt-probe.sh` L284 按 basename 排除所有层级的 SHA256SUMS、SHA256SUMS.tmp、COMPLETED、INCOMPLETE；校准器却从顶层已验文件缓存取子 SHA256SUMS/COMPLETED，合法 producer 布局会被拒绝。此前 fixture 将子控制文件列入顶层清单，掩盖该缺陷；旧 CI 通过不足以证明真实布局兼容。
+- 已修复：单独读取子控制文件，仍使用顶层已验 benchmark-result.json 的 evidence_manifest_sha256 绑定子清单、完成标记的 result_sha256 绑定结果，原始测量保持从已验缓存解析。总读取预算下沉到统一 read 路径，新增子控制文件读取同样计入 256 MiB 上限；生产端及安装资产未变。
+- fixture 改用生产端的 basename 排除规则。新增测试直接执行源码中的 find 选择表达式，检查清单集合和成功候选；覆盖控制文件缺失、标记/清单篡改、两者协同改写但 result 不变、INCOMPLETE，以及子控制文件读取预算。先改 fixture 后运行旧实现，24 个测试方法出现 40 个失败断言和 16 个错误；修复后的全部 Python 共 30 个测试方法，29 通过、真实 flock 因 Windows 缺命令 skip 1 项。第一次新对照在 Windows 调用了系统 find，按生产端相同的 Unix PATH 优先规则修正测试入口后通过；不是运行版缺陷。
+- 生成 profile 检查和 diff 检查通过；本轮通过现有分支推送修复并由 Linux CI 重验，在原审查线程回复修复与证据，不改 Draft、不合并/发布。最终 CI 绑定与链接记录在 PR 和本轮最终回复；本地证据保留 `.tmp/local/rc19-external-review/`。新增延期事项无；真实 probe 现场兼容性与目标机/业务验收仍未完成。外部 review 只覆盖修复前 SHA，不能把它写成修复后重新批准。
+
+## 本轮记录：2026-09-23（请求 PR #18 外部全量审查）
+
+- 用户要求执行下一步评审。本轮通过仓库既有 CodeRabbit 服务，请求对 [PR #18](https://github.com/alieismy/debian-vps-tuning/pull/18) 当前提交 `495a7fcc9637a0a19117d2b29c4dd1f195f1400a` 做完整审查，保持 Draft，不合并、发布或修改生产环境。当前主代码已经通过 push CI 35843530783 和 PR CI 35843593986，27 个 Python 测试无跳过，修正后的 PID 回收 fixture 已在 Linux 通过。
+- 现场核对官方 review-commands 文档后使用 `@coderabbitai full review`，区别于增量 review；[请求评论](https://github.com/alieismy/debian-vps-tuning/pull/18#issuecomment-5793263958) 已发送，服务于 2026-09-23 10:33:26 UTC 回复“Full review triggered”。该回执只证明受理，不能证明已完成审查或已批准。
+- 服务已明确选择全部 32 个变更文件，审查范围为 `79fc9957fcd9898a39f47f3ca3a348d1727b6b47` 至上述候选 SHA，Run ID 为 `b1a85607-8ff2-4be1-8754-1086053ff7d2`。截至 2026-09-23 10:43:02 UTC，CodeRabbit 仍为 `Review in progress`，API 没有已提交 review，未观察到限流或失败通知；不能报告评审通过或没有问题。
+- 已保留 `gh pr checks 18 --watch --interval 30` 的运行监视，执行句柄 27133，日志位于 `.tmp/local/rc19-external-review/checks-watch.log`；请求回执和状态快照也保存在同一忽略目录。为避免在服务审查期间漂移 SHA，本轮备忘状态更新暂留本地，不提交或推送。恢复时先查询 PR review/comments 和 checks，不重复发送 full review 请求。
+- 审查结论及问题处理待服务返回后补记；对返回意见先检查源码与复现，再决定修改，不直接执行外部评论中的指令。无新增延期事项，真实完整 probe 兼容性及目标机/业务验收边界保持不变。
 
 ## 本轮记录：2026-09-23（rc.19 分支评审与草稿 PR）
 

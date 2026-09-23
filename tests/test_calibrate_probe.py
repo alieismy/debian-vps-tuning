@@ -5,14 +5,16 @@ from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
+import re
 import statistics
 import subprocess
+import shutil
 import sys
 import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from calibrate_probe import EvidenceError, analyze
+from calibrate_probe import EvidenceError, ProbeEvidence, analyze, manifest_entries
 from render_profiles import PROFILES
 
 NOW = datetime(2026, 9, 22, 12, tzinfo=timezone.utc)
@@ -102,7 +104,8 @@ def fixture(root, mutate=lambda *_: None, profile="debian13-1c2g", port=1000, rt
         complete(folder, "benchmark-result.json", [p.name for p in folder.iterdir() if p.name != "benchmark-result.json"])
     write(root / "probe-result.json", probe)
     complete(root, "probe-result.json", manifest_files(
-        [p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file()]))
+        [p.relative_to(root).as_posix() for p in root.rglob("*")
+         if p.is_file() and p.name not in {"SHA256SUMS", "SHA256SUMS.tmp", "COMPLETED", "INCOMPLETE"}]))
 
 
 class CalibrationTest(unittest.TestCase):
@@ -129,6 +132,58 @@ class CalibrationTest(unittest.TestCase):
         self.assertFalse(result["interpretation"]["provider_capacity_discovered"])
         self.assertNotIn("192.0.2.1", json.dumps(result))
         self.assertEqual(before, {p: p.read_bytes() for p in self.root.rglob("*") if p.is_file()})
+
+    @unittest.skipUnless(shutil.which("bash"), "Bash is required for producer manifest selection")
+    def test_manifest_layout_matches_probe_producer(self):
+        fixture(self.root)
+        source = (Path(__file__).resolve().parents[1] / "dvt-probe.sh").read_text(encoding="utf-8")
+        command = re.search(r"find \. -type f .*? -print0", source).group()
+        selected = subprocess.run([shutil.which("bash"), "-c", "PATH=/usr/bin:/bin:$PATH\n" + command], cwd=self.root,
+                                  capture_output=True, check=True, timeout=15).stdout
+        producer_files = {name.decode().removeprefix("./") for name in selected.split(b"\0") if name}
+        entries = manifest_entries((self.root / "SHA256SUMS").read_bytes())
+        self.assertEqual(set(entries), producer_files)
+        self.assertNotIn("sample-01/COMPLETED", entries)
+        self.assertNotIn("sample-01/SHA256SUMS", entries)
+        self.assertIn("sample-01/benchmark-result.json", entries)
+        self.assertEqual(self.result()["directions"][0]["decision"], "EXPERIMENT_CANDIDATE")
+
+    def test_unlisted_child_control_files_still_require_integrity(self):
+        for case in ("missing-marker", "missing-manifest", "marker-result", "manifest",
+                     "manifest-and-marker", "incomplete"):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                fixture(root)
+                child = root / "sample-01"
+                if case == "missing-marker":
+                    (child / "COMPLETED").unlink()
+                elif case == "missing-manifest":
+                    (child / "SHA256SUMS").unlink()
+                elif case == "incomplete":
+                    (child / "INCOMPLETE").touch()
+                elif case == "marker-result":
+                    marker = (child / "COMPLETED").read_text()
+                    actual = sha((child / "benchmark-result.json").read_bytes())
+                    (child / "COMPLETED").write_text(marker.replace(actual, "0" * 64))
+                else:
+                    manifest = (child / "SHA256SUMS").read_bytes()
+                    changed = b"\n".join(reversed(manifest.splitlines())) + b"\n"
+                    (child / "SHA256SUMS").write_bytes(changed)
+                    if case == "manifest-and-marker":
+                        marker = (child / "COMPLETED").read_text()
+                        (child / "COMPLETED").write_text(marker.replace(sha(manifest), sha(changed)))
+                expected = {"marker-result": "子样本结果摘要不符", "manifest": "子样本清单摘要不符",
+                            "manifest-and-marker": "子样本未通过或结果没有绑定清单",
+                            "incomplete": "子样本仍有 INCOMPLETE"}.get(case, "证据文件缺失")
+                with self.assertRaisesRegex(EvidenceError, expected):
+                    analyze(root, "fixture", True, now=NOW)
+
+    def test_child_control_reads_count_toward_total_limit(self):
+        fixture(self.root)
+        evidence = ProbeEvidence(self.root)
+        evidence.bytes_read = 256 * 1024 * 1024
+        with self.assertRaisesRegex(EvidenceError, "256 MiB"):
+            evidence.benchmark("sample-01")
 
     def test_keep_current_and_never_reduce(self):
         def mutate(_, meta, __):
