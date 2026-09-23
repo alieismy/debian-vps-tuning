@@ -15,7 +15,7 @@
 
 新增 Python 用例已并入原静态入口；使用说明见 [实测校准第一阶段](measured-calibration.md)。本轮实际结果与未完成门禁以 [项目备忘](project-memo.md) 的最新记录为准。
 
-2026-09-23 外部审查发现并修复顶层 manifest 与子控制文件布局不匹配的问题；回归直接执行 `dvt-probe.sh` 的文件筛选表达式，并覆盖子控制文件缺失、篡改、清单与标记协同篡改、INCOMPLETE 和总读取上限。修复后的 CI 以 PR #18 的最新提交检查为准，旧 27 项测试通过记录不能替代此次 producer/consumer 契约验证。
+2026-09-23 外部审查发现并修复顶层 manifest 与子控制文件布局不匹配的问题；回归直接执行 `dvt-probe.sh` 的文件筛选表达式，并覆盖子控制文件缺失、篡改、清单与标记协同篡改、INCOMPLETE 和总读取上限。修复提交 `36390d2d9e65dcc67322d189c9347c0bbfca49aa` 的 [PR CI 35851155712](https://github.com/alieismy/debian-vps-tuning/actions/runs/35851155712) 全部通过，Python 30 项无跳过；旧 27 项测试通过记录不能替代此次 producer/consumer 契约验证。
 
 2026-09-22，[Linux CI 35717516096](https://github.com/alieismy/debian-vps-tuning/actions/runs/35717516096) 对提交 `53951ec48a72935cab1fec5f4d38aa174bb8a0cc` 全部通过：27 个 Python 测试无跳过（包括真实 flock 竞争）、完整静态/HTB 套件、root installer、两条迁移来源 fixture、预算/benchmark 进程 fixture 和 ShellCheck 0.11.0。该证据不证明真实 probe 输入兼容性、目标 VPS 重启/恢复或性能收益，也不构成发布批准。
 
