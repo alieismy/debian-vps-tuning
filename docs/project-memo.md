@@ -1,7 +1,7 @@
 # 项目阶段备忘
 
 文档性质：资料性状态与延期事项记录
-当前阶段：未发布 rc.19 实现候选，PR #18 外部全量审查提出的一项 Major 已修复并通过 Linux CI；修复后独立复审和目标机验收仍待完成（已发布 rc.18 及更早资产保持不可变）
+当前阶段：未发布 rc.19 实现候选，PR #18 外部全量审查的唯一 Major 已修复、通过 Linux CI 并获针对性复核关闭；人工合并决定和目标机验收仍待完成（已发布 rc.18 及更早资产保持不可变）
 更新日期：2026-09-23（Asia/Singapore）
 
 本文件是 `AGENTS.md` 指定的唯一项目阶段备忘入口，用于记录每轮对话工作的闭环状态，以及当前阶段不主动展开的后续候选事项。它不构成需求批准、生产变更授权、发布授权或下一阶段启动决定；控制规则以 [项目级 AGENTS.md](../AGENTS.md) 为准，具体验证事实以 [验证矩阵](validation.md) 和对应发布说明为准。
@@ -14,6 +14,7 @@
 - fixture 改用生产端的 basename 排除规则。新增测试直接执行源码中的 find 选择表达式，检查清单集合和成功候选；覆盖控制文件缺失、标记/清单篡改、两者协同改写但 result 不变、INCOMPLETE，以及子控制文件读取预算。先改 fixture 后运行旧实现，24 个测试方法出现 40 个失败断言和 16 个错误；修复后的全部 Python 共 30 个测试方法，29 通过、真实 flock 因 Windows 缺命令 skip 1 项。第一次新对照在 Windows 调用了系统 find，按生产端相同的 Unix PATH 优先规则修正测试入口后通过；不是运行版缺陷。
 - 生成 profile 检查和 diff 检查通过；本轮通过现有分支推送修复并由 Linux CI 重验，在原审查线程回复修复与证据，不改 Draft、不合并/发布。最终 CI 绑定与链接记录在 PR 和本轮最终回复；本地证据保留 `.tmp/local/rc19-external-review/`。新增延期事项无；真实 probe 现场兼容性与目标机/业务验收仍未完成。外部 review 只覆盖修复前 SHA，不能把它写成修复后重新批准。
 - 修复提交 `36390d2d9e65dcc67322d189c9347c0bbfca49aa` 的 [push CI 35851149127](https://github.com/alieismy/debian-vps-tuning/actions/runs/35851149127) 和 [PR CI 35851155712](https://github.com/alieismy/debian-vps-tuning/actions/runs/35851155712) 均 success；30 个 Python 测试无 skip、完整静态/HTB、root installer、两条迁移来源、进程回收和 ShellCheck 0.11.0 均通过。已在[原线程回复](https://github.com/alieismy/debian-vps-tuning/pull/18#discussion_r4081625308)修复与证据。新提交的 CodeRabbit 自动检查仍因 Draft 跳过，不视为修复后独立复审；没有重复发起 full review。此次文档结果回填不改变实现，最终提交 CI 在 PR checks 和最终回复核对。
+- 随后 CodeRabbit 在[针对性复核回复](https://github.com/alieismy/debian-vps-tuning/pull/18#discussion_r4081628551)中实际检查 `36390d2` 的实现和回归代码，明确确认“The original finding is addressed”，并关闭审查线程；它明确没有运行测试。此证据可关闭 CR-01 的外部源码复核，不等同新一轮全量审查、APPROVED 状态或人类批准。文档提交 `b7eddf6` 的 push/PR CI 35851370541、35851376047 也均通过；最终结果回填仍不改实现。
 
 ## 本轮记录：2026-09-23（请求 PR #18 外部全量审查）
 
