@@ -163,7 +163,13 @@ case "$process_rc" in
   *) printf 'benchmark timeout fixture returned rc=%s\n' "$process_rc" >&2; exit 1 ;;
 esac
 [ -s "${test_root}/iperf-pids" ] || { printf 'benchmark timeout fixture did not record child processes\n' >&2; exit 1; }
-read -r iperf_pid sleep_pid <"${test_root}/iperf-pids"
+# PID 记录以空格分隔，不能沿用全局仅包含换行/制表符的 IFS。
+IFS=' ' read -r iperf_pid sleep_pid extra_pid <"${test_root}/iperf-pids"
+if ! [[ "$iperf_pid" =~ ^[1-9][0-9]*$ && "$sleep_pid" =~ ^[1-9][0-9]*$ ]] ||
+  [ "$iperf_pid" = "$sleep_pid" ] || [ -n "$extra_pid" ]; then
+  printf 'benchmark timeout fixture recorded invalid process IDs\n' >&2
+  exit 1
+fi
 for _ in 1 2 3 4 5; do
   if ! kill -0 "$iperf_pid" 2>/dev/null && ! kill -0 "$sleep_pid" 2>/dev/null; then break; fi
   sleep 1
