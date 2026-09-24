@@ -8,9 +8,11 @@ The script uses BBR + fq, controlled TCP buffering, standard queue parameters, e
 
 > **System Selection Summary (as of 2026-08-04):** Newly created 1C1G, 1C2G, and 2C2G VPS instances are recommended to use Debian 13 minimal by default. Debian 13 is the current stable release; Debian 12 has transitioned to LTS and is better suited for retaining existing stable nodes or meeting explicit compatibility constraints. The OS version alone does not guarantee BBR availability, higher performance, or lower idle memory usage; virtualization type, running kernel, and target machine resources must still be verified.
 
-> The current published release candidate is `v0.1.0-rc.17`; the online commands below remain pinned to that immutable Release. The working tree is forming an unpublished `v0.1.0-rc.18` implementation candidate, whose installer, manifest, and profiles are not online installation assets. The official `v0.1.0` still requires [Target VPS Runtime Acceptance](docs/validation.md); do not treat either candidate as target-host, full-bandwidth, or performance acceptance.
+> The current published release candidate is `v0.1.0-rc.18`; the existing online examples below remain pinned to the immutable rc.17 Release. The working tree is forming an unpublished `v0.1.0-rc.19` implementation candidate, whose installer, manifest, and profiles are not online installation assets. The official `v0.1.0` still requires [Target VPS Runtime Acceptance](docs/validation.md); do not treat either candidate as target-host, full-bandwidth, or performance acceptance.
 
-> This English document was originally translated from the rc.11 documentation. Release-critical URLs and the current development contracts are synchronized here. The Chinese [README](README.md) and the [rc.18 draft release notes](docs/releases/v0.1.0-rc.18.md) remain authoritative for the complete traffic-budget ledger, checkpoint/resume migration, installer, TcpQuality evidence, advisory probe, non-persistent HTB, and `mq 0:` handling details.
+> This English document was originally translated from the rc.11 documentation. Release-critical URLs and the current development contracts are synchronized here. The Chinese [README](README.md) and the [rc.19 draft release notes](docs/releases/v0.1.0-rc.19.md) remain authoritative for the complete traffic-budget ledger, checkpoint/resume migration, installer, TcpQuality evidence, advisory probe, non-persistent HTB, and `mq 0:` handling details.
+
+The rc.19 candidate adds repository-only offline calibration of existing probe evidence. See [usage and evidence boundaries](docs/measured-calibration.md). It generates no traffic and applies no settings.
 
 ## Online Installation and Verification
 

@@ -1,10 +1,266 @@
 # 项目阶段备忘
 
 文档性质：资料性状态与延期事项记录
-当前阶段：未发布 rc.18 `mq 0:` 句柄完整性实现候选（rc.17 Pre-release 保持不可变）
-更新日期：2026-09-15（Asia/Singapore）
+当前阶段：未发布 rc.19 实现候选，PR #18 已转 Ready，按下方“合并授权来源与增量审查闭合”中的对话原文执行最终门禁与合并流程；实际合并状态和提交 CI 以 PR/Actions 记录为准，目标机验收仍待完成（已发布 rc.18 及更早资产保持不可变）
+更新日期：2026-09-24（Asia/Singapore）
 
 本文件是 `AGENTS.md` 指定的唯一项目阶段备忘入口，用于记录每轮对话工作的闭环状态，以及当前阶段不主动展开的后续候选事项。它不构成需求批准、生产变更授权、发布授权或下一阶段启动决定；控制规则以 [项目级 AGENTS.md](../AGENTS.md) 为准，具体验证事实以 [验证矩阵](validation.md) 和对应发布说明为准。
+
+## 本轮记录：2026-09-24（合并授权来源与增量审查闭合）
+
+- 授权来源为本项目当前 Codex 对话，不是全量审查请求、CodeRabbit 检查结果或本备忘自行授予权限。上一轮最终回复明确给出下一步：“读取增量审查结果，核实并处理可能出现的问题；门禁闭合后，按已授权范围使用 merge commit 合入，再核验合并提交的 Linux CI，无需重新确认同一合并授权。”用户随后原文回复：“请按你的方案执行下一步”。本轮依据这组方案与紧随其后的用户指令执行 PR #18 合并；这里只摘录必要原文，不宣称存在公开对话链接或 GitHub APPROVED review。授权范围限于本 PR 的意见整改、分支提交/推送、合并与 CI 核验，不包含 tag、Release 或真实 VPS 操作。
+- CodeRabbit 于 2026-09-24 03:55:14 UTC 对 `3d90d47` 提交 [增量 review 5299571656](https://github.com/alieismy/debian-vps-tuning/pull/18#pullrequestreview-5299571656)，状态 COMMENTED；选中 5 个文件，跳过与先前变更相似的 validation.md。新增 1 项 Minor：[CR-02 授权记录可追溯性](https://github.com/alieismy/debian-vps-tuning/pull/18#discussion_r4089730536)。它指出原备忘没有可核对的授权链接或原文，此文档缺口成立；本轮以上述原文和上下文补齐，不将普通审查请求解释为合并许可。未新增代码问题，原 CR-01 线程保持 resolved。
+- 本轮只修改备忘，保留上轮两条本地检查点，一并提交到现有候选分支；diff 检查后推送并核对新 HEAD 的 CI，在原审查线程说明整改。满足门禁后绑定最终 HEAD 使用 merge commit 合并，并核验合并提交 CI；实际结果由 PR/Actions 和本轮最终回复记录，不提前声明成功。
+- 无新增延期事项。真实完整 probe、目标机生命周期/重启/tc/恢复和业务验收仍未完成；成熟度保持为实现和 Linux fixture 验证闭合的未发布候选，合并不代表生产或性能验收。
+
+## 本轮记录：2026-09-24（PR #18 合并执行）
+
+- 上轮根据用户“请按你的推荐方案执行”推进 [PR #18](https://github.com/alieismy/debian-vps-tuning/pull/18) 转 Ready 和最终门禁；可直接核对的合并方案及后续用户执行指令见上方“合并授权来源与增量审查闭合”。范围仅限本 PR，不创建 tag/Release，不连接 VPS 或运行公网测速；不修改已发布资产。
+- 合并前现场核对：工作树干净，候选为 `38f876da2902943b5f96f384c1a29f1707562096`，base/master 为 `79fc9957fcd9898a39f47f3ca3a348d1727b6b47`；PR 为 OPEN/Draft、MERGEABLE/CLEAN，唯一审查线程已 resolved。当前候选的 [push CI 35851571827](https://github.com/alieismy/debian-vps-tuning/actions/runs/35851571827) 和 [PR CI 35851576772](https://github.com/alieismy/debian-vps-tuning/actions/runs/35851576772) 均 success。没有正式 APPROVED review；Draft 阶段 CodeRabbit 绿色跳过不算审查批准。
+- 本轮只补记此备忘，再通过原候选分支提交/推送；不改源码、测试、生成 profile 或安装资产。合并方式采用 merge commit 保留实现、修复和验证历史，绑定最终候选 HEAD；不使用 admin 绕过、不改写历史或删除分支。转 Ready 后重新核对 checks 和新增审查意见，满足门禁才合并；本文记录执行决定与条件，不预先声明合并或新 CI 成功。
+- 合并结果、merge SHA 及其 Actions 结论由 PR/Actions 保存，并在本轮最终回复绑定报告；本次文档提交后的 CI 不能沿用前一提交结果。已有 Linux 证据涵盖 30 个 Python 测试无 skip、完整静态/HTB、root installer、两条迁移来源、进程回收和 ShellCheck；真实完整 probe、目标 VPS 生命周期、真实重启/tc/恢复和业务验收仍未完成。
+- 无新增延期事项。成熟度为实现与 Linux fixture 验证闭合、外部已知问题修复并获针对性复核的未发布候选；合入默认分支不等于发布或生产验收。后续优先取得有可信来源的完整 probe 目录完成离线兼容性核验，既有合成演示目录不能替代该证据。
+- 执行检查点：备忘提交 `3d90d475d4c7fadbbb311de6a0dfbab193a5ed8a` 已推送，PR 已转 Ready；该 SHA 的 [push CI 35952950105](https://github.com/alieismy/debian-vps-tuning/actions/runs/35952950105) 与 [PR CI 35952954011](https://github.com/alieismy/debian-vps-tuning/actions/runs/35952954011) 均 success。已读取新 push 日志，30 个 Python 测试无 skip、静态/HTB、安装器、两条迁移和进程回收均通过，完整日志保留 `.tmp/local/rc19-external-review/ready-ci.log`。
+- 转 Ready 触发 CodeRabbit 增量审查（Run ID `ffc2b913-76c0-4ce8-92fc-bad1654dfc62`），覆盖 `495a7fc` 至 `3d90d47` 的 5 个变更文件。截至本轮检查点仍为 pending，尚无新的正式 review；PR 未合并。保留 `gh pr checks 18 --watch --interval 20` 监视句柄 `11050`，不重复请求审查、不取消后台监视。这两条检查点补记暂留本地，避免审查中的 HEAD 再次漂移；恢复时先核对实际 review、threads 和 checks，再完成合并。
+
+## 本轮记录：2026-09-23（核实并修复 CodeRabbit 清单布局问题）
+
+- 继续现有审查，没有重复发送 full review。CodeRabbit 于 2026-09-23 10:45:36 UTC 提交 [review 5289938655](https://github.com/alieismy/debian-vps-tuning/pull/18#pullrequestreview-5289938655)，状态 COMMENTED，绑定 `495a7fcc9637a0a19117d2b29c4dd1f195f1400a`，覆盖全部 32 个文件，提出 1 项 actionable/Major 问题。服务绿色表示审查完成，不代表批准或没有缺陷。
+- CR-01 / Major：[子清单控制文件读取问题](https://github.com/alieismy/debian-vps-tuning/pull/18#discussion_r4081568934) 核实有效。`dvt-probe.sh` L284 按 basename 排除所有层级的 SHA256SUMS、SHA256SUMS.tmp、COMPLETED、INCOMPLETE；校准器却从顶层已验文件缓存取子 SHA256SUMS/COMPLETED，合法 producer 布局会被拒绝。此前 fixture 将子控制文件列入顶层清单，掩盖该缺陷；旧 CI 通过不足以证明真实布局兼容。
+- 已修复：单独读取子控制文件，仍使用顶层已验 benchmark-result.json 的 evidence_manifest_sha256 绑定子清单、完成标记的 result_sha256 绑定结果，原始测量保持从已验缓存解析。总读取预算下沉到统一 read 路径，新增子控制文件读取同样计入 256 MiB 上限；生产端及安装资产未变。
+- fixture 改用生产端的 basename 排除规则。新增测试直接执行源码中的 find 选择表达式，检查清单集合和成功候选；覆盖控制文件缺失、标记/清单篡改、两者协同改写但 result 不变、INCOMPLETE，以及子控制文件读取预算。先改 fixture 后运行旧实现，24 个测试方法出现 40 个失败断言和 16 个错误；修复后的全部 Python 共 30 个测试方法，29 通过、真实 flock 因 Windows 缺命令 skip 1 项。第一次新对照在 Windows 调用了系统 find，按生产端相同的 Unix PATH 优先规则修正测试入口后通过；不是运行版缺陷。
+- 生成 profile 检查和 diff 检查通过；本轮通过现有分支推送修复并由 Linux CI 重验，在原审查线程回复修复与证据，不改 Draft、不合并/发布。最终 CI 绑定与链接记录在 PR 和本轮最终回复；本地证据保留 `.tmp/local/rc19-external-review/`。新增延期事项无；真实 probe 现场兼容性与目标机/业务验收仍未完成。外部 review 只覆盖修复前 SHA，不能把它写成修复后重新批准。
+- 修复提交 `36390d2d9e65dcc67322d189c9347c0bbfca49aa` 的 [push CI 35851149127](https://github.com/alieismy/debian-vps-tuning/actions/runs/35851149127) 和 [PR CI 35851155712](https://github.com/alieismy/debian-vps-tuning/actions/runs/35851155712) 均 success；30 个 Python 测试无 skip、完整静态/HTB、root installer、两条迁移来源、进程回收和 ShellCheck 0.11.0 均通过。已在[原线程回复](https://github.com/alieismy/debian-vps-tuning/pull/18#discussion_r4081625308)修复与证据。新提交的 CodeRabbit 自动检查仍因 Draft 跳过，不视为修复后独立复审；没有重复发起 full review。此次文档结果回填不改变实现，最终提交 CI 在 PR checks 和最终回复核对。
+- 随后 CodeRabbit 在[针对性复核回复](https://github.com/alieismy/debian-vps-tuning/pull/18#discussion_r4081628551)中实际检查 `36390d2` 的实现和回归代码，明确确认“The original finding is addressed”，并关闭审查线程；它明确没有运行测试。此证据可关闭 CR-01 的外部源码复核，不等同新一轮全量审查、APPROVED 状态或人类批准。文档提交 `b7eddf6` 的 push/PR CI 35851370541、35851376047 也均通过；最终结果回填仍不改实现。
+
+## 本轮记录：2026-09-23（请求 PR #18 外部全量审查）
+
+- 用户要求执行下一步评审。本轮通过仓库既有 CodeRabbit 服务，请求对 [PR #18](https://github.com/alieismy/debian-vps-tuning/pull/18) 当前提交 `495a7fcc9637a0a19117d2b29c4dd1f195f1400a` 做完整审查，保持 Draft，不合并、发布或修改生产环境。当前主代码已经通过 push CI 35843530783 和 PR CI 35843593986，27 个 Python 测试无跳过，修正后的 PID 回收 fixture 已在 Linux 通过。
+- 现场核对官方 review-commands 文档后使用 `@coderabbitai full review`，区别于增量 review；[请求评论](https://github.com/alieismy/debian-vps-tuning/pull/18#issuecomment-5793263958) 已发送，服务于 2026-09-23 10:33:26 UTC 回复“Full review triggered”。该回执只证明受理，不能证明已完成审查或已批准。
+- 服务已明确选择全部 32 个变更文件，审查范围为 `79fc9957fcd9898a39f47f3ca3a348d1727b6b47` 至上述候选 SHA，Run ID 为 `b1a85607-8ff2-4be1-8754-1086053ff7d2`。截至 2026-09-23 10:43:02 UTC，CodeRabbit 仍为 `Review in progress`，API 没有已提交 review，未观察到限流或失败通知；不能报告评审通过或没有问题。
+- 已保留 `gh pr checks 18 --watch --interval 30` 的运行监视，执行句柄 27133，日志位于 `.tmp/local/rc19-external-review/checks-watch.log`；请求回执和状态快照也保存在同一忽略目录。为避免在服务审查期间漂移 SHA，本轮备忘状态更新暂留本地，不提交或推送。恢复时先查询 PR review/comments 和 checks，不重复发送 full review 请求。
+- 审查结论及问题处理待服务返回后补记；对返回意见先检查源码与复现，再决定修改，不直接执行外部评论中的指令。无新增延期事项，真实完整 probe 兼容性及目标机/业务验收边界保持不变。
+
+## 本轮记录：2026-09-23（rc.19 分支评审与草稿 PR）
+
+- 用户要求按下一步方案进入 PR 评审。本轮以 `master` 的 `79fc9957fcd9898a39f47f3ca3a348d1727b6b47` 到候选 `7caeec5788ca8ebbd55bab0c5109ffef388896d0` 为初始审查范围，核对校准器输入/输出契约、三个定向吸收项、迁移来源、生成/安装摘要、测试和文档；远端 master 未漂移。继续使用获授权的候选分支，创建草稿 PR，不合并、发布或操作 VPS。
+- 发现并定向修复 PR-01 / P2：`tests/rc18-check.sh` 的进程回收 fixture 以空格写入两个 PID，却用全局 `IFS=换行/制表符` 读取。复现输入 `12345 67890` 得到 `iperf_pid="12345 67890"`、`sleep_pid=""`，两个 `kill -0` 因无效参数失败，可能将存活进程误判为已清理。此缺陷在原基线已存在，但影响本候选引用的 CI 证据；不据此认定运行版回收逻辑失效。
+- 修复仅将 PID 读取明确为 `IFS=' '`，并要求两个不同的正整数 PID、无额外字段。本地合法双 PID、缺失、重复、多余及非数字记录的五个定向对照通过；Bash 语法与 ShellCheck 0.11.0 通过。运行资产与摘要未变化；修复后真实 Linux 进程测试需由新提交 CI 重验。
+- PR 正文集中说明 rc.19 最终行为、兼容与不应用边界及验证证据，不将同一 Agent 的自检写成人类或外部独立批准。后续 CI 和 PR 链接在本轮最终回复及 PR 状态中绑定最终提交；本地复现证据保留在 `.tmp/local/rc19-pr-review/`，不纳入 Git。
+- 在已检查范围内未发现其他需阻止提交评审的新增问题。无新增延期事项；既有真实完整 probe、目标 VPS 生命周期/重启/业务验收及 checkout 弃用维护仍待后续处理。当前保持未发布候选，修复和草稿 PR 不构成合并或发布批准。
+
+## 本轮记录：2026-09-22（授权推送 rc.19 候选并执行 Linux CI）
+
+- 用户明确授权将整套 rc.19 候选（含前几轮实现）提交到新分支 `codex/rc19-calibration-validation` 并推送，触发现有 Linux CI。本轮授权覆盖该独立分支的提交、推送和范围内 CI 整改，不包含合并、tag、Release、真实 VPS 或公网测速。
+- 提交对象包括离线校准及 SC-01/SC-02 回归、receiver 背离提示、swap 管道修复、锁只读诊断、rc.19 版本/摘要链、迁移来源 fixture 和配套文档。提交前生成 profile 检查和 diff 检查通过，远端同名分支不存在；忽略目录的本地证据与演示数据不纳入 Git。
+- 实现提交 `53951ec48a72935cab1fec5f4d38aa174bb8a0cc`（`feat(calibration): add rc.19 measured evidence review`）已推送到指定分支，共 32 个文件。提交前对 Git 暂存区再次核对 17 项安装资产摘要和有限敏感信息/本机路径规则，通过；工作区临时证据未提交。
+- [Linux CI run 35717516096](https://github.com/alieismy/debian-vps-tuning/actions/runs/35717516096) 绑定上述提交，2026-09-22 10:44:09 UTC 完成，结论 success。ubuntu-24.04 下 27 个 Python 测试全部通过、无 skip，包括真实 flock 竞争；完整静态/HTB 套件、root installer 生命周期、rc.17→rc.19 与 rc.18→rc.19 迁移 fixture、流量预算/benchmark 进程 fixture 和 ShellCheck 0.11.0 全部通过。迁移 boot ID 为 fixture 模拟值，不等同实际重启或目标 VPS 验收。
+- 本轮将 CI 证据同步到验证矩阵和 rc.19 发布说明草案，作为单独文档提交推送；该提交不修改实现和测试，其 push 仍由原工作流验证。最终最新提交和对应 CI 在本轮最终回复中报告，避免把实现提交的绿灯直接当作文档提交的 CI 结果。
+- 原 Linux CI、真实 flock 和迁移 fixture 待办已闭合。真实完整 probe 兼容性、目标机生命周期/重启/tc/恢复、业务验收和发布仍未完成。新增延期维护项仅现有 `actions/checkout@v4` 的 Node.js 20 弃用提示（当前 runner 强制 Node.js 24 且实际通过）；另行维护工作流，不阻断此候选。未创建 PR、合并、tag 或 Release。
+
+## 本轮记录：2026-09-22（迁移来源回归与 Linux/probe 前置核对）
+
+### 完成内容与范围
+
+- 按用户“按方案执行下一步”，在 `tests/rc18-check.sh` 保留 rc.17→rc.19，并加入独立 rc.18→rc.19 生命周期 fixture。两条路径使用各自目录、来源 profile/state、checkpoint 和 boot ID；明确核对 prepare 来源/hash 且 state 不变、rollback 后 state 消失、两次 boot ID 不变时拒绝且阶段/状态不推进，以及最终 COMPLETE/VERIFIED。
+- 负向来源扩为 rc.19、rc.20，要求命中迁移版本边界诊断，并验证拒绝后没有新 checkpoint、旧 state 摘要不变，避免把权限/文件错误误判成版本拒绝。运行版迁移器及安装资产未修改。只同步本备忘和验证矩阵；保留此前工作树改动，未提交、推送、发布或操作真实 VPS。
+- 本地预检：`wsl --status` 返回 50，明确报告 WSL 未安装；未发现 Docker/Podman 命令。既有 `.github/workflows/shellcheck.yml` 使用 ubuntu-24.04，已调用完整静态/HTB 套件、`sudo bash tests/installer-check.sh`、`sudo bash tests/rc18-check.sh` 及 pinned ShellCheck；无需新增工作流。工作流仅由 push/pull_request 触发，当前工作树尚未推送，不能将历史 CI 状态用于此次字节。
+
+### 用户提供目录的只读结果
+
+- 用户指定 `.tmp/local/rc19-calibration-demo`。前轮记录明确该目录是合成 CLI 演示，并非目标机真实 probe。核对发现 6 条方向行，顶层与第一轮子样本摘要链通过，但没有 aggregates、metadata omit_seconds 和 raw duration/omit；它使用修复前的简化 fixture，不能满足当前输入契约。
+- 当前校准器处理该目录退出 2，stdout 为空，诊断为“子样本测量上下文与 probe 不一致”；所有输入文件哈希保持不变。没有补写元数据、重建摘要或将合成数据记为真实兼容性通过。脱敏结果保存在 `.tmp/local/rc19-migration/provided-demo-check.json`。
+
+### 验证、剩余门禁与成熟度
+
+- 修改后的迁移测试通过 Bash 语法检查和 ShellCheck 0.11.0；Linux root 动态生命周期尚未执行，不能称为迁移测试通过。上轮完整静态门禁/Python 结果保留历史效力，本轮不重复宣称重新执行。修复前脚本和差异证据保留在忽略目录 `.tmp/local/rc19-migration/`。
+- 既有迁移来源待办已推进到“fixture 完成、Linux 执行待验”。需要在获授权的 Linux 环境运行当前字节；若使用现有 GitHub Actions，需要提交并推送当前候选到独立分支，项目规则仍要求该远程动作取得明确授权。真实 probe 验收需要有可信采集来源的完整目录；当前用户提供的演示目录不能满足这一门禁。
+- 无新增延期事项。当前成熟度为 rc.19 本地候选，校准器修复已验证，迁移增量完成静态检查；Linux 门禁、真实 probe、发布及目标机验收仍未闭合。
+
+## 本轮记录：2026-09-22（执行校准器 SC-01/SC-02 修复与回归）
+
+### 范围与实现
+
+- 按用户“请执行下一步”落实上一轮六步清单，修改仅限 `tools/calibrate_probe.py`、`tests/test_calibrate_probe.py`、实测校准说明、验证矩阵及本备忘。保留此前所有未提交工作；未提交、推送、发布、连接 VPS 或测速，未改变 Shell 模板、生成 profile、版本及安装摘要。
+- SC-01：在读取被引用子样本前核对清单样本集合与引用集合；随后核对方向完整性、aggregate 样本数/有效窗口数及未测方向 null。有效窗口计数以 producer 的声明标记为准，且 row/summary 标记必须一致；重新计算的实际窗口有效性继续单独决定是否暂停建议。
+- SC-02：绑定 raw duration/omit 与 metadata seconds/omit_seconds，验证类型、范围及重复轮次的请求时长、预热、协议族和方向。契约要求这些字段存在；缺失时退出 2，不推测值。范围依据当前 benchmark producer（5–120 秒、0–10 秒）与仓库 iperf3 fixture；真实历史 iperf3 输出兼容性仍未验收。原实际窗口容差及 RTT 缺失等证据不足行为保留。
+- fixture 补齐 raw/meta 参数、双向 aggregates，并支持单方向、逐样本元数据与顶层清单变体。新增回归包含末轮 600ms 异常被漏引（包括同步篡改计数）、清单额外/缺失样本、计数/方向/标记矛盾、参数缺失/类型/范围/不一致、跨轮变化、零预热、实际窗口容差和 CLI 输出/退出状态；反例保留自洽摘要，避免因摘要损坏提前失败。
+
+### 验证证据
+
+- 先补回归、后改实现：旧实现运行当时的 21 个测试方法，出现 34 个失败断言；修复后同组全部通过。再补实际窗口容差用例后，全部 Python 共 27 个测试方法，26 通过、1 个真实 flock 竞争因 Windows 缺命令 skip；校准器 22 个方法无跳过。合法完整异常轮次返回证据不足，漏引或参数矛盾返回错误；CLI 矛盾退出 2、stdout 为空，合法但证据不足退出 0、候选为 null。
+- `python tools/render_profiles.py --check`、17 项资产原始字节摘要核对、`git diff --check` 均通过；执行前 75 个仓库文件与 LF 验证镜像规范化字节一致（本备忘随后仅补记结果）。完整 `tests/static-check.sh` 退出 0，末行 `static checks passed for 6 scripts`；其中 eBPF 无效元数据的预期失败 fixture 不代表套件失败。该入口明确将 pinned ShellCheck 留给专用 CI 步骤，本轮没有重新执行独立 ShellCheck/HTB 套件，相关 Shell 实现未改。
+- 修复后校准器 SHA-256：`2d2aa6d038daadaa2f0c4264567e30e507b8755b78a02e70fce6b978069ea477`；测试 SHA-256：`6ec5bf6d313bdae6cdf7e1ef63af6ea2dd785588f3a003e30c06ba2d78e5fef0`。修复前副本、red/green/all-python 日志与本轮 LF 镜像保留在忽略目录 `.tmp/local/rc19-consistency/`，用于复核，不进入发布资产。旧 `.tmp/local/rc19-selfcheck/reproduce.py` 仍是旧缺陷取证脚本，其断言不能作为修复后应通过的回归；正式替代用例已进入测试文件。
+
+### 剩余门禁与延期
+
+- SC-01/SC-02 的源码、回归、说明与本地适用门禁已闭合。真实完整 probe 的离线兼容性、Linux flock/root 生命周期、CI、目标 VPS 与业务验收仍未完成；不把合成 fixture 通过写成运行或性能验收。
+- 无新增延期事项。rc.18→rc.19 迁移来源边界直接用例仍是既有独立待办，本轮未扩入；第二/第三阶段及生产操作边界保持不变。
+
+## 本轮记录：2026-09-22（校准器 SC-01/SC-02 修复步骤澄清）
+
+本轮响应用户对“具体步骤及文档位置”的询问。已核对校准器、测试、probe 生产端、benchmark 元数据生成逻辑和验证入口；此前只有下方自检问题及整改方向，没有逐步实施清单。以下清单补齐执行顺序，状态为**待执行**，不是修复完成记录。本轮仅更新本备忘，没有修改源码、测试或生成资产，也没有重跑运行测试。
+
+### 修复实施清单（待执行）
+
+1. **固定输入契约。** 对照 `dvt-probe.sh` 的 rows/aggregates 生成逻辑与 `tools/profile-template.sh.in` 的 benchmark 参数及元数据生成逻辑，列明三组对应关系：顶层清单内 `sample-NN` 集合与 `probe-result.json.samples` 引用集合；各方向引用行数/有效窗口数与 `aggregates.<direction>.samples/valid_windows`；raw `start.test_start.duration/omit` 与 metadata `benchmark.seconds/omit_seconds`。未采集方向的 aggregate 按生产端为 null。区分请求测量时长与原始 end 实际窗口时长，保留后者既有容差。字段必填性依据受支持生产端/iperf3 输出确定；版本相关字段缺失政策须有依据，不能补造默认测量值。
+2. **补齐 fixture，先固化失败回归。** 修改 `tests/test_calibrate_probe.py`，补入真实结构中的 duration、omit、omit_seconds 和完整 aggregates，并支持逐样本修改 metadata。构造摘要全部自洽的语义反例，避免测试仅因 hash 错误而提前拒绝。SC-01 覆盖：保留第三轮异常 RTT 证据但删除其全部引用、清单与引用集合不等、方向缺失、samples/valid_windows 计数不符。SC-02 覆盖：duration 与 omit 分别不符、字段缺失/类型无效、每轮 raw/meta 自洽但跨轮采样参数变化。保留完整三轮异常 RTT 应返回证据不足的对照，以及完整合法双向/单方向样本。先运行新用例确认旧实现暴露目标缺陷。
+3. **修复 SC-01。** 在 `tools/calibrate_probe.py` 的 `analyze()` 中，候选计算前完成清单样本集合、引用集合、样本编号、方向集合与 aggregate 计数对照；有效窗口数按生产端定义从已核对的 row/summary 重算。遗漏、额外引用或计数矛盾抛出 `EvidenceError`，不静默丢弃异常轮次或补齐输入。保留合法无效窗口进入“证据不足”的行为，不能将所有无效窗口都当作格式错误。
+4. **修复 SC-02。** 在 metadata 校验及 `sample_metrics()` 中绑定请求时长与预热参数，核对 raw/meta 的数值、类型和范围，并比较重复采样的时长、预热及已有相关上下文。参数矛盾抛出 `EvidenceError`；字段缺失按步骤 1 明确的契约处理。保留 RTT 缺失、时效及路径漂移等既有证据不足语义，不把它们混为摘要或格式错误。
+5. **验证修复及接口行为。** 先执行 `python -m unittest discover -s tests -p 'test_calibrate_probe.py' -v`，再执行 `python -m unittest discover -s tests -p 'test_*.py'` 和适用的既有 `tests/static-check.sh`。补 CLI 断言：内部证据矛盾退出 2，且 stdout 不含候选报告；合法但证据不足退出 0、相应方向候选为 null。确认四类既有结果仍按契约产生，输入文件字节不变，不连接网络、不写系统配置。执行 `git diff --check`，逐项记录通过、失败与平台 skip，不能将 skip 计为通过。
+6. **同步文档并关闭问题。** 按最终实现更新 `docs/measured-calibration.md` 的输入契约、`docs/validation.md` 的覆盖项，并在本备忘记录 SC-01/SC-02 的整改位置、命令、结果和未验证项。只有新反例被拒绝且合法对照通过，才标记这两项修复完成。若变更限于离线 Python 工具、测试及说明，无需修改 Shell 模板、六份 profile、版本或安装摘要。保留未发布 rc.19 状态。
+
+### 完成判据与范围
+
+- 两个已复现反例必须被一致性校验拒绝，不能再输出 64 MiB 候选；回归测试应直接证明拒绝原因属于目标语义校验。
+- 三个定向吸收项与默认调优策略保持原有范围。rc.18→rc.19 迁移来源用例是另一项既有待办，不算本次两处校准器修复的步骤。
+- 本轮验证仅为源码/文档对应关系核对及文档差异检查；真实 probe 兼容性、Linux 运行、CI、发布及 VPS 验收仍未完成。无新增延期事项；成熟度仍为“未发布 rc.19，SC-01/SC-02 待整改”。
+
+## 本轮记录：2026-09-22（rc.19 方案实现自检与下一步判断）
+
+### 对象、范围与结论
+
+- 按用户“先自检实现，再说明下一步”的要求，对当前未提交 rc.19 实现进行范围对齐、源码检查和反例验证；没有修改实现、生成资产、版本、测试或发布状态。以当前工作树为对象，不把上轮测试通过直接当作本轮无缺陷证明。
+- 结论：路线及三个定向吸收项在已检查范围内符合既有边界；离线校准发现两项 Major/P2 证据一致性缺陷，应先整改并复审，再推进发布准备或新实验。上轮本地门禁通过的事实仍成立，但“第一阶段已闭合”的成熟度判断需收紧为“实现已形成、证据校验待修正”。不是生产事故或实机性能结论。
+- 复现对象 `tools/calibrate_probe.py` SHA-256：`428e542708cedf8a73b5442a2dc8515bd61fd6331adf155c38d9bb51a39301a5`。证据脚本与输出保留在忽略目录 `.tmp/local/rc19-selfcheck/reproduce.py`、`results.json`；全部为合成离线 fixture，不含目标主机数据，不产生网络流量。
+
+### 自检问题（2026-09-22，当前实现责任：Codex；整改未执行）
+
+| 编号 / 严重度 | 位置及评审轴 | 证据、影响与整改 |
+|---|---|---|
+| SC-01 / Major / P2 | [校准器](../tools/calibrate_probe.py) L222–245、L266–274；证据完整性、输入契约 | 分析器只遍历 `probe-result.json.samples`，没有与清单里的全部 `sample-NN` 及 aggregates 样本数对齐。合成目录仍含三轮完整数据，第三轮 min RTT 为 600ms；保留三轮引用时返回 `INSUFFICIENT_EVIDENCE/RTT_OUTSIDE_SUPPORTED_RANGE`。只从 samples 删除第三轮引用、保留目录和 aggregates=3，并形成自洽摘要后，工具只分析前两轮，返回 `EXPERIMENT_CANDIDATE`、64 MiB、issues=[]。这是内部语义不一致未被拒绝，不是摘要密码学失效，也不证明真实 probe 已发生丢样。整改：核对被引用样本集合、清单样本集合、方向与汇总计数，拒绝遗漏/额外/不一致样本，并加入最后一轮异常被漏引的回归用例。 |
+| SC-02 / Major / P2 | 校准器 L165–168、L233–242；测量上下文绑定 | 原始 `start.test_start` 只核对 protocol、num_streams 和 reverse；未核对 duration/omit。合成 raw 声明 duration=120、omit=10，metadata 为 seconds=10、omit_seconds=2，end/summary 仍报 10 秒且摘要全部自洽时，工具继续返回 64 MiB 候选、issues=[]。这种自相矛盾的采样记录不能作为正常校准输入。整改：按真实 producer 字段核对 raw 与 metadata 的时长、预热及相关采样上下文；跨重复样本也要求可比较。已存在字段不一致应拒绝，版本相关可选字段缺失需明确策略，不能补造或无依据强制。 |
+
+### 支持性观察与验证
+
+- 复跑新增 unittest：17 个测试方法，16 通过、1 个真实 flock 用例因 Windows 缺少命令跳过。原 fixture 的 `start.test_start` 没有 duration/omit，且没有完整 aggregates，因此未覆盖上述反例；下一轮应增加由真实采集结构派生的脱敏 fixture 或 producer/consumer 契约用例。
+- 当前 Shell、Python 工具与测试字节和上一轮通过完整静态/HTB 套件、ShellCheck 的镜像一致；本轮核对了此一致性，没有把历史套件结果描述成再次完整执行。重新执行模板检查、17 项资产/installer/文档摘要链检查与 `git diff --check` 均通过。
+- 在当前差异与测试覆盖内，没有发现 receiver 提示改变 shortlist、swap 修复吞掉生产者状态、锁诊断接管其他进程、默认 BBR/fq/sysctl/缓冲策略被改变的新增缺陷。这不替代 Linux 真实锁与系统操作门禁。
+- 迁移器源码已允许 rc.18→rc.19，但现有 `tests/rc18-check.sh` 的正向生命周期仍用 rc.17→rc.19 fixture；新增来源边界尚缺直接用例。Linux root installer/迁移、真实 flock、GitHub CI、目标 VPS、真实 probe 兼容性和业务验收仍未完成。
+
+### 下一步及延期变化
+
+- 最近一步：定向修复 SC-01/SC-02，补齐 producer/consumer 结构与反例回归，同时补 rc.18→rc.19 来源边界用例；不增加新调优功能。
+- 然后在获授权的 Linux CI 或隔离测试环境补真实 flock、installer、迁移与恢复门禁，再用实际采集且已脱敏的完整 probe 做离线试用。既有证据可先做兼容性核对，不自动发起新测速；旧证据不得冒充当前网络建议。
+- 上述闭合后再制定第二阶段的有限 buffer 对照实验；真实执行需要明确目标、端点、预算和回退条件，仍不直接进入持久 HTB 或生产自动应用。
+- 新增延期/整改记录仅 SC-01、SC-02 及直接相关的契约/来源边界覆盖；原第二/第三阶段、PPP、低速控制点和生产运行边界不变。当前成熟度回调为“未发布 rc.19，本地实现有待整改事项”，不建议直接发布或扩展主动实验。
+
+## 本轮记录：2026-09-22（执行合并建议：三个定向吸收项与离线实测校准）
+
+### 授权、基线与范围
+
+- 用户明确要求结合前两轮推荐方案一起执行。本轮实施三个定向吸收项及推荐首个工作包“路径画像与 buffer 建议”，保持默认策略；通用候选实验和配置应用事务按原分阶段方案后续推进，不以本轮实现暗示已经完成整个自适应调优闭环。
+- 开始时仅本备忘含前两轮未提交修改，全部保留。初始 HEAD 为 `79fc9957fcd9898a39f47f3ca3a348d1727b6b47`。重新核验远端发现：`v0.1.0-rc.18` tag 对象 `12608197ec57ea0d24ac60270767de3730f7d3a6` 指向该 HEAD；GitHub Release API 为 `draft=false`、`prerelease=true`、`published_at=2026-09-15T07:04:54Z`。此前本地“rc.18 未发布”的阶段描述已过时，前两轮未做发布核验而沿用该描述，现予纠正。
+- 为避免用已发布版本号标记修改，新增 rc.19 工作树候选，同步运行资产与相关 fixture 的版本及摘要。项目 `AGENTS.md` 未修改；其中旧阶段事实不作为覆盖当前用户实现授权或改写公开 rc.18 资产的依据。本轮没有提交、推送、tag、Release、VPS、公网测速或配置部署操作。
+
+### 已实现内容
+
+- [离线校准工具](../tools/calibrate_probe.py)：校验完整 probe 与子样本摘要链、完成标记、raw/summary/row 对照、版本/profile/网络上下文、重复方向与实际协议族；读取现有 iperf3 sender RTT，形成负载 RTT 画像。基于声明套餐上限与实测 RTT 推导受原资源倍率/档位限制的实验候选，不把受限吞吐写回套餐带宽，不全局缩小 buffer，不补造缺失 RTT。四种方向结果为保留上限、实验候选、资源限制和证据不足。匿名标签、时效/离散度政策、输入上限、退出状态与证据限制见 [使用说明](measured-calibration.md)。工具从完整源码仓库离线运行，不增加 VPS Python 依赖或现有安装资产。
+- [HTB 分析器](../experiments/htb-aggregate/rate-sweep-analyze.sh)：新增 receiver 背离的描述性 median/MAD 复核字段。所有既有门禁通过且 reference 可比较时，才比较 sender 改善与 receiver 退化；不改变原有 shortlist 或生产授权。离线分析接受 rc.18/rc.19 的相同严格绑定；实时 runner 仍要求当前 rc.19。
+- [profile 模板](../tools/profile-template.sh.in)：四处 swap 管道改为完整消费输出。用 29 项合法长度的路径列表分段输出复现原两类管道 rc=141，修改后 rc=0；无 swap 和生产者失败分别保留非匹配/失败状态。该证据是受控输出 fixture，不是真实 swapon 操作。
+- profile 锁诊断以 flock 为唯一仲裁，成功后写 PID/starttime/uptime；竞争者不截断记录，仅当进程身份匹配时显示 PID 和持锁秒数，缺失/陈旧时回退通用冲突。无接管、杀进程或命令行披露。模板与六份生成 profile 同步。
+- 版本、固定清单、安装器内置摘要、两份 README、CHANGELOG、rc.19 发布说明及验证矩阵按本轮字节同步。迁移来源上界扩到 rc.18、目标为 rc.19，原 checkpoint/两次重启/恢复与旧 ledger 拒绝边界不放宽；目标机迁移尚未执行。
+
+### 验证与当前状态
+
+- 新增两组 Python unittest 并接入既有静态入口；覆盖校准的候选/保留/资源限制/缺失/漂移/篡改/时效、完整性错误、receiver 背离与不改变 shortlist、swap 输出及生产者错误、锁陈旧身份及竞争者不截断。真实文件锁竞争用例已加入，当前 Windows 无 flock 时明确 skip，不能算作运行通过。
+- 最终本地验证：`python -m unittest discover -s tests -p 'test_*.py'` 运行 17 个测试方法，16 通过、真实 flock 竞争 1 项因宿主缺命令 skip；`python tools/render_profiles.py --check`、`tests/static-check.sh`、`experiments/htb-aggregate/tests/static-check.sh`、ShellCheck 0.11.0（所有受管/测试 Shell 与六份内嵌 fq helper）、17 项安装资产与 installer/文档摘要链、链接检查、`git diff --check` 均通过。Bash 完整门禁使用工作区忽略目录的 LF 镜像，保留完整日志。HTB 第一次失败定位为 SOP 固定摘要未同步，定向更新执行器摘要并注明 rc.19 未发布后重跑通过，未改写历史基线摘要。日志中的期望失败 fixture 不代表最终套件失败。
+- 真实 CLI 入口另用合成双向证据执行，输出两个 `EXPERIMENT_CANDIDATE` 和 64 MiB 候选；仅验证接口与推导链。示例报告保留在 `.tmp/local/rc19-calibration-fixture-report.json`，不是目标 VPS 测速结果。
+- 最终 `SHA256SUMS` SHA-256 为 `68d0dea6df1f0e1f157d407e948792a7fcc2a19acbd530bef26fdf2ddfc49ca9`，`install.sh` SHA-256 为 `3bef587d479f5771da9af8d193baa63b7a7f8480016adf5514dfc944429a8ed3`。真实 Linux root installer/迁移/tc/信号/重启、GitHub CI 与业务验收没有在本轮执行。
+- `.tmp/local/rc19-validation/`、`rc19-final-validation/`、`rc19-lint/`、合成 CLI 证据与对应日志保留用于核对；ShellCheck 0.11.0 Windows 归档来自官方固定 Release，下载 SHA-256 `8a4e35ab0b331c85d73567b12f2a444df187f483e5079ceffa6bda1faa2e740e` 与 GitHub asset digest 一致。前两轮 tcpfit 源码与复现证据也继续保留，不进入发布资产。
+
+### 延期变化与成熟度
+
+- 三个小候选已进入实现，实测校准候选推进到第一阶段离线工具。无新增独立延期事项；通用速率/缓冲候选实验、RTT/buffer 应用事务、持久 HTB、PPP 重拨、低速控制点和真实性能 campaign 继续保持后续阶段状态。
+- 本轮上述范围的实现、文档与本地适用门禁已闭合，成熟度为 rc.19 本地实现候选；不等同新版本发布、目标主机部署或性能收益验收。尚不能宣称已实现自动寻找真实 policer、全局最优 TCP 参数或测量到生产应用的完整闭环。
+
+## 本轮记录：2026-09-22（在现有实现上扩展实测推导调优的可行性）
+
+### 已完成及证据
+
+- 本轮控制性交付物为可行性判断，回应“按机器实测 BDP 与限速器拐点”及“在本项目基础上扩展”的两条路线。沿用下条研究已冻结的 tcpfit `76331588af487a973d3445a1bf8bba7037d566ca` 和本项目 `79fc9957fcd9898a39f47f3ca3a348d1727b6b47`，实际核对当前实现；本轮不构成实现、测速或下一阶段启动授权。
+- [profile 模板](../tools/profile-template.sh.in) `validate_inputs` 已根据端口带宽、目标 RTT、资源档位倍率计算 BDP，并选择 16/32/64 MiB 缓冲上限及按内存档封顶；[生成器](../tools/render_profiles.py) 定义资源档位。当前输入是声明值/默认值，不是测量结果自动回填；这些上限也不等于每连接预分配的内存。tcpfit 当前仍有固定 `DEFAULT_RTT=150`、BDP 倍率及资源上下限，因此不能把其宣传理解成完全没有固定参数或完整实测闭环。
+- [probe](../dvt-probe.sh) 已有双向、协议族、重复采样、显式速率上限和预算 ledger，但明确 advisory-only。被主动限速的样本只能说明该暴露速率下的表现，不能自动发现服务商套餐容量，也不覆盖真实代理业务路径。
+- [HTB 计划器](../experiments/htb-aggregate/rate-sweep-plan.sh) 已有 reference/candidate、重复采样和冷却；[实验入口](../experiments/htb-aggregate/htb-aggregate-experiment.sh) 仍约束 `eth0`、200 Mbps 和 root fq，不能仅删除检查就成为通用 runner。profile 支持 mq 不代表该实验入口已能完整恢复 mq。[分析器](../experiments/htb-aggregate/rate-sweep-analyze.sh) 已有 median/MAD、重传及主机健康证据，当前以 sender 为主、receiver 为佐证，尚非通用参数建议器。
+- profile 模板 `reconfigure_port_settings` 明确拒绝 `BUFFER_TARGET_RTT_MS` 和 `BUF_MAX` 输入，仅支持端口重配置。若将测得 RTT/buffer 应用到已安装实例，必须另行扩展事务、状态、验证和恢复契约；不能把观测吞吐当作服务商端口值写回。
+
+### 方案比较与推荐
+
+| 路线 | 收益与成本 | 可行性判断 |
+|---|---|---|
+| 维持现有资源 profile 与人工输入 | 维护和运行成本最低；缺少测量到建议的闭环，适合没有已证性能问题的机器 | 合法基线，保留为降级/退出路径 |
+| 采用 tcpfit 式广泛扫描与自动配置 | 操作集中，但端点噪声、流量开销、误归因、恢复和持久化风险较高；不能照搬其策略与恢复实现 | 技术上可开发，不推荐作为本项目重写方向 |
+| 在现有 DVT 上增加受控实测校准 | 复用资源、证据、预算与恢复底座；新增测量有效性判定、候选推导、有限对照及应用事务 | 推荐，有条件可行；工程可实现性置信度高，实际性能收益未知 |
+
+- 最强反对理由：现有缓冲档位可能已足够；网络测量有噪声、成本和时效性，扩展复杂度未必带来收益。成功标准应允许“保持现状”“证据不足”“范围内未定位退化拐点”，只有可重复且不引入资源/延迟退化的收益才支持应用。
+- BDP 应按路径、方向和测量上下文理解，不能视为每台机器永久唯一的属性。近端/高余量端点更适合容量与整形实验，代表性业务路径更适合 RTT/buffer 校准。低吞吐可能已受窗口、远端或 CPU 限制，不能直接用它推导更小 buffer；负载 RTT 含排队时间，不能据此无限抬高 buffer。
+- 限速器归因保持条件性：速率相关重传或 goodput 下降只能支持“观测退化区间”，还需排查端点、路径、CPU 和时间波动。授权速率/预算未覆盖拐点时返回未定位，不超限扫描。整形应单独对照默认 fq；本机 egress HTB 的结论不得直接推广到下行或全部业务路径。
+- 建议分三步：先提供路径画像与受资源约束的 buffer 建议，不自动应用；再增加单变量、预算内、带基线回测的候选实验，分别验证 buffer 与 HTB；最后实现显式应用、上下文匹配检查、失败恢复和结果验证。持久 HTB 仍是更后续的独立能力，不是建议器的附带功能。
+- 经济与进度只作相对判断：建议层成本较低，实验通用化中高，跨拓扑与持久应用成本最高；端点条件、流量预算、Linux root 与目标机验证是关键依赖，当前不足以承诺工期或性能增幅。假设 6 个状态、每状态 3 样本、每样本 10 秒计量加 3 秒预热、单向 200 Mbps 满速，应用数据估算约 5.85 GB（5.45 GiB）；不含协议开销、重传、重试、背景流量及额外 reference，不代表实际 runner 计划、ledger 结算或服务商账单。
+- 生命周期与退出：测量/推导可独立维护，不要求运行 tcpfit 或跟随其安装更新；若复制实质 MIT 代码须保留版权许可。旧证据应在路径、版本、资源或拓扑变化后重新检查适用性；任何候选不满足条件时保留现有 profile。端点授权、证据脱敏、预算及生产变更边界继续适用。
+
+### 本轮验证、延期变化与成熟度
+
+- 本轮仅复核上述源码契约、形成方案比较并更新本备忘；完成文档差异、相对链接存在性与 `git diff --check` 检查。保留上一轮全部研究记录，不修改实现、默认参数、生成 profile、版本或发布资产，无真实测速、VPS 操作、提交或推送。
+- 新增后续阶段候选“受控实测校准能力”，首个工作包建议为测量有效性/路径画像与 buffer 建议。没有新增 rc.18 阻断项；此前 receiver 复核、pipefail 复现、锁诊断及其他延期事项状态不变。
+- 最低推进条件为先明确首期支持场景、指标与不修改判据，冻结测量证据契约；主动实验另外落实授权端点与预算，写入能力另外完成事务及恢复验证。本轮可行性判断已形成，但需求、详细设计、实现和目标运行均未完成，未提升 rc.18 的发布、运行或业务成熟度。
+
+## 本轮记录：2026-09-22（tcpfit 全部 fix/feat 历史与当前实现吸收评估）
+
+### 已完成及证据
+
+- 本轮控制性交付物为源码比较与吸收判断。冻结 tcpfit 当前 `main`/`v0.5.8` 为 `76331588af487a973d3445a1bf8bba7037d566ca`；本项目工作树基线为 `79fc9957fcd9898a39f47f3ca3a348d1727b6b47`，初始无未提交修改。上游没有比 2026-09-11 研究快照更新的 main 提交；本轮重新读取源码，不能把旧报告直接当作本轮证据。
+- 完整枚举 tcpfit 可达历史的 24 个提交，按 subject 前缀为 13 个 `fix`、8 个 `feat`、1 个 `change`、1 个 `docs`、1 个 `init`；其中一个 `feat` 同时包含 fix。按提交差异与当前函数核对下表的全部 21 个 fix/feat 提交，重点深读测量、qdisc、恢复、sysctl、安装更新和路由路径；UI 文案、依赖提示及编排只评估采用相关部分，不声称完成通用安全审计。
+- 来源为直接 GitHub Git 克隆及固定 Git 对象。`tcpfit.sh` SHA-256 为 `3a4d720bf7acb5b77eb24708ca17b6b42487628eefbdcb982e62454c2287358e`，`install.sh` 为 `8a521bcc2f89c336fba239d7b722cede8638ac9df06b28eb8be1536a22fd5085`。许可证为 MIT；若以后复制实质代码，应保留上游版权和许可。采用机制不要求安装 tcpfit 或引入其依赖。
+- 检索路径：先查项目既有研究，再冻结目标仓库、枚举 history/tree、按 fix/feat 查看差异、读取当前函数并映射本项目模板/installer/probe/HTB analyzer/fixtures；仅对 mq 叶重建机制补查 [Linux v6.12 `sch_mq.c` L88–117](https://github.com/torvalds/linux/blob/v6.12/net/sched/sch_mq.c#L88-L117)。`qdisc_create_dflt` 和 `dev_graft_qdisc` 不支持“重建 mq 只改 handle、原叶参数原样保留”的假设。
+
+### fix/feat 覆盖与采用矩阵
+
+下表短 SHA 均指向 [tcpfit 固定历史](https://github.com/Kylin010/tcpfit/commits/76331588af487a973d3445a1bf8bba7037d566ca/)。判断是研究建议，不是实现或运行授权。
+
+| 提交 | 源码中的有效经验 | 与本项目比较及判断 |
+|---|---|---|
+| `6ce5bf9` fix | 快照覆盖所有写入键；回滚 module/swap；更新校验 | 模板 `PROFILE_SYSCTL_KEYS`、原始快照、owned swap 和恢复验证已有对应契约；不采用上游校验失败后降级为版本号检查。当前 tcpfit `tune` 模板写入 32 项，`TUNED_KEYS` 为 33 项，额外包含 `harden` 使用的 `vm.swappiness`。 |
+| `ddf3a03` fix | 锁、参数校验、qdisc 保护、中断恢复和错误传播 | 核心原则已覆盖。tcpfit `take_lock` 缺 flock 时放行、部分恢复仍仅按类型重建，不适合代替本项目 fail-closed 契约。其 `cmd_tune` 在完整解析参数前已有迁移和 self-install，不能笼统说所有写入均在校验之后。 |
+| `a32e2f6` feat | 不限速基线；HTB 聚合速率与 fq 每流 maxrate 区分；重复 spike 复测；无拐点终态 | 本项目已有非持久 HTB、reference、预算和人工复核；保留“不确定时不生成生产速率”的原则，不采用无限速公共端点扫描或自动 policer 归因。 |
+| `9239f61` fix | 扫描必须覆盖上界；细扫保留粗扫上界；初始化分支变量；中断回收 | 适合作为测试经验。本项目冻结显式 rates/stages，无同一自动粗细扫逻辑；不可把其残存恢复错误吞没行为一并移植。 |
+| `24a4793` fix | 不按绝对重传次数跨速率比较；无整形时不误报“整形值太高” | 本项目已经使用 exact sender bytes 对应的 retransmits/GiB；不采用 tcpfit 固定 MSS=1448 推算并命名为 Loss% 的口径。 |
+| `954887d` fix | 失败清除旧 sweep 结果；区分超范围；检测 BusyBox 能力 | 本项目独立 evidence 目录、INCOMPLETE/COMPLETED 和 hash 绑定已有对应控制；Debian-only 不需要扩大 Alpine 支持。 |
+| `a1be918` feat、`b5c9446` fix | 显示锁占用者/时长；接管时只处理最初记录的 PID | “锁冲突可诊断”有小幅新增价值。本项目 `acquire_lock` 目前只报进程冲突；未来可显示最小进程身份信息。强制接管、按文件持有者批量杀进程不吸收。 |
+| `df34072` feat | 手填 peer 尽早验证 | 本项目 endpoint/port 已显式指定并校验；若增握手预检，应限定已授权端点且不自动换公网服务端，不把端口可达写成性能有效。 |
+| `38a7f3e` fix、`6a0b5a0` feat | swap 单位统一；非法输入在交互层重问 | 有通用可用性价值，但本项目 swap 由资源 profile 控制，无需增加任意 1–20 GB swap 入口。 |
+| `243ce42` feat、`99ce5f0` fix | 固定测速协议族；过滤 IPv4-mapped IPv6；IPv6 host/port 解析；IPv6-only 接口发现 | 本项目已有 `--family auto\|4\|6`、独立 host/port 和双栈默认路由发现；不需要复制混合 `host:port` parser。IPv4-mapped IPv6 的实际传输族断言可作为明确 IPv6 测量需求下的条件 fixture；上游多端口自动切换不进入当前固定 endpoint 契约。 |
+| `6588581` fix | pipefail/SIGPIPE 假阴性；tc 速率归一化；receiver goodput；低带宽步长；报告实际 qdisc | 值得针对已有调用点复核。DVT 数值 qdisc/计量契约已有覆盖；swap 检测仍有 `producer \| grep -q` 形式，登记为待复现候选，不仅凭模式就宣称生产缺陷。receiver 在现有 analyzer 中只是佐证，见下方增量建议。 |
+| `a8ad428` fix | `mq 0:` 可寻址化；删根后重新发现拓扑；首档浅损失向低速控制点复核；冷却；owned initcwnd 清理 | `mq 0:` 已进入 rc.18：无冲突 handle、重读 minor、全 fq 无写入、混合叶拒绝、当前 parent 回滚。低速控制点有条件实验价值；不引入路由窗口，也不复制固定 15s 冷却或约 4ms burst。 |
+| `67c0bdf` fix | 单流低读数追加采样，sender/receiver/retrans 取同一整组；保留结果页面 | 原始样本必须配对的经验有价值；本项目已有重复样本及 median/MAD，不采用 best-of-three 作为生产容量。当前总控未发现同类自动清屏入口。 |
+| `1163c20` feat | 存档/卸载；默认 root handle 0；动态接口；sysctl 拒绝处理；扫描 cap 与多流复核门槛解耦 | 最早基线保护、恢复失败保留材料已有对应机制；命名存档不是当前必需。未知 qdisc/sysctl 不应通过“跳过后成功”放宽本项目契约；10G 扫描、默认遥测和持久化不采用。 |
+| `7633158` fix | 无 via 路由按 token 解析；窗口属性保留；PPP 重拨恢复 | DVT 默认路由发现已按 `dev` 解析；纯 mock 验证无 via 与 IPv6 双接口输出正常。PPP 重拨 hook 仍须明确支持需求、ownership/hash、重拨/回滚测试，不自动并入 rc.18。 |
+| `85ced43` feat、`e7a7329` fix | 更新先写新 inode 再 rename，菜单用新进程；版本比较 | DVT 已使用固定版本目录、完整摘要和原子 current 切换；不引入原地自更新或校验降级。 |
+| `5671da0` feat | 菜单署名和仓库地址 | 纯展示，无网络或恢复增量。 |
+
+另检查 `3e28593` 的 RTT 改为固定 150ms：它消除了不可靠的 anycast RTT 探测依赖，但不能证明 README 的“实测 BDP”，不替换本项目资源档位和 RTT 输入。
+
+### 关键增量、反证与限制
+
+1. **优先候选：receiver goodput 的人工复核提示。** [当前 analyzer](../experiments/htb-aggregate/rate-sweep-analyze.sh) L409–440 按 `sender_mbps.median` 生成近最佳吞吐 flag；L501–505 明确声明 sender 为 primary、receiver 为 corroborating。这符合当前文档，不能判成违反既有契约的 bug。tcpfit L2397–2430 将 receiver 作为有效送达量，有理由借鉴为“sender 改善但 receiver 退化”的独立提示。最强反驳是 receiver 窗口不齐、收尾和远端测量噪声会误导筛选，因此只对已通过 schema 3 时间/字节校验的配对样本比较，先保留人工复核属性，不改变 sender shaping-exposure 门禁、自动选速或持久化。若获实现授权，再定义阈值与 sender/receiver 背离 fixture；本轮无性能收益证据。
+2. **次级候选：小范围 shell 可靠性与锁诊断。** tcpfit 的 pipefail 经验真实成立；本项目模板 L794、1360、1575、2033 有 swap 输出接 `grep -q` 的模式。正常少量 swap 输出未复现异常；只有在合法输出/调度条件下复现后才考虑修改，不能全仓机械替换所有 grep/head。锁占用者和时长可以减轻排障成本，但不得引入强制接管，也不输出完整敏感命令行。
+3. **tcpfit 的恢复不能直接采用。** L2027–2051 的 `qdisc_save` 按 root 标志定位根，mq 只保留首个叶 kind，未保存各叶 options/异构类型。L2276 的 `restore_qdisc(){ qdisc_restore; info "qdisc restored"; }` 在底层恢复失败时会被 `info` 的成功状态覆盖。纯 mock 中底层 rc=1，包装函数打印成功并返回 0。该结果仅证明错误传播缺陷，不是实机恢复故障或完整安全评审。本项目应保留现有恢复后语义核对与失败状态保留。
+4. **测量经验不证明 policer 或最佳速率。** tcpfit `loss_pct` 由重传次数、sender Mbps、配置时长及固定 1448 字节估算，不能等同直接观测的路径丢包率；同一端点 2/3 次异常仍无法排除公共端点、路径或 CPU 瓶颈。低速控制点、重复复测和首尾 reference 可提供排错证据，不批准新的高流量 campaign。
+5. **纠正旧研究的两处描述。** [2026-09-11 研究](tcpfit-v0.5.8-research-2026-09-11.md) 中“`traffic_report` 只做流量估算”和“qdisc 保存主要依赖文本首行”不准确：当前 `traffic_mark/report` L152–173 读 `/sys/class/net/.../statistics/{rx,tx}_bytes` 的差值；预估另由 `estimate_traffic_gb` 完成。当前 `qdisc_save` 会查找 root 标志，最早快照/存档另有首行摘要。正确结论仍是这些机制不等于预算上限或完整恢复。DVT 也已有 host tx/rx counter delta，而 ledger 明确只核算 application payload；两者都不能直接代表服务商账单流量。
+6. **不采用的功能边界。** 固定 150ms、扩张 sysctl、`initcwnd/initrwnd=32`、持久 HTB、`limit=40960`/`flow_limit=8192`、固定余量、自动公共节点/端口、可变 main 安装与校验降级、默认 telemetry 和未验收 fleet 不进入当前项目。`fleet.py` 的默认 host-key 关闭和 sshpass 参数传递也不满足本项目运维边界。MIT 许可不是运行适用性证据。
+
+### 本轮验证与未完成门禁
+
+- 使用固定 Git 对象的 LF 字节运行 `bash -n`，tcpfit 的两个 Shell 文件均通过；`orchestrator/fleet.py` 通过 Python AST 解析。没有执行第三方主入口、安装器、telemetry、root 调优或公网测速。
+- 无副作用片段/mocks 验证：`999Mbit/1Gbit/2Gbit/2500Mbit` 分别归一到 `999/1000/2000/2500` Mbps；无 via 路由解析正确；DVT `default_route_ifaces` 在 mock 的 PPP/IPv6 不同接口下得到 `ppp0,eth1`；tcpfit mq 快照丢失异构叶细节；恢复包装函数吞失败；分段大输出的 `producer | grep -q` 在 pipefail 下返回 141，而完整读取后匹配成功。最后一项是 Bash 机制复现，不是 DVT 目标机缺陷证明。
+- `python tools/render_profiles.py --check` 通过；研究修改完成后核对 `git diff --check`。只修改本备忘，不修改模板、生成 profile、测试、默认参数、摘要、版本或发布状态。本轮没有重跑完整 Linux root/installer/CI 套件，也不借用历史通过记录宣称本轮 runtime 通过。
+- 忽略目录 `.tmp/local/tcpfit-source/`、`.tmp/local/tcpfit-review-checks.py`、`.tmp/local/tcpfit-review-evidence/` 保留固定源码、无副作用复现脚本、输出及内核交叉验证材料，供复核；不是发布资产，不进入提交。清理须确认不再需要这条证据链后单独进行。
+
+### 延期事项变化与当前成熟度判断
+
+- 新增有限候选：receiver 背离复核提示、swap 检测 pipefail 的合法场景复现、锁冲突只读诊断。前者需要指标语义/fixture 审定，后两者仅在实际复现或明确排障需求下进入维护；不作为 rc.18 阻断或自动扩围理由。
+- PPP/PPPoE、低速控制点实验、IPv6-mapped 测量断言继续按明确需求触发；宽 sysctl、持久 HTB、默认值改变、Ubuntu/Alpine 扩展和高流量 campaign 状态不变。无新增生产、发布或远端执行授权。
+- 本轮已完成固定源码和 fix/feat 采用判断：最明确的 mq 机制已被 rc.18 有边界地吸收；其余主要作为已有控制的回归来源，少量作为后续候选。当前没有足够证据支持修改默认网络策略。仓库现有阶段记录中的发布/PR 状态并未在本轮向远端重新核验，本轮不提升项目运行或业务成熟度。
 
 ## 本轮记录：2026-09-11（Basic/endpoint 证据同步到相关文档）
 

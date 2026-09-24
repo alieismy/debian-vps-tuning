@@ -1,5 +1,24 @@
 # 验证说明
 
+## rc.19 增量验证范围（2026-09-22）
+
+远端已确认 rc.18 于 2026-09-15 发布且 tag 指向 `79fc9957fcd9898a39f47f3ca3a348d1727b6b47`。当前工作树为 rc.19 未发布候选；下表原有 rc.18 测试记录保留其历史证据效力，不能证明 rc.19 已完成运行或发布。当前执行器、安装器与受管版本检查使用 rc.19；离线分析器明确允许 rc.18/rc.19 的同一严格证据契约。
+
+| 增量 | 验证入口与判据 | 运行边界 |
+|---|---|---|
+| 离线实测校准 | `tests/test_calibrate_probe.py`：双层摘要链、清单/引用样本集合、方向与 aggregate 计数、raw/meta 时长和预热绑定、重复采样上下文、raw/summary/row 对照、实际窗口容差、方向/时效/RTT 缺失、路径漂移、资源封顶、保留上限与候选输出；CLI 证据矛盾退出 2 且无报告，证据不足退出 0 且候选为 null | 无网络、无配置写入；包含自洽摘要的 SC-01/SC-02 反例，fixture 不证明真实性能或所有 iperf3 版本兼容性 |
+| receiver 背离提示 | `tests/test_shell_adoption.py` 与 HTB 独立套件：sender 提高、receiver 降低时有提示；无效窗口或 reference 漂移不判断；shortlist 不变 | 描述性人工复核，不是自动生产选速 |
+| swap 管道 | `tests/test_shell_adoption.py`：合法长路径列表、空列表、生产者失败 | Windows Bash 输出 fixture，不是实际 swapon 生命周期 |
+| 锁诊断 | `tests/test_shell_adoption.py`：PID/starttime、持锁时间、陈旧/无效内容、竞争者不截断；有 flock 的 Linux 另外运行真实文件锁竞争 | Windows 缺 flock 时明确 skip；Linux 结果须单独记录 |
+| 版本与派生资产 | `tools/render_profiles.py --check`、`tests/static-check.sh`、installer/迁移套件、摘要链及 pinned ShellCheck | 本地/CI/目标 VPS 分别报告；rc.18 公开资产不改写 |
+| rc.19 迁移来源边界 | `tests/rc18-check.sh`：分别执行 rc.17→rc.19、rc.18→rc.19；核对来源/state hash、prepare 不改 state、rollback 清除旧 state、两次 boot ID 不变时拒绝且保持阶段/状态、最终 COMPLETE/VERIFIED；拒绝 rc.19/rc.20 来源并检查具体版本诊断及无 checkpoint 写入 | Bash 语法、ShellCheck 0.11.0 和 Linux root 动态 fixture 已通过，见下方 CI 证据；boot ID 为模拟值，不代表真实重启验收 |
+
+新增 Python 用例已并入原静态入口；使用说明见 [实测校准第一阶段](measured-calibration.md)。本轮实际结果与未完成门禁以 [项目备忘](project-memo.md) 的最新记录为准。
+
+2026-09-23 外部审查发现并修复顶层 manifest 与子控制文件布局不匹配的问题；回归直接执行 `dvt-probe.sh` 的文件筛选表达式，并覆盖子控制文件缺失、篡改、清单与标记协同篡改、INCOMPLETE 和总读取上限。修复提交 `36390d2d9e65dcc67322d189c9347c0bbfca49aa` 的 [PR CI 35851155712](https://github.com/alieismy/debian-vps-tuning/actions/runs/35851155712) 全部通过，Python 30 项无跳过；旧 27 项测试通过记录不能替代此次 producer/consumer 契约验证。
+
+2026-09-22，[Linux CI 35717516096](https://github.com/alieismy/debian-vps-tuning/actions/runs/35717516096) 对提交 `53951ec48a72935cab1fec5f4d38aa174bb8a0cc` 全部通过：27 个 Python 测试无跳过（包括真实 flock 竞争）、完整静态/HTB 套件、root installer、两条迁移来源 fixture、预算/benchmark 进程 fixture 和 ShellCheck 0.11.0。该证据不证明真实 probe 输入兼容性、目标 VPS 重启/恢复或性能收益，也不构成发布批准。
+
 ## 证据分层
 
 验证结果必须分为：

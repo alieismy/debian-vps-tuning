@@ -6,7 +6,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 
-ANALYZER_VERSION='0.4.0'
+ANALYZER_VERSION='0.5.0'
 
 die() { printf '[rate-sweep-analyze][FAIL] %s\n' "$*" >&2; exit 1; }
 
@@ -89,7 +89,8 @@ main() {
     (.runner_version | type == "string") and
     (.tuning_script.sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
     .managed_binding.state == "VERIFIED" and
-    .managed_binding.script_version == "0.1.0-rc.18" and
+    (.managed_binding.script_version == "0.1.0-rc.18" or
+     .managed_binding.script_version == "0.1.0-rc.19") and
     ((.managed_binding.profile_id == "debian13-1c1g") or
      (.managed_binding.profile_id == "debian13-1c2g")) and
     .managed_binding.port_speed_mbps == 200 and
@@ -427,6 +428,26 @@ main() {
             all_resource_samples_valid:($g.valid_resource_samples == $g.samples)
           }}]
        else [] end) as $rates_with_flags |
+      # 描述性复核提示，不参与 sender exposure 或 shortlist 门禁。
+      (def diverges($g; $b):
+         ($g.sender_mbps.median - $g.sender_mbps.mad >
+          $b.sender_mbps.median + $b.sender_mbps.mad) and
+         ($g.receiver_mbps.median + $g.receiver_mbps.mad <
+          $b.receiver_mbps.median - $b.receiver_mbps.mad);
+       (($analysis_blocked | not) and $reference_comparable == true and
+        overlap($reference_start.receiver_mbps; $reference_end.receiver_mbps)) as $can_compare |
+       [$rates_with_flags[] | . as $g |
+         (if $can_compare then
+           ([{rate_mbit:$plan_doc.reference_rate_mbit} + $reference_all] + $rates) |
+           map(select(.rate_mbit != $g.rate_mbit and diverges($g; .))) |
+           map(.rate_mbit)
+          else [] end) as $against |
+         . + {receiver_divergence_review:{
+           status:(if ($can_compare | not) then "NOT_EVALUATED"
+             elif ($against|length)>0 then "REVIEW_REQUIRED" else "NO_DIVERGENCE_OBSERVED" end),
+           compared_rates_mbit:$against,
+           method:"sender median-MAD exceeds comparator median+MAD while receiver median+MAD falls below comparator median-MAD",
+           changes_shortlist:false}}]) as $rates_with_receiver_review |
       (if $plan_doc.mode == "candidate-sweep" and ($analysis_blocked | not) and $reference_comparable then
          [$rates_with_flags[] | select(
            .review_flags.retransmission_below_reference_dispersion and
@@ -511,7 +532,7 @@ main() {
           end:(if $plan_doc.mode == "candidate-sweep" then $reference_end else null end),
           comparable_by_sender_median_mad_overlap:$reference_comparable},
         source_reference_gate:$plan_doc.reference_gate,
-        rates:$rates_with_flags,
+        rates:$rates_with_receiver_review,
         review_shortlist:{
           rate_mbit:(if ($shortlist|length)>0 then ($shortlist|max_by(.rate_mbit)|.rate_mbit) else null end),
           eligible_rates_mbit:[$shortlist[].rate_mbit],
@@ -520,6 +541,7 @@ main() {
           else "highest rate passing strict descriptive gates; not a production recommendation" end)
         },
         required_manual_review:[
+          "inspect receiver_divergence_review; descriptive median/MAD separation is not statistical significance or automatic rejection",
           "inspect every raw iperf3 JSON and benchmark completion hash",
           "compare host-wide TcpRetransSegs with flow-scoped sender retransmits",
           "inspect CPU softirq and steal, softnet drops/time_squeeze, interface errors and qdisc backlog/requeues",
