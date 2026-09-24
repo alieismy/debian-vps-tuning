@@ -1,18 +1,27 @@
 # 项目阶段备忘
 
 文档性质：资料性状态与延期事项记录
-当前阶段：未发布 rc.19 实现候选，PR #18 已获本轮合并执行授权，进入 Ready、最终门禁与合并流程；实际合并状态和提交 CI 以 PR/Actions 记录为准，目标机验收仍待完成（已发布 rc.18 及更早资产保持不可变）
+当前阶段：未发布 rc.19 实现候选，PR #18 已转 Ready，按下方“合并授权来源与增量审查闭合”中的对话原文执行最终门禁与合并流程；实际合并状态和提交 CI 以 PR/Actions 记录为准，目标机验收仍待完成（已发布 rc.18 及更早资产保持不可变）
 更新日期：2026-09-24（Asia/Singapore）
 
 本文件是 `AGENTS.md` 指定的唯一项目阶段备忘入口，用于记录每轮对话工作的闭环状态，以及当前阶段不主动展开的后续候选事项。它不构成需求批准、生产变更授权、发布授权或下一阶段启动决定；控制规则以 [项目级 AGENTS.md](../AGENTS.md) 为准，具体验证事实以 [验证矩阵](validation.md) 和对应发布说明为准。
 
+## 本轮记录：2026-09-24（合并授权来源与增量审查闭合）
+
+- 授权来源为本项目当前 Codex 对话，不是全量审查请求、CodeRabbit 检查结果或本备忘自行授予权限。上一轮最终回复明确给出下一步：“读取增量审查结果，核实并处理可能出现的问题；门禁闭合后，按已授权范围使用 merge commit 合入，再核验合并提交的 Linux CI，无需重新确认同一合并授权。”用户随后原文回复：“请按你的方案执行下一步”。本轮依据这组方案与紧随其后的用户指令执行 PR #18 合并；这里只摘录必要原文，不宣称存在公开对话链接或 GitHub APPROVED review。授权范围限于本 PR 的意见整改、分支提交/推送、合并与 CI 核验，不包含 tag、Release 或真实 VPS 操作。
+- CodeRabbit 于 2026-09-24 03:55:14 UTC 对 `3d90d47` 提交 [增量 review 5299571656](https://github.com/alieismy/debian-vps-tuning/pull/18#pullrequestreview-5299571656)，状态 COMMENTED；选中 5 个文件，跳过与先前变更相似的 validation.md。新增 1 项 Minor：[CR-02 授权记录可追溯性](https://github.com/alieismy/debian-vps-tuning/pull/18#discussion_r4089730536)。它指出原备忘没有可核对的授权链接或原文，此文档缺口成立；本轮以上述原文和上下文补齐，不将普通审查请求解释为合并许可。未新增代码问题，原 CR-01 线程保持 resolved。
+- 本轮只修改备忘，保留上轮两条本地检查点，一并提交到现有候选分支；diff 检查后推送并核对新 HEAD 的 CI，在原审查线程说明整改。满足门禁后绑定最终 HEAD 使用 merge commit 合并，并核验合并提交 CI；实际结果由 PR/Actions 和本轮最终回复记录，不提前声明成功。
+- 无新增延期事项。真实完整 probe、目标机生命周期/重启/tc/恢复和业务验收仍未完成；成熟度保持为实现和 Linux fixture 验证闭合的未发布候选，合并不代表生产或性能验收。
+
 ## 本轮记录：2026-09-24（PR #18 合并执行）
 
-- 用户要求按推荐方案执行，本轮推进 [PR #18](https://github.com/alieismy/debian-vps-tuning/pull/18) 转 Ready、通过最终门禁后合并，并核验合并提交的 Linux CI。范围仅限本 PR，不创建 tag/Release，不连接 VPS 或运行公网测速；不修改已发布资产。
+- 上轮根据用户“请按你的推荐方案执行”推进 [PR #18](https://github.com/alieismy/debian-vps-tuning/pull/18) 转 Ready 和最终门禁；可直接核对的合并方案及后续用户执行指令见上方“合并授权来源与增量审查闭合”。范围仅限本 PR，不创建 tag/Release，不连接 VPS 或运行公网测速；不修改已发布资产。
 - 合并前现场核对：工作树干净，候选为 `38f876da2902943b5f96f384c1a29f1707562096`，base/master 为 `79fc9957fcd9898a39f47f3ca3a348d1727b6b47`；PR 为 OPEN/Draft、MERGEABLE/CLEAN，唯一审查线程已 resolved。当前候选的 [push CI 35851571827](https://github.com/alieismy/debian-vps-tuning/actions/runs/35851571827) 和 [PR CI 35851576772](https://github.com/alieismy/debian-vps-tuning/actions/runs/35851576772) 均 success。没有正式 APPROVED review；Draft 阶段 CodeRabbit 绿色跳过不算审查批准。
 - 本轮只补记此备忘，再通过原候选分支提交/推送；不改源码、测试、生成 profile 或安装资产。合并方式采用 merge commit 保留实现、修复和验证历史，绑定最终候选 HEAD；不使用 admin 绕过、不改写历史或删除分支。转 Ready 后重新核对 checks 和新增审查意见，满足门禁才合并；本文记录执行决定与条件，不预先声明合并或新 CI 成功。
 - 合并结果、merge SHA 及其 Actions 结论由 PR/Actions 保存，并在本轮最终回复绑定报告；本次文档提交后的 CI 不能沿用前一提交结果。已有 Linux 证据涵盖 30 个 Python 测试无 skip、完整静态/HTB、root installer、两条迁移来源、进程回收和 ShellCheck；真实完整 probe、目标 VPS 生命周期、真实重启/tc/恢复和业务验收仍未完成。
 - 无新增延期事项。成熟度为实现与 Linux fixture 验证闭合、外部已知问题修复并获针对性复核的未发布候选；合入默认分支不等于发布或生产验收。后续优先取得有可信来源的完整 probe 目录完成离线兼容性核验，既有合成演示目录不能替代该证据。
+- 执行检查点：备忘提交 `3d90d475d4c7fadbbb311de6a0dfbab193a5ed8a` 已推送，PR 已转 Ready；该 SHA 的 [push CI 35952950105](https://github.com/alieismy/debian-vps-tuning/actions/runs/35952950105) 与 [PR CI 35952954011](https://github.com/alieismy/debian-vps-tuning/actions/runs/35952954011) 均 success。已读取新 push 日志，30 个 Python 测试无 skip、静态/HTB、安装器、两条迁移和进程回收均通过，完整日志保留 `.tmp/local/rc19-external-review/ready-ci.log`。
+- 转 Ready 触发 CodeRabbit 增量审查（Run ID `ffc2b913-76c0-4ce8-92fc-bad1654dfc62`），覆盖 `495a7fc` 至 `3d90d47` 的 5 个变更文件。截至本轮检查点仍为 pending，尚无新的正式 review；PR 未合并。保留 `gh pr checks 18 --watch --interval 20` 监视句柄 `11050`，不重复请求审查、不取消后台监视。这两条检查点补记暂留本地，避免审查中的 HEAD 再次漂移；恢复时先核对实际 review、threads 和 checks，再完成合并。
 
 ## 本轮记录：2026-09-23（核实并修复 CodeRabbit 清单布局问题）
 
