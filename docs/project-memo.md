@@ -1,10 +1,18 @@
 # 项目阶段备忘
 
 文档性质：资料性状态与延期事项记录
-当前阶段：未发布 rc.19 实现候选，PR #18 外部全量审查的唯一 Major 已修复、通过 Linux CI 并获针对性复核关闭；人工合并决定和目标机验收仍待完成（已发布 rc.18 及更早资产保持不可变）
-更新日期：2026-09-23（Asia/Singapore）
+当前阶段：未发布 rc.19 实现候选，PR #18 已获本轮合并执行授权，进入 Ready、最终门禁与合并流程；实际合并状态和提交 CI 以 PR/Actions 记录为准，目标机验收仍待完成（已发布 rc.18 及更早资产保持不可变）
+更新日期：2026-09-24（Asia/Singapore）
 
 本文件是 `AGENTS.md` 指定的唯一项目阶段备忘入口，用于记录每轮对话工作的闭环状态，以及当前阶段不主动展开的后续候选事项。它不构成需求批准、生产变更授权、发布授权或下一阶段启动决定；控制规则以 [项目级 AGENTS.md](../AGENTS.md) 为准，具体验证事实以 [验证矩阵](validation.md) 和对应发布说明为准。
+
+## 本轮记录：2026-09-24（PR #18 合并执行）
+
+- 用户要求按推荐方案执行，本轮推进 [PR #18](https://github.com/alieismy/debian-vps-tuning/pull/18) 转 Ready、通过最终门禁后合并，并核验合并提交的 Linux CI。范围仅限本 PR，不创建 tag/Release，不连接 VPS 或运行公网测速；不修改已发布资产。
+- 合并前现场核对：工作树干净，候选为 `38f876da2902943b5f96f384c1a29f1707562096`，base/master 为 `79fc9957fcd9898a39f47f3ca3a348d1727b6b47`；PR 为 OPEN/Draft、MERGEABLE/CLEAN，唯一审查线程已 resolved。当前候选的 [push CI 35851571827](https://github.com/alieismy/debian-vps-tuning/actions/runs/35851571827) 和 [PR CI 35851576772](https://github.com/alieismy/debian-vps-tuning/actions/runs/35851576772) 均 success。没有正式 APPROVED review；Draft 阶段 CodeRabbit 绿色跳过不算审查批准。
+- 本轮只补记此备忘，再通过原候选分支提交/推送；不改源码、测试、生成 profile 或安装资产。合并方式采用 merge commit 保留实现、修复和验证历史，绑定最终候选 HEAD；不使用 admin 绕过、不改写历史或删除分支。转 Ready 后重新核对 checks 和新增审查意见，满足门禁才合并；本文记录执行决定与条件，不预先声明合并或新 CI 成功。
+- 合并结果、merge SHA 及其 Actions 结论由 PR/Actions 保存，并在本轮最终回复绑定报告；本次文档提交后的 CI 不能沿用前一提交结果。已有 Linux 证据涵盖 30 个 Python 测试无 skip、完整静态/HTB、root installer、两条迁移来源、进程回收和 ShellCheck；真实完整 probe、目标 VPS 生命周期、真实重启/tc/恢复和业务验收仍未完成。
+- 无新增延期事项。成熟度为实现与 Linux fixture 验证闭合、外部已知问题修复并获针对性复核的未发布候选；合入默认分支不等于发布或生产验收。后续优先取得有可信来源的完整 probe 目录完成离线兼容性核验，既有合成演示目录不能替代该证据。
 
 ## 本轮记录：2026-09-23（核实并修复 CodeRabbit 清单布局问题）
 
