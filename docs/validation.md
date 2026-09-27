@@ -2,7 +2,7 @@
 
 ## rc.19 增量验证范围（2026-09-22）
 
-远端已确认 rc.18 于 2026-09-15 发布且 tag 指向 `79fc9957fcd9898a39f47f3ca3a348d1727b6b47`。当前工作树为 rc.19 未发布候选；下表原有 rc.18 测试记录保留其历史证据效力，不能证明 rc.19 已完成运行或发布。当前执行器、安装器与受管版本检查使用 rc.19；离线校准器 0.1.1 允许 rc.17/rc.18/rc.19 的同一严格证据契约，HTB 离线分析仍维持 rc.18/rc.19 边界。
+rc.18 于 2026-09-15 发布，tag 指向 `79fc9957fcd9898a39f47f3ca3a348d1727b6b47`；rc.19 是独立 Pre-release。下表原有 rc.18 测试记录保留其历史证据效力，不能证明 rc.19 的目标机运行或业务验收。当前执行器、安装器与受管版本检查使用 rc.19；离线校准器 0.1.1 允许 rc.17/rc.18/rc.19 的同一严格证据契约，HTB 离线分析仍维持 rc.18/rc.19 边界。
 
 2026-09-24 本地 rc.17 兼容增量（当时状态）：先补回归，旧实现 28 个校准器测试出现 1 个 rc.17 接受用例错误；修改后全部 Python 33 项中 32 项通过，真实 flock 因 Windows 缺命令 skip 1 项。新增覆盖三版接受及来源保留/输入不变、rc.16/rc.20 拒绝、rc.17 末样本版本/脚本摘要/boot/状态变更拒绝。截至当日，增量尚未提交或跑新 Linux CI，真实 probe 也尚待采集；后续进展见下一段和[项目备忘](project-memo.md)。
 
@@ -84,7 +84,7 @@ sweep 已停止，不得把 reference 完成解释为后续流量或默认/持�
 | C12 | 菜单 `apply` | 再次确认；N/Enter 不 apply | 目标 VPS 待测 |
 | C13 | 无 TTY 且无 action | 返回 usage，不等待输入 | 目标 Linux 待测 |
 | C14 | 状态档位与检测档位不一致 | 阻断，不自动换 profile | fixture 通过；目标 VPS 待测 |
-| C15 | 固定 rc.18 Release assets | 外层固定 installer 摘要；installer 固定清单摘要；下载清单、总控、六份 profile、预算/迁移/证据/CLI/HTB 资产并逐项通过 SHA-256 | 当前仅为未发布候选；发布前必须通过本地清单、installer、Linux root CI 和 pinned ShellCheck；发布后须公开重下载 19 个资产并复核 17 个 manifest 条目 |
+| C15 | 固定 rc.18 Release assets | 外层固定 installer 摘要；installer 固定清单摘要；下载清单、总控、六份 profile、预算/迁移/证据/CLI/HTB 资产并逐项通过 SHA-256 | rc.18 已发布并完成当时的 19 个公开资产反向核验；rc.19 须在其独立 Release 发布后另行公开重下载，不能继承 rc.18 结果 |
 | C16 | 已安装状态下无 `--port`/环境变量地重复 `apply` | 复用状态中的端口带宽；显式参数仍优先；无效状态值阻断 | fixture 通过；目标 VPS 待测 |
 | C17 | `diagnose` | 默认 5 秒前后采样；输出 TCP/softnet、整机 CPU、接口和可识别 ethtool 错误增量；只读显示 TCP 非受管值、qdisc、队列、RPS/XPS/IRQ、Xray sockopt、代理进程资源和 IPv4/IPv6 policy rules；自定义 rule 才展开对应地址族全部路由表并警告常规网卡发现边界；无系统写入、主动流量或进程命令行 | CPU/接口增量、非受管 TCP 值、默认/自定义/不可读 policy rule 与条件路由表 fixture；目标 VPS 待测 |
 | C18 | `benchmark` 未提供 host、iperf3、`setsid` 或 GNU `timeout`，无效端口/时长/预热/并行/地址族/run ID/1–300 秒 phase timeout，或输出目录非绝对路径/已经存在 | 明确拒绝；不覆盖旧证据，不安装软件、不改防火墙、不选择公共服务器 | 参数、timeout 和输出目录 fixture；目标 VPS 待测 |
@@ -143,7 +143,7 @@ shellcheck -x \
   experiments/htb-aggregate/tests/static-check.sh
 ```
 
-发布后必须从公开 Release 下载 installer、总控、六份 profile、预算与迁移工具、TcpQuality、两个 `dvt` companion、五个 HTB 脚本和清单共 19 个资产，在与仓库不同的临时目录复核 installer/manifest 固定摘要并对 17 个 manifest 条目执行 `sha256sum -c SHA256SUMS`。Release 尚未上传或公开重下载未完成时，不得把远程资产验证标为通过。
+发布后必须从公开 Release 下载 installer、总控、六份 profile、预算与迁移工具、TcpQuality、两个 `dvt` companion、五个 HTB 脚本和清单共 19 个资产，在与仓库不同的临时目录复核 installer/manifest 固定摘要并对 17 个 manifest 条目执行 `sha256sum -c SHA256SUMS`。公开重下载未完成时，不得把远程资产验证标为通过；发布结果以实际 Release 和后续核验记录为准。
 
 ## 首发目标机矩阵
 

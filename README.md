@@ -6,12 +6,12 @@ Debian VPS Tuning 用于配置 Debian 12/13 小型云 VPS 的主机网络。主�
 
 > 系统选择（信息日期：2026-08-04）：新建的 1C1G、1C2G 和 2C2G VPS 默认使用 Debian 13 minimal。Debian 13 是当前 stable；Debian 12 已转入 LTS，适用于保留既有稳定节点或满足明确兼容约束的场景。系统版本不能单独证明 BBR 可用、性能更高或空载内存更低，仍需检查虚拟化类型、运行内核和目标机资源。
 
-> 当前已发布预发行候选为 `v0.1.0-rc.18`；以下既有联网示例仍固定到不可变的 rc.17 Release。工作树正在形成未发布的 `v0.1.0-rc.19` 实现候选；不得把工作树中的 rc.19 installer、摘要或 profile 当作已发布资产使用。正式 `v0.1.0` 仍以 [目标 VPS 运行验收](docs/validation.md) 为发布条件；候选版本不代表已完成目标机、全带宽或性能验收。
+> 当前预发行版本为 `v0.1.0-rc.19`；下方首个安装入口固定到此版本，后续迁移示例仍保留不可变的 rc.17 历史路径。正式 `v0.1.0` 仍以 [目标 VPS 运行验收](docs/validation.md) 为发布条件；rc.19 Pre-release 不代表已完成目标机、全带宽或性能验收。
 
-rc.19 当前工作树候选的 `install.sh` SHA-256 为
-`3bef587d479f5771da9af8d193baa63b7a7f8480016adf5514dfc944429a8ed3`。该值只用于本地完整性门禁；在 tag、Release 和公开反向校验完成前没有可执行的 rc.19 联网安装入口。
+rc.19 `install.sh` 的固定 SHA-256 为
+`3bef587d479f5771da9af8d193baa63b7a7f8480016adf5514dfc944429a8ed3`。安装前仍须按此摘要校验下载文件。
 
-离线实测校准已形成 rc.19 候选：参见 [使用说明与结果边界](docs/measured-calibration.md)。该工具复用已有 probe 证据，不自动测速或应用参数。
+rc.19 提供仓库源码中的离线实测校准工具：参见 [使用说明与结果边界](docs/measured-calibration.md)。该工具不属于 Shell 安装资产，复用已有 probe 证据，不自动测速或应用参数。
 
 ## 联网安装与验证
 
@@ -19,13 +19,13 @@ rc.19 当前工作树候选的 `install.sh` SHA-256 为
 
 ### 1. 联网安装
 
-rc.17 Release 已发布并通过公开资产复核，可使用下面的固定版本安装入口。它保留“先完整下载、再核对固定 SHA-256、最后执行”三个门禁，不会从 `main`/`master`/`latest` 下载，也不会在安装过程中自动执行调优或产生测试流量：
+rc.19 Pre-release 使用下面的固定版本安装入口。它保留“先完整下载、再核对固定 SHA-256、最后执行”三个门禁，不会从 `main`/`master`/`latest` 下载，也不会在安装过程中自动执行调优或产生测试流量：
 
 ```bash
-(set -Eeuo pipefail; dvt_i="$(mktemp)"; trap 'rm -f -- "$dvt_i"' EXIT; curl --fail --show-error --silent --location --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 120 -o "$dvt_i" https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.17/install.sh; printf '%s  %s\n' '4fd4dde90df4524d657623c4e22e355ab9adac70a703cff61a68e41e09007cbc' "$dvt_i" | sha256sum -c -; bash "$dvt_i")
+(set -Eeuo pipefail; dvt_i="$(mktemp)"; trap 'rm -f -- "$dvt_i"' EXIT; curl --fail --show-error --silent --location --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 120 -o "$dvt_i" https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.19/install.sh; printf '%s  %s\n' '3bef587d479f5771da9af8d193baa63b7a7f8480016adf5514dfc944429a8ed3' "$dvt_i" | sha256sum -c -; bash "$dvt_i")
 ```
 
-安装器先核对内置固定的 `SHA256SUMS` 摘要，再逐一核对总控、六份 profile、预算账本、迁移编排、证据工具和 HTB 实验工具；通过后安装到 `/usr/local/lib/debian-vps-tuning/0.1.0-rc.17`，原子更新 `/usr/local/lib/debian-vps-tuning/current`，并创建 `/usr/local/bin/dvt`。已有同版本目录只有在全部文件重新校验通过时才复用，内容不一致时拒绝覆盖。交互终端随后打开菜单；也可加 `--no-launch` 只安装。
+安装器先核对内置固定的 `SHA256SUMS` 摘要，再逐一核对总控、六份 profile、预算账本、迁移编排、证据工具和 HTB 实验工具；通过后安装到 `/usr/local/lib/debian-vps-tuning/0.1.0-rc.19`，原子更新 `/usr/local/lib/debian-vps-tuning/current`，并创建 `/usr/local/bin/dvt`。已有同版本目录只有在全部文件重新校验通过时才复用，内容不一致时拒绝覆盖。交互终端随后打开菜单；也可加 `--no-launch` 只安装。
 
 安装后常用命令：
 

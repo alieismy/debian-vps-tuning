@@ -8,11 +8,11 @@ The script uses BBR + fq, controlled TCP buffering, standard queue parameters, e
 
 > **System Selection Summary (as of 2026-08-04):** Newly created 1C1G, 1C2G, and 2C2G VPS instances are recommended to use Debian 13 minimal by default. Debian 13 is the current stable release; Debian 12 has transitioned to LTS and is better suited for retaining existing stable nodes or meeting explicit compatibility constraints. The OS version alone does not guarantee BBR availability, higher performance, or lower idle memory usage; virtualization type, running kernel, and target machine resources must still be verified.
 
-> The current published release candidate is `v0.1.0-rc.18`; the existing online examples below remain pinned to the immutable rc.17 Release. The working tree is forming an unpublished `v0.1.0-rc.19` implementation candidate, whose installer, manifest, and profiles are not online installation assets. The official `v0.1.0` still requires [Target VPS Runtime Acceptance](docs/validation.md); do not treat either candidate as target-host, full-bandwidth, or performance acceptance.
+> The current prerelease is `v0.1.0-rc.19`. The first installation example below is pinned to rc.19; later migration examples retain immutable historical rc.17 paths. The official `v0.1.0` still requires [Target VPS Runtime Acceptance](docs/validation.md). This prerelease does not establish target-host, full-bandwidth, or performance acceptance.
 
-> This English document was originally translated from the rc.11 documentation. Release-critical URLs and the current development contracts are synchronized here. The Chinese [README](README.md) and the [rc.19 draft release notes](docs/releases/v0.1.0-rc.19.md) remain authoritative for the complete traffic-budget ledger, checkpoint/resume migration, installer, TcpQuality evidence, advisory probe, non-persistent HTB, and `mq 0:` handling details.
+> This English document was originally translated from the rc.11 documentation. Release-critical URLs and the current development contracts are synchronized here. The Chinese [README](README.md) and the [rc.19 release notes](docs/releases/v0.1.0-rc.19.md) remain authoritative for the complete traffic-budget ledger, checkpoint/resume migration, installer, TcpQuality evidence, advisory probe, non-persistent HTB, and `mq 0:` handling details.
 
-The rc.19 candidate adds repository-only offline calibration of existing probe evidence. See [usage and evidence boundaries](docs/measured-calibration.md). It generates no traffic and applies no settings.
+rc.19 adds repository-only offline calibration of existing probe evidence. See [usage and evidence boundaries](docs/measured-calibration.md). It generates no traffic and applies no settings.
 
 ## Online Installation and Verification
 
@@ -20,7 +20,7 @@ The following commands assume you have entered the VPS root shell (prompt usuall
 
 ### 1. Online Installation
 
-The published rc.17 Release can be installed through the following immutable entry after verifying the installer before execution. It does not fall back to `main`, `master`, or `latest`, and installation itself does not run tuning or generate test traffic:
+The rc.19 prerelease can be installed through the following immutable entry after verifying the installer before execution. It does not fall back to `main`, `master`, or `latest`, and installation itself does not run tuning or generate test traffic:
 
 ```bash
 (
@@ -31,9 +31,9 @@ The published rc.17 Release can be installed through the following immutable ent
     --proto '=https' --proto-redir '=https' \
     --connect-timeout 15 --max-time 120 \
     -o "$dvt_i" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.17/install.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.19/install.sh
   printf '%s  %s\n' \
-    '4fd4dde90df4524d657623c4e22e355ab9adac70a703cff61a68e41e09007cbc' \
+    '3bef587d479f5771da9af8d193baa63b7a7f8480016adf5514dfc944429a8ed3' \
     "$dvt_i" | sha256sum -c -
   bash "$dvt_i"
 )
