@@ -1,6 +1,8 @@
 # rc.19 真实 probe 离线兼容性核验操作单
 
-状态：采集步骤按合并提交 `a5e90d388f5fc1ac6545080649c003baf1fce8ec` 与 rc.17 tag 核对；本地分析器 0.1.1 已补充 rc.17 兼容回归，尚未提交/发布。2026-09-27 替换对端已形成一份真实完整上传 probe，本地完整性与 rc.17 格式兼容核验通过；用户确认该路径代表主要 VPS 出向方向，同一证据的离线结论为 `KEEP_CURRENT_CEILING`。对端临时 iperf3 无监听、本次新增的 UFW 规则已删除；被测端新窗口两笔记录均已结算、无未结算预留。具体证据见[项目阶段备忘](project-memo.md)最新记录。
+状态：采集步骤按合并提交 `a5e90d388f5fc1ac6545080649c003baf1fce8ec` 与 rc.17 tag 核对；分析器 0.1.1 的 rc.17 兼容增量已提交至未合并的 PR #19，尚未发布。2026-09-27 替换对端已形成一份真实完整上传 probe，本地完整性与 rc.17 格式兼容核验通过；用户确认该路径代表主要 VPS 出向方向，同一证据的离线结论为 `KEEP_CURRENT_CEILING`。对端临时 iperf3 无监听、本次新增的 UFW 规则已删除；被测端新窗口两笔记录均已结算、无未结算预留。具体证据见[项目阶段备忘](project-memo.md)最新记录。
+
+本次采集与收尾已经完成。第 3–8 节保留当时的复现和排障步骤，**不是当前待执行命令**；尤其第 4A–4F 节是旧对端故障的历史诊断，第 5 节的旧窗口预算不足且示例输出目录已使用，不能原样重跑。只有出现新的明确验证需求并核对对端、授权、账本和目录状态后，才能重新制定采集计划。
 
 ## 0. 本次实际环境：先做这一节
 
@@ -8,9 +10,9 @@
 
 用户有自己控制的 iperf3 对端，允许新采集总流量不超过 **100GB**。该额度是总上限，不是目标用量；须考虑两端计费口径、协议开销及本窗口已有用量，GB 与工具 MiB 不能直接混用。首次计划仍只需约 188MB payload。
 
-**当前可保持 VPS rc.17，进入第 4–5 节的一次小流量采集。** 本地分析器 0.1.1 已允许 rc.17/rc.18/rc.19，仍要求同一 VERIFIED 版本、脚本、boot 和网络上下文及完整摘要链；旧 0.1.0 分析器仍拒绝 rc.17。不要修改证据版本字段或向 VPS 复制未发布的 rc.19 Shell 文件；分析在本任务本地工作区完成。
+**本次 VPS 保持 rc.17，采集与离线分析已经完成。** 本地分析器 0.1.1 允许 rc.17/rc.18/rc.19，仍要求同一 VERIFIED 版本、脚本、boot 和网络上下文及完整摘要链；旧 0.1.0 分析器仍拒绝 rc.17。不要修改证据版本字段或向 VPS 复制未发布的 rc.19 Shell 文件。
 
-源码对照确认 rc.17/rc.18 的 probe、资源 profile 定义及模板从 `softnet_snapshot()` 到 benchmark 末尾的采集/汇总区域完全相同；用户 profile 脚本摘要也匹配 rc.17 tag。本地合成回归通过不等于真实 iperf3 3.18 兼容性已验收。下列盘点命令保留供复查，用户已完成时无需重复查找。
+源码对照确认 rc.17/rc.18 的 probe、资源 profile 定义及模板从 `softnet_snapshot()` 到 benchmark 末尾的采集/汇总区域完全相同；用户 profile 脚本摘要也匹配 rc.17 tag。合成回归之外，已有一份真实 rc.17/iperf3 3.18 上传证据通过格式兼容核验；不外推到其他方向或版本。下列盘点命令保留供复查，用户已完成时无需重复查找。
 
 在被测 VPS 的现有 SSH 管理会话运行 `sudo -i` 进入 root，然后执行以下只读盘点。命令不运行 iperf3 客户端，不改变调优参数。`status/verify` 会使用既有锁文件；完整输出只在私有渠道保存。
 
@@ -104,7 +106,7 @@ date -u +%Y-%m-%dT%H:%M:%SZ
 
 ## 4. iperf3 对端：仅在新采集获准后准备
 
-用户已完成符合预期的 plan-only，下一步只准备对端。对端仅需 iperf3，不要求安装/升级 dvt。优先使用已经获准的现有服务，无需另开服务器。用户随后确认对端为 Debian 13 / 2 GiB、套餐流量 1000GB，UFW active；所提供规则中没有 TCP 5201，下面的 UFW 分支适用于该现场。套餐总流量不等于当前剩余额度，也不扩大本次 100GB 授权或 256 MiB 采集窗口。云端是否另有过滤仍须在实际控制台确认；不根据同厂商或已有端口规则推定。
+以下是首次采集时准备旧对端的历史步骤，相关临时服务和规则已撤销。对端仅需 iperf3，不要求安装/升级 dvt。用户当时确认对端为 Debian 13 / 2 GiB、套餐流量 1000GB，UFW active；当时提供的规则中没有 TCP 5201。套餐总流量不等于当前剩余额度，也不扩大当次 100GB 授权或 256 MiB 采集窗口。若以后新采集，须重新核对实际对端和云端访问控制，不能沿用当时的现场状态。
 
 在**对端 VPS**已有 SSH 会话执行（非 root 时对需要权限的命令加 sudo）：
 
@@ -332,7 +334,7 @@ jq '{status,budget_bytes,reserved_bytes,accounted_bytes,remaining_bytes:(.budget
 
 在现有 root 提示符下运行下面的独立单行命令。将 `REPLACE_WITH_AUTHORIZED_HOST` 替换为自控对端的实际地址，5201 替换为它的监听端口。IPv6 则把 family 4 改为 6。不要复制提示符、反斜杠转义的下划线或 `&#x20;` 等富文本标记。
 
-本次修正使用与此前相同的窗口 `rc17-probe-compat-20260924` 和 ledger；不会因命令重贴而重置预算。若已使用其他共享窗口，先将两条命令中的 ledger、window-id 和预算统一替换为该窗口。输出目录必须尚不存在；存在时保留旧证据，换一个新目录后重新看计划，不删原目录或账本。
+以下两条命令是首次采集时的历史示例，不得原样重跑：旧窗口 `rc17-probe-compat-20260924` 已有保守记账，剩余额度不足以容纳同规模 probe，示例输出目录也已使用。若将来确有新采集需求，须先核对共享窗口的实际 ledger、已用与剩余额度，并使用尚不存在的新输出目录；不删除原目录或账本。
 
 ```bash
 dvt probe --host REPLACE_WITH_AUTHORIZED_HOST --server-port 5201 --rate-cap 100 --samples 3 --seconds 5 --omit 0 --parallel 1 --direction upload --family 4 --budget-mib 256 --ledger /var/lib/proxy-vps-tuning/traffic-ledgers/rc17-probe-compat-20260924.json --window-id rc17-probe-compat-20260924 --output-dir /root/dvt-probe-compat-20260924-upload-01 --plan-only
@@ -419,7 +421,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $Evidence 'probe-result.json'))) {
 
 ## 8. Windows：离线运行，区分兼容与候选结论
 
-在本项目完整源码目录运行。用 `git rev-parse HEAD` 记录基线，结合 `git status --short` 和 `Get-FileHash tools/calibrate_probe.py` 记录未提交增量；仅记录 HEAD 不能绑定本轮新实现。`python --version` 应为 Python 3.10+。rc.17 必须使用本地分析器 0.1.1，原合并提交的 0.1.0 不支持；不必在 VPS 安装 Python。
+在本项目完整源码目录运行。用 `git rev-parse HEAD` 记录分析器所在提交；若工作树有未提交改动，再结合 `git status --short` 和 `Get-FileHash tools/calibrate_probe.py` 绑定实际字节。`python --version` 应为 Python 3.10+。rc.17 必须使用分析器 0.1.1，原合并提交的 0.1.0 不支持；不必在 VPS 安装 Python。
 
 第一次不加 `--representative-path`，只核对完整性和真实格式兼容性。下列命令沿用第 7 节 PowerShell 变量，输出放在证据目录之外，并核对分析前后文件摘要：
 
