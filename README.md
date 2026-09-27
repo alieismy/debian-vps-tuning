@@ -118,7 +118,9 @@ printf 'strict_verify_after_3xui_exit=%s\n' "$?"
 
 严格验证要求 `x-ui.service` 处于 `active`，并确认 systemd 配置、3X-UI 主进程及其直接 Xray 子进程的 NOFILE soft/hard limit 均不低于 65536。安装 3X-UI 后再次重启并重复严格验证，用于检查开机启动和新进程的限制继承。
 
-### 4. 从早期 rc 版本执行只读升级检查
+### 4. 从早期 rc 版本执行只读升级检查（历史 rc.17 示例）
+
+**rc.16 直接升级到当前 rc.19 的完整步骤见[下文专节](#从-rc16-升级到-rc19)。** 下列固定 rc.17 的命令保留为历史只读检查示例，不是 rc.16→rc.19 的迁移入口。
 
 由 rc.9–rc.16 管理的 VPS，在 rc.17 发布后可下载 rc.17 总控并执行 `update`。该操作读取状态中的资源档和端口带宽，校验当前 profile、目标 `SHA256SUMS` 和目标总控脚本，然后依次运行当前版本的 `verify` 与目标版本的只读 `update-preflight`。输出包括维护窗口所需的固定 URL、SHA-256 和迁移顺序。`update` 不执行 `rollback`、purge、`apply`、`reconfigure` 或重启，也不替换已发布的旧 Release 资产。
 
@@ -162,9 +164,9 @@ printf 'strict_verify_after_3xui_exit=%s\n' "$?"
 
 - 仅支持厂商最小化 Debian 12/13、`x86_64/amd64` 和本文列出的四个 CPU/内存资源档；其他组合会被拒绝；
 - 端口带宽填写服务商套餐上限，不要填写虚拟网卡显示的链路速率；默认 200 Mbps，允许 100–1000 Mbps；
-- 联网入口固定到 `v0.1.0-rc.17`，不会回退到 `master`、`main`、`latest`、HTTP 或第三方镜像；
-- 上述命令在执行总控前核对 rc.17 总控资产的固定 SHA-256；总控随后下载固定 Release 的 `SHA256SUMS` 和对应 profile，并再次校验；
-- 总控、`SHA256SUMS` 和 profile 必须来自同一 Release；不同版本使用不同的临时目录，不要把 rc.16 与 rc.17 资产混放在 `/root` 或同一工作目录；
+- 上一节历史只读检查入口固定到 `v0.1.0-rc.17`；本页首个联网安装入口和下文 rc.16→rc.19 升级入口固定到 `v0.1.0-rc.19`，都不会回退到 `master`、`main`、`latest`、HTTP 或第三方镜像；
+- 历史 rc.17 只读示例在执行总控前核对该版总控固定 SHA-256；下文 rc.16→rc.19 示例则核对 rc.19 总控固定 SHA-256；总控随后下载其固定 Release 的 `SHA256SUMS` 和对应 profile，并再次校验；
+- 总控、`SHA256SUMS` 和 profile 必须来自同一 Release；不同版本使用不同目录，不要把 rc.16 与 rc.17/rc.19 资产混放在 `/root` 或同一工作目录；
 - 发布后不应移动 tag 或替换同名资产，发现缺陷时应发布新版本；
 - `update` 是只读升级检查，不自动迁移配置；检查通过后仍需在维护窗口人工完成 rollback/apply 和两次重启；
 - 脚本不配置或放行 UFW 端口，不要把 UFW 状态提示当成防火墙已配置；先确保 SSH 管理端口不会被锁死；
@@ -906,6 +908,94 @@ env PORT_SPEED_MBPS=1000 \
 服务商扩容或降配端口后，使用 `dvt reconfigure --port <MBPS>`。开发候选只接受同一 rc.18 版本和 profile 的 `VERIFIED` 状态，先执行完整 `verify`，再保留现有 RTT；自动 buffer 按新带宽重算，显式 buffer 保持原值。同值请求只验证不写入。普通 `apply` 的参数不一致门禁没有放宽，不得手工编辑 `state.json` 代替重配置。
 
 重配置把旧 state 和 sysctl 管理文件保存为 root-only 固定备份，先提交 `RECONFIGURING`，再更新候选文件、必要的运行时 buffer、管理哈希并执行完整候选验证。任何失败会尝试恢复旧 sysctl 和旧 `VERIFIED` 状态；恢复失败时状态保留为 `DEGRADED`，`status` 显示事务和失败证据，普通 `verify`/`rollback`/`apply` 均拒绝越过，必须先执行 `dvt recover`。
+
+### 从 rc.16 升级到 rc.19
+
+**可以直接迁移，不必先经过 rc.17/rc.18。** 适用前提是：主机仍由原版 rc.16 管理，`dvt --version` 显示 rc.16，现有 profile 的 `status`/`verify` 通过且状态为 `VERIFIED`；目标系统、资源档及 100–1000 Mbps 端口带宽仍落在 rc.19 支持范围内。若版本、状态或原版核验不符，停在只读盘点，不运行 `recover`、`apply`、`rollback` 或覆盖状态文件。rc.19 的发布只验证了 Linux fixture 与资产完整性，不能代替这台 VPS 的迁移验收。
+
+迁移会撤销 rc.16 受管配置（包括清理由它创建的 swap），然后应用 rc.19 配置，**需要两次人工重启**。在维护窗口前确认服务商控制台/救援入口可用、系统与代理业务备份可恢复、SSH 管理路径和内存余量足够。以下每个代码块均在被迁移 VPS 的 root shell 执行；任一命令失败即停止，不跳过 checkpoint 阶段，也不要把不同版本的总控、清单和 profile 放在同一目录。
+
+1. **只读核对 rc.16 状态并取得固定 rc.19 总控。** 下方目录必须尚不存在；已存在时先检查旧任务，不覆盖或换名绕过。下载后用固定 SHA-256 校验，`update` 依次验证 rc.16 来源与 rc.19 目标的只读预检，不会回滚或应用配置。
+
+   ```bash
+   set -Eeuo pipefail
+   test "$(id -u)" -eq 0
+   dvt --version
+   dvt status
+   dvt verify
+   test ! -e /root/dvt-rc16-to-rc19
+   test ! -L /root/dvt-rc16-to-rc19
+   install -d -m 0700 /root/dvt-rc16-to-rc19
+   curl --fail --show-error --silent --location \
+     --proto '=https' --proto-redir '=https' \
+     --connect-timeout 15 --max-time 120 --max-redirs 5 \
+     --remove-on-error \
+     -o /root/dvt-rc16-to-rc19/debian-vps-tuning.sh \
+     https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.19/debian-vps-tuning.sh
+   printf '%s  %s\n' \
+     'fb3d69bf9ca4bdf2a961411d8262fd77950c7f72f68ecb886e33ae3d3509f84e' \
+     /root/dvt-rc16-to-rc19/debian-vps-tuning.sh | sha256sum -c -
+   bash /root/dvt-rc16-to-rc19/debian-vps-tuning.sh update --target v0.1.0-rc.19
+   ```
+
+   预期升级计划显示来源 `0.1.0-rc.16`、目标 `v0.1.0-rc.19`、当前 profile 及保留的端口带宽，最后输出“升级检查通过；系统配置未修改”。这一步仍未完成升级。特别注意，当前安装的 `dvt` 仍是 **rc.16**：下一个 `migrate prepare` 必须调用刚校验的 **rc.19 总控**，不能直接运行 `dvt migrate prepare`。该总控会从固定 Release 校验并取得旧版 profile、目标 profile 和迁移工具。
+
+2. **准备 checkpoint，核对后才进入写入阶段。** checkpoint 路径也必须尚不存在。`prepare` 会创建 root-only checkpoint、复制并固定两版 profile 和迁移器，但不修改当前受管配置。
+
+   ```bash
+   set -Eeuo pipefail
+   test ! -e /var/lib/debian-vps-tuning-migrations/rc16-to-rc19
+   test ! -L /var/lib/debian-vps-tuning-migrations/rc16-to-rc19
+   bash /root/dvt-rc16-to-rc19/debian-vps-tuning.sh migrate prepare \
+     --checkpoint /var/lib/debian-vps-tuning-migrations/rc16-to-rc19
+   bash /var/lib/debian-vps-tuning-migrations/rc16-to-rc19/dvt-migrate.sh status \
+     --checkpoint /var/lib/debian-vps-tuning-migrations/rc16-to-rc19 |
+     jq -e 'select(.phase=="PREPARED" and .source_version=="0.1.0-rc.16" and .target_version=="0.1.0-rc.19") | {phase,source_version,target_version,profile_id,port_speed_mbps}'
+   ```
+
+3. **在维护窗口回滚旧版并重启。** 此步使用 checkpoint 内固定的 **rc.16 profile** 执行 `PURGE_CREATED_SWAP=1 rollback`，会更改主机配置。命令成功并提示第一次重启后，人工执行 `reboot`，再从控制台或 SSH 确认主机重新可达。
+
+   ```bash
+   set -Eeuo pipefail
+   bash /var/lib/debian-vps-tuning-migrations/rc16-to-rc19/dvt-migrate.sh rollback \
+     --checkpoint /var/lib/debian-vps-tuning-migrations/rc16-to-rc19
+   reboot
+   ```
+
+4. **第一次重启后应用 rc.19，再人工重启。** `continue` 会验证 boot ID 已变化，执行目标 profile 的 `preflight`/`apply`，并写入第二次重启门禁。若它失败，保留 checkpoint 和现场输出，先诊断，不重复 `apply` 或手工修改 state。
+
+   ```bash
+   set -Eeuo pipefail
+   bash /var/lib/debian-vps-tuning-migrations/rc16-to-rc19/dvt-migrate.sh continue \
+     --checkpoint /var/lib/debian-vps-tuning-migrations/rc16-to-rc19
+   reboot
+   ```
+
+5. **第二次重启后完成严格核验，最后切换 `dvt` 安装入口。** 第二次 `continue` 只有在 boot ID 再次变化且目标 `verify` 形成 `VERIFIED` 后才把 checkpoint 标记为 `COMPLETE`。此前不要运行 rc.16 的 `dvt verify` 来判断 rc.19 状态；`dvt` 的安装入口要在 checkpoint 完成后才更新。
+
+   ```bash
+   set -Eeuo pipefail
+   bash /var/lib/debian-vps-tuning-migrations/rc16-to-rc19/dvt-migrate.sh continue \
+     --checkpoint /var/lib/debian-vps-tuning-migrations/rc16-to-rc19
+   bash /var/lib/debian-vps-tuning-migrations/rc16-to-rc19/dvt-migrate.sh status \
+     --checkpoint /var/lib/debian-vps-tuning-migrations/rc16-to-rc19 |
+     jq -e 'select(.phase=="COMPLETE" and .source_version=="0.1.0-rc.16" and .target_version=="0.1.0-rc.19") | {phase,source_version,target_version,profile_id}'
+   curl --fail --show-error --silent --location \
+     --proto '=https' --proto-redir '=https' \
+     --connect-timeout 15 --max-time 120 --max-redirs 5 \
+     --remove-on-error \
+     -o /root/dvt-rc16-to-rc19/install.sh \
+     https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.19/install.sh
+   printf '%s  %s\n' \
+     '3bef587d479f5771da9af8d193baa63b7a7f8480016adf5514dfc944429a8ed3' \
+     /root/dvt-rc16-to-rc19/install.sh | sha256sum -c -
+   bash /root/dvt-rc16-to-rc19/install.sh --no-launch
+   dvt --version
+   dvt status
+   dvt verify
+   ```
+
+   最后还需独立确认控制台/SSH、3X-UI/Xray 服务和真实客户端业务连接。安装器只切换 `dvt` 文件入口，不执行 `apply`；旧版目录、checkpoint 与备份保留供核验和恢复，不因命令完成而立即删除。此流程不运行 `probe`/iperf3，也不宣称线路性能改善。
 
 ### 从 rc.15 升级到 rc.16
 

@@ -120,6 +120,7 @@ jq -e '.script_version=="0.1.0-rc.19" and .state=="VERIFIED"' "$state_file" >/de
 printf 'migration fixture passed: %s -> 0.1.0-rc.19\n' "$source_release"
 )
 
+check_migration 0.1.0-rc.16
 check_migration 0.1.0-rc.17
 check_migration 0.1.0-rc.18
 
