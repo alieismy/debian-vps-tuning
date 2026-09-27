@@ -2,7 +2,11 @@
 
 ## rc.19 增量验证范围（2026-09-22）
 
-远端已确认 rc.18 于 2026-09-15 发布且 tag 指向 `79fc9957fcd9898a39f47f3ca3a348d1727b6b47`。当前工作树为 rc.19 未发布候选；下表原有 rc.18 测试记录保留其历史证据效力，不能证明 rc.19 已完成运行或发布。当前执行器、安装器与受管版本检查使用 rc.19；离线分析器明确允许 rc.18/rc.19 的同一严格证据契约。
+远端已确认 rc.18 于 2026-09-15 发布且 tag 指向 `79fc9957fcd9898a39f47f3ca3a348d1727b6b47`。当前工作树为 rc.19 未发布候选；下表原有 rc.18 测试记录保留其历史证据效力，不能证明 rc.19 已完成运行或发布。当前执行器、安装器与受管版本检查使用 rc.19；离线校准器 0.1.1 允许 rc.17/rc.18/rc.19 的同一严格证据契约，HTB 离线分析仍维持 rc.18/rc.19 边界。
+
+2026-09-24 本地 rc.17 兼容增量：先补回归，旧实现 28 个校准器测试出现 1 个 rc.17 接受用例错误；修改后全部 Python 33 项中 32 项通过，真实 flock 因 Windows 缺命令 skip 1 项。新增覆盖三版接受及来源保留/输入不变、rc.16/rc.20 拒绝、rc.17 末样本版本/脚本摘要/boot/状态变更拒绝。此次增量未提交、未跑 Linux CI；既有 CI 不能证明这些新字节，真实 probe 仍待采集核验。
+
+2026-09-27 真实目录核验：用户提供一份 rc.17/iperf3 3.18 的完整三样本 IPv4 上传 probe，顶层与各样本摘要链通过，三次窗口有效且发送端重传为 0；本地校准器 0.1.1 对 67 个文件只读分析、退出 0，前后文件摘要不变。用户确认该端点代表主要 VPS 出向路径后，同一证据的离线决策为 `KEEP_CURRENT_CEILING`（当前及候选均为 16 MiB），不是自动参数应用或业务性能验收。对端临时入口已撤销，被测端共享窗口两笔记录均 `COMMITTED` 且 `reserved_bytes=0`；具体证据与限制见[项目备忘](project-memo.md)。
 
 | 增量 | 验证入口与判据 | 运行边界 |
 |---|---|---|
@@ -84,7 +88,7 @@ sweep 已停止，不得把 reference 完成解释为后续流量或默认/持�
 | C16 | 已安装状态下无 `--port`/环境变量地重复 `apply` | 复用状态中的端口带宽；显式参数仍优先；无效状态值阻断 | fixture 通过；目标 VPS 待测 |
 | C17 | `diagnose` | 默认 5 秒前后采样；输出 TCP/softnet、整机 CPU、接口和可识别 ethtool 错误增量；只读显示 TCP 非受管值、qdisc、队列、RPS/XPS/IRQ、Xray sockopt、代理进程资源和 IPv4/IPv6 policy rules；自定义 rule 才展开对应地址族全部路由表并警告常规网卡发现边界；无系统写入、主动流量或进程命令行 | CPU/接口增量、非受管 TCP 值、默认/自定义/不可读 policy rule 与条件路由表 fixture；目标 VPS 待测 |
 | C18 | `benchmark` 未提供 host、iperf3、`setsid` 或 GNU `timeout`，无效端口/时长/预热/并行/地址族/run ID/1–300 秒 phase timeout，或输出目录非绝对路径/已经存在 | 明确拒绝；不覆盖旧证据，不安装软件、不改防火墙、不选择公共服务器 | 参数、timeout 和输出目录 fixture；目标 VPS 待测 |
-| C19 | 用户授权的 `benchmark` | 仅向指定 iperf3 服务端执行 upload/download/both；每方向独立进程组和硬超时，TERM 后 5 秒升级 KILL；保存原始 JSON、sender/receiver、host-wide 计数、root/leaf qdisc 与 `policy-routing.txt`；校验测量窗口并以 `INCOMPLETE → COMPLETED` 提交哈希链 | schema 3 窗口、异常 JSON/计数器、mq leaf、HTB `parent 1:10`、HTB 缺叶、root 零 drop/leaf 非零 drop、manifest 失败、timeout 返回码、持久元数据和进程组回收 fixture；真实 endpoint 和目标 VPS 待测 |
+| C19 | 用户授权的 `benchmark` | 仅向指定 iperf3 服务端执行 upload/download/both；每方向独立进程组和硬超时，TERM 后 5 秒升级 KILL；保存原始 JSON、sender/receiver、host-wide 计数、root/leaf qdisc 与 `policy-routing.txt`；校验测量窗口并以 `INCOMPLETE → COMPLETED` 提交哈希链 | schema 3 窗口、异常 JSON/计数器、mq leaf、HTB `parent 1:10`、HTB 缺叶、root 零 drop/leaf 非零 drop、manifest 失败、timeout 返回码、持久元数据和进程组回收 fixture；rc.17 目标机的一条 IPv4 上传路径已形成真实完整证据，见[项目备忘](project-memo.md)；其他方向、端点、版本和业务路径仍待测 |
 | C20 | `update` 自动发现/`--target` | 同一 `major.minor` 内，rc 通道可选更高 rc 或稳定版，稳定通道排除 prerelease；显式目标允许跨线或 prerelease；拒绝降级和重复升级 | 版本优先级、稳定/rc 通道、非法版本 fixture 通过；GitHub API 真实查询待测 |
 | C21 | `update` 只读升级检查 | 校验当前/目标资产，当前 verify、目标 `UPDATE_PREFLIGHT=1 preflight` 通过后输出固定 URL、哈希、端口和人工迁移顺序；不得调用 rollback/purge/apply/reboot | 调用顺序 fixture 与真实 `check_preflight_state` 状态矩阵通过；目标 VPS 只读 update 待测 |
 | C22 | `/etc/sysctl.d` 等外部文件以相同值重复定义受管 key | `preflight`/`apply` 阻断；已安装状态的独立 `verify` 返回非零；`diagnose` 只读报告；项目自身文件及其符号链接不误报 | 同值冲突、受管文件别名和外部别名去重 fixture 通过；目标 VPS 负向注入不在生产机执行 |
