@@ -21,7 +21,7 @@ Linux/macOS 分析工作站可使用 `python3` 和对应本地路径。输出为
 - 输入必须是已解包的完整 probe 目录；不接受单个 iperf3 JSON、压缩包或手填 RTT。
 - 校验顶层和各样本的 `COMPLETED`、`SHA256SUMS`、result 摘要与嵌入元数据；必要原始文件必须出现在相应清单。拒绝 INCOMPLETE、重复 JSON 字段、非规范清单路径和文件符号链接；每文件上限 32 MiB，总读取上限 256 MiB。
 - 生产端的顶层清单会按文件名排除各层 `SHA256SUMS`、`SHA256SUMS.tmp`、`COMPLETED` 和 `INCOMPLETE`。校准器单独读取子样本控制文件，并通过顶层已验的 `benchmark-result.json.evidence_manifest_sha256` 绑定子清单；完成标记中的结果摘要也必须匹配。子控制文件的读取计入总上限，不因未列入顶层清单而免除完整性校验。
-- 仅接受 probe schema 1、benchmark result schema 1、phase summary schema 3、单流 TCP，以及同一 VERIFIED profile、rc.18/rc.19 版本、脚本摘要、网络配置和启动周期。现有 schema 无变化。摘要证明输入内部完整性，不构成来源签名或真实运行的独立证明；应保留可信采集来源。
+- 分析器 0.1.1 仅接受 probe schema 1、benchmark result schema 1、phase summary schema 3、单流 TCP，以及同一 VERIFIED profile、rc.17/rc.18/rc.19 版本、脚本摘要、网络配置和启动周期。新增 rc.17 支持依据其与 rc.18 相同的采集/汇总代码及资源定义；不放宽其他一致性门禁。一份 rc.17/iperf3 3.18 的真实完整上传 probe 已通过格式兼容核验，见[项目备忘](project-memo.md)；其他版本、方向和环境不能据此视为实测通过。现有 schema 无变化。摘要证明输入内部完整性，不构成来源签名或真实运行的独立证明；应保留可信采集来源。
 - 顶层清单中的 `sample-NN` 集合必须与 `samples` 引用集合完全一致；重复轮次方向完整，`aggregates` 必须包含 upload/download 两个方向。已测方向的 `samples/valid_windows` 必须是整数，并与引用行数、已核对的 row/summary 有效窗口标记计数一致；未测方向必须为 null。不能通过删掉最后一轮引用或修改汇总计数跳过清单内的异常样本。
 - 本工具要求 metadata 的 `benchmark.seconds/omit_seconds` 与 raw 的 `start.test_start.duration/omit` 均存在、为整数并逐项相等，范围分别为 5–120 秒、0–10 秒；重复样本的请求时长、预热、请求协议族和方向必须一致。缺失或矛盾属于输入契约错误（退出 2），不补默认值。该契约依据现有生产端参数与仓库 iperf3 fixture；真实旧版 iperf3 输出兼容性仍需用完整证据验证。实际 `end` 窗口时长继续使用原有 `max(0.25 秒, 请求时长的 5%)` 容差，不要求与请求值精确相等。
 - 从原始 `end.sum_sent`/`sum_received` 重新核算字节、时长、吞吐，并对照 summary/row。观察到无效窗口、缺失 RTT、路径漂移或重复不足时，该方向不生成候选。校验各重复样本的方向完整性，IPv4-mapped IPv6 按实际 IPv4 解释。
@@ -51,6 +51,8 @@ BDP 候选以受管状态中的**声明套餐带宽**乘上述 RTT，再使用�
 3. `flock` 仍是唯一锁仲裁机制。获取锁后记录 PID、`/proc/PID/stat` starttime 和 uptime，冲突时身份匹配才显示持锁时长。竞争者不截断锁文件、不接管、不杀进程、不显示命令行；信息缺失或过时时只报通用冲突。持锁时间是瞬时观测值。
 
 ## 验证与后续
+
+真实采集目录的导出、可选有预算采集、Windows 离线核验及失败处理，见 [rc.19 真实 probe 核验操作单](rc19-probe-validation.md)。优先复用已有 rc.17/rc.18/rc.19 证据；该操作单不要求升级或新增主动测速。
 
 本地可运行 `python -m unittest discover -s tests -p 'test_*.py'`，Shell 定向用例需要 Bash/jq。既有 `tests/static-check.sh` 已调用这组测试；HTB 独立套件覆盖完整分析流程中的 receiver 提示与原 shortlist 保持不变。Linux root 的真实锁竞争、swap、安装/迁移、tc/重启及业务验收由原门禁单独完成。
 

@@ -133,6 +133,42 @@ class CalibrationTest(unittest.TestCase):
         self.assertNotIn("192.0.2.1", json.dumps(result))
         self.assertEqual(before, {p: p.read_bytes() for p in self.root.rglob("*") if p.is_file()})
 
+    def test_supported_source_versions_preserve_report_and_evidence(self):
+        for version in ("0.1.0-rc.17", "0.1.0-rc.18", "0.1.0-rc.19"):
+            with self.subTest(version=version), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                fixture(root, profile="debian13-1c1g", port=200, direction="upload",
+                        mutate=lambda d, m, p: m.update(script_version=version))
+                before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
+                result = analyze(root, "fixture", True, now=NOW)
+                self.assertEqual(result["source_script_version"], version)
+                self.assertEqual(result["profile"], "debian13-1c1g")
+                self.assertFalse(result["configuration_changed"])
+                self.assertEqual(len(result["directions"]), 1)
+                self.assertEqual(result["directions"][0]["decision"], "KEEP_CURRENT_CEILING")
+                self.assertEqual(result["directions"][0]["candidate_buffer_max_bytes"], 16777216)
+                self.assertEqual(before, {p: p.read_bytes() for p in root.rglob("*") if p.is_file()})
+
+    def test_unreviewed_source_versions_remain_rejected(self):
+        for version in ("0.1.0-rc.16", "0.1.0-rc.20"):
+            with self.subTest(version=version), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                fixture(root, mutate=lambda d, m, p: m.update(script_version=version))
+                with self.assertRaisesRegex(EvidenceError, "同一 VERIFIED 版本"):
+                    analyze(root, "fixture", True, now=NOW)
+
+    def test_rc17_requires_verified_and_identical_sample_bindings(self):
+        for field, changed in (("script_version", "0.1.0-rc.18"),
+                               ("script_sha256", "b" * 64), ("boot_id", "other-boot"),
+                               ("state", "DEGRADED")):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                fixture(root, mutate=lambda d, m, p: m.update(script_version="0.1.0-rc.17"),
+                        mutate_sample=lambda sample, meta, data:
+                            meta.update({field: changed}) if sample == 3 else None)
+                with self.assertRaisesRegex(EvidenceError, "同一 VERIFIED 版本"):
+                    analyze(root, "fixture", True, now=NOW)
+
     @unittest.skipUnless(shutil.which("bash"), "Bash is required for producer manifest selection")
     def test_manifest_layout_matches_probe_producer(self):
         fixture(self.root)
