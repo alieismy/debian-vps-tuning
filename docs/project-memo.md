@@ -9,7 +9,7 @@
 ## 本轮记录：2026-09-27（rc.16→rc.19 升级说明）
 
 - 用户指出 README 缺少 rc.16→rc.19 的直接升级步骤。本轮核对已发布 rc.19 总控和迁移器源码：目标总控的 `update --target` 只读校验旧版与目标版；迁移器明确接受 rc.16 来源，`prepare` 固定两版 profile、工具、原状态摘要和 boot ID，随后旧版 rollback/purge→第一次人工重启→目标 preflight/apply→第二次人工重启→严格 verify/COMPLETE。当前安装的 rc.16 `dvt` 不能代替目标 rc.19 总控执行 `migrate prepare`；旧 `dvt` 入口须待 checkpoint 完成后再由固定 rc.19 installer 切换。公开资产的 rc.19 总控 SHA-256 为 `fb3d69bf9ca4bdf2a961411d8262fd77950c7f72f68ecb886e33ae3d3509f84e`，installer 为 `3bef587d479f5771da9af8d193baa63b7a7f8480016adf5514dfc944429a8ed3`。
-- README 新增分阶段、可停止的直接迁移操作单，并把旧 rc.17 只读示例标为历史；英文 README 指向完整操作单。现有迁移 fixture 扩充 rc.16 来源，验证矩阵标出该新增 fixture 尚待最终 Linux root CI。本轮未连接、升级或测速任何 VPS；用户具体主机的 profile、状态、控制台恢复与业务路径未核验，因此操作单不等于目标机迁移验收。
+- README 新增分阶段、可停止的直接迁移操作单，并把旧 rc.17 只读示例标为历史；英文 README 指向完整操作单。现有迁移 fixture 扩充 rc.16 来源；[PR #22](https://github.com/alieismy/debian-vps-tuning/pull/22) 两项 Linux CI 成功，合并提交 `13f64df5ebfac937220e289c395697d2edb13398` 的 [master CI](https://github.com/alieismy/debian-vps-tuning/actions/runs/36322058024) 也成功。本轮未连接、升级或测速任何 VPS；用户具体主机的 profile、状态、控制台恢复与业务路径未核验，因此操作单不等于目标机迁移验收。
 - 无新增延期事项。公开 rc.19 Pre-release、19 项资产完整性及此前 rc.17 实测校准判断保持原证据层级；目标 VPS 的 rc.16→rc.19 实际回滚/重启/apply/业务验证仍待单独执行，稳定版成熟度不提升。
 
 ## 本轮记录：2026-09-27（rc.19 发布后核验）
