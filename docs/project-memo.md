@@ -6,6 +6,12 @@
 
 本文件是 `AGENTS.md` 指定的唯一项目阶段备忘入口，用于记录每轮对话工作的闭环状态，以及当前阶段不主动展开的后续候选事项。它不构成需求批准、生产变更授权、发布授权或下一阶段启动决定；控制规则以 [项目级 AGENTS.md](../AGENTS.md) 为准，具体验证事实以 [验证矩阵](validation.md) 和对应发布说明为准。
 
+## 本轮记录：2026-09-27（PR #19 合并前门禁）
+
+- 用户要求继续执行上轮的合并决策，并询问是否还要合并 rc.18。本轮只读核对 PR #19 为 open、非 draft、`MERGEABLE`/`CLEAN`；远端 `master` 仍为 `a5e90d388f5fc1ac6545080649c003baf1fce8ec`，PR head 与远端分支均为 `c69b8b0c457e18e71959099aaf1f3fbed2ae5687`，本地工作树原本干净。rc.18 已由 PR #17 合并，`v0.1.0-rc.18` 是当前远端 `master` 的祖先且对应 Pre-release 已发布，无需重复合并。该 head 的 [push CI](https://github.com/alieismy/debian-vps-tuning/actions/runs/36319059682) 和 [PR CI](https://github.com/alieismy/debian-vps-tuning/actions/runs/36319062060) 均成功；CodeRabbit 此次实际审查已完成且无可操作意见，只有不阻塞的 docstring 覆盖率提示。前条记录所述 draft 状态与机器人跳过审查是当时快照，不再代表当前 PR 状态。
+- 本条阶段记录形成后将提交至 PR #19，因此合并仍以**新增文档提交**的 Linux CI 成功、PR 指向该提交且保持可合并为条件。计划沿用 PR #18 的普通 merge commit 方式；不创建 tag、Release、公开资产，不执行 VPS 生命周期或新的网络测量。合并后的 `master` CI 需按实际结果单独核对，不借用合并前 CI。
+- 无新增延期事项。rc.19 仍是未发布候选；单条真实 rc.17 上传路径的校准兼容与 `KEEP_CURRENT_CEILING` 不能替代目标机生命周期、真实代理业务验收或发布资产反向核验。
+
 ## 本轮记录：2026-09-27（PR #19 正式审查）
 
 - 用户要求执行上一轮确定的 PR #19 审查。以 `origin/master...HEAD` 核对九个改动文件；当前 PR 为 draft/open、可合并，审查起点 HEAD `deacc09172f0aee0c61bc5af9637304dccb191dd` 的 push/PR Linux CI 均成功。校准器代码差异仅为版本号 0.1.1 与 rc.17 来源允许项；新增三组回归覆盖三版接受、未支持版拒绝和 rc.17 样本绑定变化拒绝。`v0.1.0-rc.17` 与 rc.18 tag 的 `dvt-probe.sh`、`tools/render_profiles.py` 无差异，模板差异集中于 qdisc 处理；未发现本次代码增量需要新增行为修复的证据。
