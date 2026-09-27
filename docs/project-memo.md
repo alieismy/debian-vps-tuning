@@ -11,7 +11,7 @@
 - 应用户在草稿 PR #19 审查前的要求，只读复核原始“分析 tcpfit 源码，尤其 fix/feat，并对比本项目评估可吸收内容”的交付。现场 `git ls-remote` 确认 tcpfit `main` 与 `v0.5.8` 解引用提交仍为 `76331588af487a973d3445a1bf8bba7037d566ca`；本地固定 Git 对象有 24 个提交，其中 13 个 `fix`、8 个 `feat`。本备忘 2026-09-22 的采用矩阵覆盖这 21 个提交，并区分已覆盖、有边界吸收、条件候选和拒绝项；研究与采用决策层面的原始需求已完成。
 - 已授权的后续实现范围也已达到相应层级：rc.18 有边界吸收 `mq 0:` 机制，rc.19 候选包含 receiver 背离提示、swap 管道定向修复、锁冲突只读诊断和离线实测 buffer 校准；PR #19 补 rc.17 真实证据兼容，最终 HEAD 的 push/PR Linux CI 均成功。一例代表性 IPv4 上传 probe 的只读判断为 `KEEP_CURRENT_CEILING`，不能上升为自动发现 policer、测量到生产应用闭环或真实代理业务收益。
 - 已完成文档一致性修订：[2026-09-11 独立研究报告](tcpfit-v0.5.8-research-2026-09-11.md) 顶部增加可见勘误并指向完整 fix/feat 矩阵；正文和采用矩阵按固定源码改为：`traffic_mark/report` 读取接口 rx/tx 计数差，预估由 `estimate_traffic_gb` 完成；`qdisc_save` 按 root 标志查找根 qdisc，但 `mq` 只保留首个匹配叶 kind，未保存各叶 options/异构类型。核心采用结论不变。本轮无新增网络实现或主动测试候选，未连接 VPS 或改动运行配置。
-- 完成度判断：源码研究、选择性吸收评估及独立报告一致性修订均已闭合；自动 policer/全路径调优和生产收益从未被纳入已完成范围。无新增技术延期事项；rc.19 仍是未发布候选，目标机生命周期及代理业务验收待后续单独完成。本次文档修订将提交到 PR #19 分支，并以最终 HEAD 的 CI 结果作为交付门禁。
+- 完成度判断：源码研究、选择性吸收评估及独立报告一致性修订均已闭合；自动 policer/全路径调优和生产收益从未被纳入已完成范围。文档修订提交 `0b9d18d2238c94394667aacaaf99f66334aee04f` 已推送到 PR #19；该提交的 [push CI](https://github.com/alieismy/debian-vps-tuning/actions/runs/36318568542) 与 [PR CI](https://github.com/alieismy/debian-vps-tuning/actions/runs/36318571046) 均成功，生成/静态检查、安装器生命周期与 ShellCheck 全部通过。无新增技术延期事项；rc.19 仍是未发布候选，目标机生命周期及代理业务验收待后续单独完成。本条 CI 结果同步会产生一个仅修改备忘的后续提交，其最终 HEAD 仍须独立核对 CI。
 
 ## 本轮记录：2026-09-27（rc.17 校准兼容增量交付与 Linux CI）
 
