@@ -6,6 +6,12 @@
 
 本文件是 `AGENTS.md` 指定的唯一项目阶段备忘入口，用于记录每轮对话工作的闭环状态，以及当前阶段不主动展开的后续候选事项。它不构成需求批准、生产变更授权、发布授权或下一阶段启动决定；控制规则以 [项目级 AGENTS.md](../AGENTS.md) 为准，具体验证事实以 [验证矩阵](validation.md) 和对应发布说明为准。
 
+## 本轮记录：2026-09-27（rc.19 总控与 rc.16 状态并存的升级阻塞）
+
+- 用户在一台 Debian 13/1C2GB 主机报告 `dvt --version` 为 rc.19，而 `dvt status`/`verify` 显示状态版本 rc.16、端口带宽 500 Mbps，并报笼统的状态文件无效。输出中的本地 profile SHA-256 `47dc03b854708d822848372a2ddc2fe938e1142f41eb576bbb6bab9d4ecaf71f` 与官方 rc.19 `debian13-1c2g` Release 资产一致；rc.19 profile 的 schema 4 状态校验要求 `script_version` 等于 rc.19，因此该报错不能单独证明旧 state 损坏。rc.19 总控源码的 `update --target` 会解析旧版状态、校验并调用固定 rc.16 来源 profile 的 `verify`，随后只读预检 rc.19；`migrate prepare` 也使用固定旧 profile。尚无这台主机的单文档 JSON 检查和旧版 verify 结果。
+- README 增补“总控已是 rc.19、状态仍是 rc.16”的条件入口：先检查 state 的文件与基本结构，再运行只读 `dvt update --target v0.1.0-rc.19`；仅当旧版 verify 与目标预检通过，才用当前 rc.19 总控准备 checkpoint，后续沿用固定迁移器及两次人工重启。当前仍未在 VPS 上执行迁移、恢复或测速；未验证具体 state 完整性与运行配置，不能宣称该主机可迁移。
+- 新增待闭合事项：现场只读状态结构及 rc.16 来源 verify，随后按实际输出决定是否进入维护窗口；本轮无其他新增延期事项。项目成熟度仍是 rc.19 Pre-release，目标机生命周期和业务验收未完成。
+
 ## 本轮记录：2026-09-27（rc.16→rc.19 升级说明）
 
 - 用户指出 README 缺少 rc.16→rc.19 的直接升级步骤。本轮核对已发布 rc.19 总控和迁移器源码：目标总控的 `update --target` 只读校验旧版与目标版；迁移器明确接受 rc.16 来源，`prepare` 固定两版 profile、工具、原状态摘要和 boot ID，随后旧版 rollback/purge→第一次人工重启→目标 preflight/apply→第二次人工重启→严格 verify/COMPLETE。当前安装的 rc.16 `dvt` 不能代替目标 rc.19 总控执行 `migrate prepare`；旧 `dvt` 入口须待 checkpoint 完成后再由固定 rc.19 installer 切换。公开资产的 rc.19 总控 SHA-256 为 `fb3d69bf9ca4bdf2a961411d8262fd77950c7f72f68ecb886e33ae3d3509f84e`，installer 为 `3bef587d479f5771da9af8d193baa63b7a7f8480016adf5514dfc944429a8ed3`。
