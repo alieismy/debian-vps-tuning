@@ -5,6 +5,8 @@
 研究对象：<https://github.com/Kylin010/tcpfit>
 研究边界：只读检查远端说明、固定提交源码、发布资产和语法；不运行第三方 root 脚本，不连接目标 VPS，不产生公网测速流量，不修改本项目网络参数。
 
+> **2026-09-27 勘误：** 后续按固定 Git 对象复核全部 21 个 `fix`/`feat` 提交后，确认本报告原先对 `traffic_report` 和 qdisc 保存的两处概括不准确。`traffic_mark`/`traffic_report` 实际读取默认接口的 rx/tx 字节计数差；`qdisc_save` 会在 `tc qdisc show` 输出中按 `root` 标志寻找根 qdisc，只有更早的快照/存档摘要使用首行。下文已按源码修正。完整逐提交比较及最终采用判断见[2026-09-22 fix/feat 覆盖与采用矩阵](project-memo.md#fixfeat-覆盖与采用矩阵)；这些勘误不改变“不以接口计数代替预算 ledger、不直接采用不完整 qdisc 恢复”的结论。
+
 ## 研究问题与当前基线
 
 本次只回答：
@@ -46,7 +48,7 @@
 
 `sweep` 先做不限速基线，按 receiver goodput、sender retransmission/GiB 和重复 loss spike 判断候选拐点；结果可表达 `NO_KNEE`、`OUT_OF_RANGE`、`ABOVE_CAP`、对端过慢和脏路径等不可判定状态（约 L2208–2650）。脚本正确区分：HTB class 的 `rate/ceil` 是聚合出口上限，FQ `maxrate` 是单流 pacing；整形拓扑是 HTB root → class → FQ leaf（约 L1893–2000）。
 
-这套语义与 rc.17 的研究面相容，但本项目已经把它放进更严格的 schema 3 phase summary、root/leaf qdisc health、正 `overlimits`、测量窗口、资源门禁和 `REVIEW_REQUIRED`/`REVIEW_BLOCKED` 分层。`tcpfit` 自身只做流量估算（`traffic_report`），没有本项目的原子 ledger、未知量保守结算或固定证据清单。因此只吸收“goodput 与归一化重传以及不可判定终态”的测试思想；不替换现有 analyzer，也不从其推荐速率、margin 或 burst 公式推导生产参数。
+这套语义与 rc.17 的研究面相容，但本项目已经把它放进更严格的 schema 3 phase summary、root/leaf qdisc health、正 `overlimits`、测量窗口、资源门禁和 `REVIEW_REQUIRED`/`REVIEW_BLOCKED` 分层。`tcpfit` 的 `traffic_mark`/`traffic_report` 会读取默认接口测试前后的 rx/tx 字节计数并报告差值，测试前预估另由 `estimate_traffic_gb` 完成；它没有本项目的原子 ledger、未知量保守结算或固定证据清单。因此只吸收“goodput 与归一化重传以及不可判定终态”的测试思想；不替换现有 analyzer，也不从其推荐速率、margin 或 burst 公式推导生产参数。
 
 ### 4. qdisc、路由窗口和 PPPoE
 
@@ -54,7 +56,7 @@ v0.5.8 修复了默认路由无 `via` 时按字段位置误取网卡的问题：
 
 本项目的 `default_route_ifaces` 已按 `dev` 关键字发现 IPv4/IPv6 默认路由，因而“无 `via` 的字段位置 bug”本身已被吸收；当前 profile 不管理 `initcwnd/initrwnd`，也没有 PPPoE 目标需求。若未来明确支持 PPP/PPPoE，钩子思路可以作为条件设计输入，但必须补上受管文件哈希、所有权、状态 schema、重拨 fixture、回滚和 Linux root 生命周期证据。当前不进入 rc.17。
 
-`tcpfit` 的 qdisc 保存主要依赖 `tc qdisc show` 文本首行（约 L2027–2105），恢复时按有限分支重建；它不能达到本项目 `tc -j` 数值快照、复杂拓扑阻断、root/leaf 语义比较和恢复后哈希门禁的完整性要求。
+`tcpfit` 的 `qdisc_save` 会在 `tc qdisc show` 文本中按 `root` 标志查找根 qdisc；对于 `mq`，它只保存首个匹配叶子的 kind，未保存各叶 options 或异构叶类型（约 L2027–2105）。恢复时仍按有限分支重建，因此不能达到本项目 `tc -j` 数值快照、复杂拓扑阻断、root/leaf 语义比较和恢复后验证的完整性要求。
 
 ### 5. 监测、遥测、安装和多机编排
 
@@ -76,7 +78,7 @@ README/安装器的一键路径下载可变 `main` 分支脚本；`install.sh` �
 | PPP `ip-up` qdisc/initcwnd 恢复钩子 | 源码实现；README 为维护者实测声明 | 仅对明确 PPP/PPPoE 拓扑有意义，会扩大状态/所有权/生命周期 | 条件候选；延期，不进 rc.17 |
 | 32 项 sysctl、固定 RTT、`initcwnd/initrwnd`、netdev/连接参数 | 源码实现；性能数字未复现 | 超出 17 项受管集合，改变默认策略和回滚面 | 拒绝吸收 |
 | 持久 HTB/FQ `limit`/`flow_limit`/burst/cburst 参数 | 源码实现；无本项目 A/B/A 证据 | 与非持久 HTB 和“不得自动持久化”边界冲突 | 拒绝作为默认；仅保留实验对照 |
-| `traffic_report` 估算、公共 iperf3 自动选点、自动装包 | 源码实现 | 不能替代共享 ledger、授权 endpoint 和预算上界 | 拒绝吸收 |
+| 接口 rx/tx 计数差报告、公共 iperf3 自动选点、自动装包 | 源码实现 | 接口总量含背景流量且不是原子预算保留，不能替代共享 ledger、授权 endpoint 和预算上界 | 计数可作旁证；拒绝其替代预算控制及自动选点/装包 |
 | 可变 `main` 安装、自更新降级校验、默认遥测 | 源码实现与 release 资产 | 供应链、外联和证据边界弱于本项目 | 拒绝吸收 |
 | `fleet.py` 多机编排 | 源码实现但自称未上线 | 不满足固定资产、host key、凭据、checkpoint、回滚和脱敏要求 | 拒绝吸收 |
 
