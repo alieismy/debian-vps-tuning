@@ -1,10 +1,16 @@
 # 项目阶段备忘
 
 文档性质：资料性状态与延期事项记录
-当前阶段：rc.19 候选与校准器 0.1.1 的 rc.17 兼容增量已分别通过 PR #18/#19 合入 master，最终合并提交 Linux CI 成功；用户已授权推进独立 rc.19 Pre-release，目标机生命周期及代理业务验收仍待完成（已发布 rc.18 及更早资产保持不可变）
+当前阶段：rc.19 已作为独立 Pre-release 发布，19 项公开资产通过反向完整性核验；目标机 rc.19 生命周期及代理业务验收仍待完成（rc.18 及更早资产保持不可变）
 更新日期：2026-09-27（Asia/Singapore）
 
 本文件是 `AGENTS.md` 指定的唯一项目阶段备忘入口，用于记录每轮对话工作的闭环状态，以及当前阶段不主动展开的后续候选事项。它不构成需求批准、生产变更授权、发布授权或下一阶段启动决定；控制规则以 [项目级 AGENTS.md](../AGENTS.md) 为准，具体验证事实以 [验证矩阵](validation.md) 和对应发布说明为准。
+
+## 本轮记录：2026-09-27（rc.19 发布后核验）
+
+- 用户授权的 [v0.1.0-rc.19 Pre-release](https://github.com/alieismy/debian-vps-tuning/releases/tag/v0.1.0-rc.19) 已于 2026-09-27T12:56:09Z 公开；不是 Draft。发布准备 PR #20 合并提交 `9e4dd08862dff9707d26e0d50f66e36cfcb93dd6` 的 [master CI](https://github.com/alieismy/debian-vps-tuning/actions/runs/36320379068) 成功；annotated tag 解引用到同一提交，[tag CI](https://github.com/alieismy/debian-vps-tuning/actions/runs/36320501877) 成功。未移动或更改 rc.18 及更早 tag/Release。
+- 从该固定 Git 提交提取 17 个清单文件、`SHA256SUMS` 和 `install.sh` 共 19 个字节级资产：17 项源文件摘要全部匹配，清单摘要与安装器固定值一致，安装器摘要与 README 固定值一致。Draft 上传后逐项核对 GitHub API 返回的 19 个名称、大小、SHA-256；公开后再以**无认证 HTTPS Release URL** 下载全部 19 个文件，逐项与固定 Git 字节一致，清单内 17 项再次通过。公开 Release 说明已记录核验结果。离线 Python 校准器属于仓库源码，不在 Shell 安装资产内。
+- 本次未连接或修改 VPS，未启动 iperf3、未产生测试流量；rc.19 的目标机安装/迁移、重启与回滚、代理业务及性能收益仍未验证。发布成熟度为公开 Pre-release 加资产完整性通过，不能提升为稳定版或生产验收。新增延期事项：项目级 `AGENTS.md` 的阶段标题和 rc.18 实现候选描述仍是历史控制面，后续应在独立范围内更新；本次发布授权以用户当前指令为准，未据此改写实施规则。
 
 ## 本轮记录：2026-09-27（rc.19 Pre-release 发布准备）
 
