@@ -118,7 +118,9 @@ printf 'strict_verify_after_3xui_exit=%s\n' "$?"
 
 Strict verification requires `x-ui.service` to be active, and checks that the systemd configuration, 3X-UI main process, and direct Xray child process NOFILE soft/hard limits are all not less than 65536. Reboot once more after installing 3X-UI, and repeat this strict verification command to prove that boot startup and new process inheritance are still correct.
 
-### 4. Execute Read-Only Upgrade Check from Early rc Versions
+### 4. Execute Read-Only Upgrade Check from Early rc Versions (historical rc.17 example)
+
+For a direct rc.16-to-rc.19 migration, follow the [complete Chinese guide](README.md#从-rc16-升级到-rc19). It pins the rc.19 controller, runs read-only `update --target v0.1.0-rc.19`, prepares a persistent checkpoint with that controller, and separates the two manual reboot gates from the final installer switch. The currently installed rc.16 `dvt` must not be used for `migrate prepare`. The rc.17 example below is retained as a historical read-only check.
 
 VPS instances managed by rc.9 through rc.16 can download the published rc.17 main entry and execute `update`. It reads the resource tier and port bandwidth from state, verifies the current profile, target `SHA256SUMS`, and target main entry, then runs the current version's `verify` and the target's read-only `update-preflight`. The output includes the fixed URLs, SHA-256 values, and migration order required for the maintenance window. `update` does not perform rollback, purge, apply, reconfigure, or reboot, and never replaces previously published assets.
 
