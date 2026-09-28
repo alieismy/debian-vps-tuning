@@ -1,7 +1,7 @@
 # 项目阶段备忘
 
 文档性质：资料性状态与延期事项记录
-当前阶段：0.2.0-rc.1 第二阶段真实 VPS 首轮验收未通过；原 fq 已补救恢复，weights 解析兼容与恢复语法预检已修复，修复候选等待 Linux CI 与目标机自动恢复复验；第一阶段固定提交证据独立有效，公开资产保持不可变
+当前阶段：0.2.0-rc.1 第二阶段真实 VPS 首轮验收未通过；原 fq 已补救恢复，weights 解析兼容与恢复语法预检修复已通过 Linux CI，目标机自动恢复复验仍未完成；第一阶段固定提交证据独立有效，公开资产保持不可变
 更新日期：2026-09-28（Asia/Singapore）
 
 本文件是 `AGENTS.md` 指定的唯一项目阶段备忘入口，用于记录每轮对话工作的闭环状态，以及当前阶段不主动展开的后续候选事项。它不构成需求批准、生产变更授权、发布授权或下一阶段启动决定；控制规则以 [项目级 AGENTS.md](../AGENTS.md) 为准，具体验证事实以 [验证矩阵](validation.md) 和对应发布说明为准。
@@ -12,7 +12,8 @@
 - 自动选点及 18 次真实 HTB 采集完成，18 次 root overlimits 均增长，但全部 receiver 背离，另有两次窗口无效和一次 softnet 压力。自动 fq 恢复因目标 iproute2 6.15 的 weights parser 多跳一个 token 失败，退出 2、保留 `INCOMPLETE`/`RECOVERY_REQUIRED`；立即停止后续测试，SIGINT/SIGTERM 均未执行。
 - 通过无真实接口的最小复现及固定版本 `q_fq.c` 确认根因；在核对 owner 已退出、接口身份/原摘要/当前自有 HTB 参数后，按原快照全部参数补救恢复，再由原冻结程序闭合为 `RESTORED`。原 root `0:` 成为内核分配的 `8001:`；14 项 fq 参数独立比较一致，17 项 sysctl、state/旧账本摘要、boot ID、dvt 链接及其他 qdisc/class 未变，无测试进程和活动登记残留。
 - 本轮账本 19 笔已结算，累计 53739520 bytes（51.25 MiB），预留归零；未扩容、重置或另开窗口。私有归档及 341 项文件摘要核验通过，完整边界见[脱敏验收记录](temporary-htb-acceptance-2026-09-28.md)。失败记录与 checkpoint 保留，报告仍正确拒绝。
-- 代码增加无 `dev` 的完整恢复语法预检、实际 parser 验证后才采用的 weights 兼容表示、checkpoint 参数重放及原快照绑定。目标实际 parser 已完成无写入验证；六项新回归及原生预检不写入断言已加入，资产/installer 摘要链同步。本地完整 Python 79 项中 78 通过、Windows flock 跳过 1 项，主静态和旧 HTB 套件均通过；21 资产摘要、installer 绑定、64 个使用文档链接、六份 profile 零差异及 `git diff --check` 通过。固定修复提交的 Linux CI 尚待执行。
+- 代码增加无 `dev` 的完整恢复语法预检、实际 parser 验证后才采用的 weights 兼容表示、checkpoint 参数重放及原快照绑定。目标实际 parser 已完成无写入验证；六项新回归及原生预检不写入断言已加入，资产/installer 摘要链同步。本地完整 Python 79 项中 78 通过、Windows flock 跳过 1 项，主静态和旧 HTB 套件均通过；21 资产摘要、installer 绑定、64 个使用文档链接及新验收文档的 1 个本地链接、六份 profile 零差异及 `git diff --check` 通过。
+- 修复 `1986dea4a6cd8f30c3e2213be1577f389e265e7e` 已推送工作分支；[CI 36397718732](https://github.com/alieismy/debian-vps-tuning/actions/runs/36397718732) 全部成功，79 项 Python 无跳过，原生正常/失败/看护/SIGINT/SIGTERM、安装/预算/迁移生命周期及 ShellCheck 均通过。原生 24 样本中 23 有效，但隔离 netns 配置可观测性缺口仍阻止候选建议。固定 SHA 元数据与完整日志保存在 `.tmp/local/htb-weights-ci-36397718732.*`；该 CI 不覆盖真实 VPS 修复后的完整自动流程。
 - 未完成门禁：修复候选的目标自动事务、SIGINT/SIGTERM、业务效果、IPv6、重启与发布。后续优先无公网测速流量的真实 tc 恢复验证，重新形成版本/预算计划；不能把手工补救恢复或无写入 parser 检查当作完整自动恢复通过。
 - 延期事项：无新增范围外延期事项；本次恢复复验是当前阻断门禁。成熟度仍为未发布实现候选，首轮目标验收失败已解释并安全闭环，但尚不能宣称真实 VPS HTB 验收完成。没有合并默认分支、tag 或 Release。
 
