@@ -222,34 +222,40 @@ def measurement_cases():
 def low_rate_window_cases():
     """低速短窗对照；所有 sysctl 和流量仅在测试专用 netns 内。"""
     h.execute(['sysctl', '-w', 'net.ipv4.tcp_wmem=4096 65536 67108864'])
+    original_cc = h.execute(['sysctl', '-n', 'net.ipv4.tcp_congestion_control']).strip()
     available = h.execute(['sysctl', '-n', 'net.ipv4.tcp_available_congestion_control'])
     # 已部署主机使用 BBR；若 runner 未提供则显式报告实际算法。
     if 'bbr' in available.split():
         h.execute(['sysctl', '-w', 'net.ipv4.tcp_congestion_control=bbr'])
     print('sampling congestion control:', h.execute(['sysctl', '-n', 'net.ipv4.tcp_congestion_control']), flush=True)
     results = []
-    for name, seconds, extra in (
-        ('default', 5, []), ('block16k', 5, ['--length', '16384']),
-        ('window64k', 5, ['--window', '65536']), ('window32k', 5, ['--window', '32768']),
-        ('window32k-block16k', 5, ['--window', '32768', '--length', '16384']),
-        ('long-window', 30, []),
+    for name, seconds, offered, extra in (
+        ('default', 5, '5M', []), ('block16k', 5, '5M', ['--length', '16384']),
+        ('window64k', 5, '5M', ['--window', '65536']), ('window32k', 5, '5M', ['--window', '32768']),
+        ('window32k-block16k', 5, '5M', ['--window', '32768', '--length', '16384']),
+        ('long-window', 30, '5M', []),
+        ('offered-110-percent', 5, '2.2M', []), ('offered-105-percent', 5, '2.1M', []),
     ):
         original = reset_fq()
         transaction = h.Transaction(IFACE, ROOT / ('sampling-' + name), 90)
         transaction.begin()
         try:
             transaction.set_rate(2)
+            output = ROOT / (name + '-sampling.json')
+            stream = output.open('w')
             child = subprocess.Popen(['iperf3', '-c', '192.0.2.2', '-p', '5201', '-t', str(seconds),
-                                      '-b', '5M', '-J', *extra], stdout=subprocess.PIPE, text=True)
+                                      '-b', offered, '-J', *extra], stdout=stream, text=True)
             notsent = []
+            deadline = time.monotonic() + seconds + 15
             while child.poll() is None:
+                assert time.monotonic() < deadline, 'sampling experiment timed out'
                 socket = h.execute(['ss', '-tinm', 'dst', '192.0.2.2'])
                 notsent += [int(v) for v in re.findall(r'notsent:(\d+)', socket)]
                 time.sleep(.2)
-            stdout, _ = child.communicate(timeout=3)
+            stream.close()
+            stdout = output.read_text()
             assert child.returncode == 0, stdout
             raw = json.loads(stdout)
-            (ROOT / (name + '-sampling.json')).write_text(stdout)
             sent, received = raw['end']['sum_sent'], raw['end']['sum_received']
             result = dict(case=name, seconds=seconds, sent=sent['bytes'], received=received['bytes'],
                           sender_mbps=sent['bits_per_second'] / 1e6,
@@ -265,6 +271,7 @@ def low_rate_window_cases():
             transaction.close()
         assert_restored(transaction.checkpoint, original)
     assert results[0]['receiver_mbps'] < results[0]['sender_mbps'] * .8, results[0]
+    h.execute(['sysctl', '-w', 'net.ipv4.tcp_congestion_control=' + original_cc])
     print('PASS reproduced short-window send backlog in isolated Linux', flush=True)
 
 
