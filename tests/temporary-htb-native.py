@@ -294,8 +294,9 @@ def low_rate_window_cases():
             raw = measure.read_json(run.output / row['directory'] / 'upload.iperf3.json')
             print('product low-rate sample:', json.dumps({key: row[key] for key in
                   ('rate_mbps', 'offered_rate_mbps', 'write_block_bytes', 'sender', 'receiver', 'issues', 'htb_overlimits_delta')}), flush=True)
-            assert raw['start']['test_start']['target_bitrate'] == rate * 1100000
+            assert raw['start']['test_start']['target_bitrate'] == rate * 1000000
             assert raw['start']['test_start']['blksize'] == rate * 6250
+        for row in run.rows:
             assert not set(row['issues']) & {'RECEIVER_DIVERGENCE', 'INVALID_MEASUREMENT_WINDOW',
                                             'UNDERDRIVEN', 'HTB_EXPOSURE_NOT_OBSERVED'}, row['issues']
         assert any(row['eligible'] for row in run.rows)

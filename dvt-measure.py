@@ -145,7 +145,7 @@ def make_htb_plan(args, endpoints):
                 affected_interface=args.interface, impact='all egress traffic on this interface, IPv4 and IPv6',
                 topology='single root fq with fully restorable options; no mq/clsact/filters',
                 rates_mbps=rates, schedule=schedule, fine_step_mbps=args.fine_step, max_fine_rates=3,
-                sampling={'offered_rate': 'min(application cap, 110% of current HTB rate)',
+                sampling={'offered_rate': 'current HTB rate (payload; cap reserved separately)',
                           'write_block': 'min(128 KiB, 50 ms of current HTB rate)',
                           'socket_buffer': 'system default'},
                 worst_case_reservations_bytes=plan['max_attempts'] * reservation_bytes(1, args.seconds) +
@@ -550,7 +550,7 @@ class HTBMeasurementRun(MeasurementRun):
         # 固定高 cap 会把未交付数据积在 socket；预算仍按 cap 预留。
         # 小块避免低速下一个 128 KiB write 跨越显著比例的测量窗口。
         self.rows.append(self.attempt(selected, role, self.args.rate_cap,
-                         offered_bps=min(self.args.rate_cap * 1000000, rate * 1100000),
+                         offered_bps=rate * 1000000,
                          block_bytes=min(131072, rate * 6250)))
         write_json(self.output / 'samples.json', self.rows)
 

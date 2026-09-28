@@ -4,7 +4,7 @@
 
 ## 行为与适用范围
 
-HTB（分层令牌桶）限制所选接口的**全部出向流量**，包括其他连接、IPv4/IPv6 和 SSH；不是只限制本次 iperf3。用户必须显式提供接口、上下界和 application cap，且 `1 <= lower < upper < rate-cap <= 10000`。`rate-cap` 是 iperf3 发送目标的上限与预算依据；正式样本目标取当前 HTB 速率的 110%，且不超过 cap。`lower/upper` 是本轮临时整形区间，均不代表套餐速率或持久配置建议。
+HTB（分层令牌桶）限制所选接口的**全部出向流量**，包括其他连接、IPv4/IPv6 和 SSH；不是只限制本次 iperf3。用户必须显式提供接口、上下界和 application cap，且 `1 <= lower < upper < rate-cap <= 10000`。`rate-cap` 是 iperf3 发送目标的上限与预算依据；正式样本的 payload 发送目标取当前 HTB 速率，包含协议开销的实际整形暴露须由正 overlimits 核实。`lower/upper` 是本轮临时整形区间，均不代表套餐速率或持久配置建议。
 
 按 Linux 能力检查，不用发行版名称、架构、CPU/RAM 档位或套餐带宽表限制本入口。依赖沿用普通测量；整形还需要 root、可用的 HTB/fq 和完整可恢复的 tc JSON。**只接受无 class/filter 的单一 root fq**；mq、clsact、ingress、额外对象或未知 fq 选项均在写入前拒绝。此时仍可使用普通 `measure`。旧 `dvt htb` 研究协议及受管配置支持范围保持原样。
 

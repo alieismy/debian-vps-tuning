@@ -307,15 +307,15 @@ main measure --rate-cap 20 --plan-only
         commands = []
         def process(command, **kwargs):
             commands.append(command)
-            write_sample(Path(command[-1]), rate=2.2)
+            write_sample(Path(command[-1]), rate=2)
             return Mock(wait=Mock(return_value=0))
         with patch.object(m, 'route_for', return_value=ROUTE), patch.object(m.subprocess, 'Popen', side_effect=process), redirect_stdout(io.StringIO()):
             run.take(ENDPOINT, ROUTE, 'sweep', 2)
         # 2 Mbps 的短窗不再持续按 5 Mbps 向 socket 入队；不缩小 TCP window。
-        self.assertEqual(commands[0][-3:-1], ['2200000', '12500'])
+        self.assertEqual(commands[0][-3:-1], ['2000000', '12500'])
         reservation = next(c for c in run.budget.call_args_list if c.args[0] == 'reserve')
         self.assertEqual(reservation.args[-1], m.reservation_bytes(5, 5))
-        self.assertEqual(run.rows[0]['offered_rate_mbps'], 2.2)
+        self.assertEqual(run.rows[0]['offered_rate_mbps'], 2)
         self.assertEqual(run.rows[0]['write_block_bytes'], 12500)
 
     def test_full_flow_failover_and_complete_report(self):

@@ -22,7 +22,9 @@ iperf3 3.18 的 [`iperf_tcp_send`](https://github.com/esnet/iperf/blob/2a2984488
 
 ## 实施选择
 
-正式 HTB 样本的 offered rate 改为 `min(rate-cap, current HTB rate × 1.10)`；write block 改为 `min(131072, current HTB Mbps × 6250)` bytes，即最多对应当前档位 50 ms 的数据。普通 `measure` 和 discovery 仍使用原发送目标及 128 KiB block。每个事件与样本记录实际 offered rate 和 block，计划公开采集政策。
+第一轮候选采用 110% offered rate；固定 `844d5b5` 的 [CI](https://github.com/alieismy/debian-vps-tuning/actions/runs/36406521129)在真实 1 Mbps 采集路径失败：收发均为 693750 bytes，但 receiver 时长 5.567 秒，超过原 0.25 秒容差。该候选未部署 VPS，失败证据保留，未放宽窗口门禁。
+
+后继修正把正式 HTB 样本的 payload offered rate 设为当前 HTB rate；write block 为 `min(131072, current HTB Mbps × 6250)` bytes，即最多对应当前档位 50 ms 的数据。协议开销使 payload 目标与 qdisc 速率的口径不同，是否实际受到整形仍必须观察正 overlimits。普通 `measure` 和 discovery 使用原发送目标及 128 KiB block。每个事件与样本记录实际 offered rate 和 block，计划公开采集政策。
 
 最主要的反对理由是较小发送余量可能无法充分暴露整形，尤其用户 cap 接近上界或路径吞吐受限时。因此保留每样本正 HTB overlimits、sender/receiver 均至少达到 HTB rate 的 90%、20% receiver 背离、原窗口、资源和首尾 reference 门禁；不满足即保留无效，不增加重试或把阈值放宽。
 
