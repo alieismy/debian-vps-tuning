@@ -171,6 +171,10 @@ def measurement_cases():
                     child.send_signal(sig)
                 code = child.wait(timeout=260)
                 assert code == (130 if sig == signal.SIGINT else 143 if sig else 0), log_path.read_text()
+                print(log_path.read_text(), flush=True)
+                events = json.loads((output / 'attempts.json').read_text())
+                print('attempt outcomes:', [{k: e.get(k) for k in ('role', 'status', 'issues', 'error')}
+                                            for e in events], flush=True)
                 assert_restored(output / 'htb-transaction', original)
                 budget = json.loads(ledger.read_text())
                 assert budget['reserved_bytes'] == 0 and budget['accounted_bytes'] > 0, budget
