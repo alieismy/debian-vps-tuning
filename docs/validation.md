@@ -14,7 +14,9 @@
 
 修复增加完整恢复参数的无写入语法预检、受影响 weights 解析器的限定兼容、checkpoint 参数重放与校验。目标实际解析器已通过无 `dev` 的完整命令检查，qdisc 前后不变；本地新增六项回归，完整 Python 79 项中 78 通过、Windows flock 跳过 1 项。修复提交 `1986dea4a6cd8f30c3e2213be1577f389e265e7e` 的 [Linux CI 36397718732](https://github.com/alieismy/debian-vps-tuning/actions/runs/36397718732) 全部通过：79 项 Python 无跳过、主静态与旧 HTB 套件、root 安装/预算/迁移生命周期、真实 tc 正常/部分失败/看护/信号恢复及 ShellCheck。该轮原生 24 个样本中 23 个有效；隔离 netns 的配置观察缺口仍使结果为 `INSUFFICIENT_EVIDENCE`，不产生候选建议。
 
-修复候选的真实 VPS 完整自动恢复及 SIGINT/SIGTERM、更多内核/iproute2 组合、IPv6、业务影响和性能仍未验收。已完成的补救恢复不替代原自动流程通过；普通测量的第一阶段真实证据也不替代这些项目。持久 HTB 与平台 apply 范围未扩展。
+用户再次授权后，固定 `f08fd8c` 的[恢复复验](temporary-htb-retest-2026-09-28.md)通过：不启动 iperf3 的真实 tc 2/3/4 Mbps 正常事务自动恢复，以及公共 IPv4 首个采集窗口内的 SIGINT/SIGTERM，分别退出 130/143。三次均 `RESTORED`、原 `fq 8001:` 及 14 项参数一致，无进程/活动登记/预算预留残留；中断报告正确拒绝。共享窗口累计保守计账约 87.88/128 MiB，前 19 笔记录不变；112 项新证据摘要通过，三份冻结恢复源码与候选一致。
+
+修复版本完整 sweep 的正常 CLI 完成报告、有效样本/拐点、原 root `0:` 自动恢复分支（本轮起点为 `8001:`）、目标机 SIGKILL/期限接管、更多内核/iproute2 组合、IPv6、业务影响和性能仍未验收。不同轮次、事务模块、产品 CLI、CI 和业务证据分别报告；持久 HTB 与平台 apply 范围未扩展。
 
 ## 0.2.0-rc.1 自动测量候选（2026-09-28）
 

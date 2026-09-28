@@ -2,7 +2,7 @@
 
 ## [0.2.0-rc.1] - Unreleased
 
-- 修复真实单机验收发现的 iproute2 6.15 fq weights 恢复解析问题：整形前验证完整恢复语法，按实际解析能力选择限定兼容参数，冻结并校验恢复参数。首轮失败后已恢复原 fq；修复候选的目标自动事务与信号复验仍未完成，详见 `docs/temporary-htb-acceptance-2026-09-28.md`。
+- 修复真实单机验收发现的 iproute2 6.15 fq weights 恢复解析问题：整形前验证完整恢复语法，按实际解析能力选择限定兼容参数，冻结并校验恢复参数。首轮失败后已恢复原 fq；后续正常事务与公共路径 SIGINT/SIGTERM 复验通过，完整扫描与性能效果未验收，详见 `docs/temporary-htb-retest-2026-09-28.md`。
 
 - 新增按实际 Linux 能力运行的 `diagnose` 和独立 `measure`，无需先 apply 或匹配 Debian/CPU/RAM/架构档位；`diagnose --managed` 保留原 profile 诊断。
 - 加入带官方出处的 Leaseweb/Clouvider 固定公共目录、有限 RTT 排序和有预算协议尝试、自有端点入口及 1–10000 Mbps 显式测试 cap。
