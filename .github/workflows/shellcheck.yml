@@ -26,7 +26,20 @@ jobs:
       - name: Check temporary HTB with native tc and isolated traffic
         run: |
           sudo apt-get update -qq
-          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y iperf3 iproute2 jq
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y iproute2 jq build-essential
+          # 3.16 的 application pacing 会忙等，占满 CPU；3.18 修复 #1741/#1743。
+          mkdir -p .tmp/ci-iperf
+          curl -fsSL https://github.com/esnet/iperf/releases/download/3.18/iperf-3.18.tar.gz \
+            -o .tmp/ci-iperf/iperf-3.18.tar.gz
+          echo 'c0618175514331e766522500e20c94bfb293b4424eb27d7207fb427b88d20bab  .tmp/ci-iperf/iperf-3.18.tar.gz' | sha256sum -c -
+          tar -xzf .tmp/ci-iperf/iperf-3.18.tar.gz -C .tmp/ci-iperf
+          (
+            cd .tmp/ci-iperf/iperf-3.18
+            ./configure --prefix=/usr/local --disable-shared > ../configure.log 2>&1 || { cat ../configure.log; exit 1; }
+            make -j2 > ../make.log 2>&1 || { cat ../make.log; exit 1; }
+            sudo make install > ../install.log 2>&1 || { cat ../install.log; exit 1; }
+          )
+          iperf3 --version
           sudo bash tests/temporary-htb-check.sh
 
       - name: ShellCheck 0.11.0

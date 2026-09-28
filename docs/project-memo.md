@@ -15,6 +15,7 @@
 - 配套[临时 HTB 契约与使用说明](temporary-htb.md)、README 中英文、CHANGELOG、验证与候选说明已同步。第一阶段真实低流量证据仍绑定 `d650709`，不提升为本轮 HTB 验收。无新增范围外延期事项；Ubuntu/ARM64/大资源持久配置、持久 HTB、高流量性能 campaign、真实 VPS 恢复/业务门禁与 AGENTS 阶段漂移保持原边界。
 - 首轮实现 `1820efc` 的 [CI 36391464786](https://github.com/alieismy/debian-vps-tuning/actions/runs/36391464786) 通过静态和安装生命周期，但原生预检发现 runner 的 iproute2 对空 class 列表成功返回空文本。已在确认命令成功后兼容空列表，并新增故障返回仍拒绝的回归；核对 Linux v6.11 `sch_htb.c`，补充 class 创建时内核自动 `pfifo 0:` 叶子的有限恢复识别。其余原生门禁尚待继续执行。
 - 当前成熟度为第二阶段本地实现候选，Linux 原生恢复 CI 尚待闭合；不得把 unit fixture 当真实内核/目标机通过。临时验证日志与私有运行准备材料留在忽略目录 `.tmp/local/`，用于复核，不进入公开安装资产。
+- 后续证据：Ubuntu 24.04 自带 iproute2 6.1 不实现 class JSON，已核对其 `tc_class.c/q_htb.c` 并加入严格文本解析、rate/ceil 单位换算和完整原行漂移比较。[CI 36391994207](https://github.com/alieismy/debian-vps-tuning/actions/runs/36391994207) 已通过定制 fq/变速/锁/down、root/class/leaf 部分失败、外部参数漂移重复拒绝、owner SIGKILL 与忽略 TERM 后期限恢复。后续完整测量在选点阶段因 CPU 压力停止；[诊断 CI 36392388743](https://github.com/alieismy/debian-vps-tuning/actions/runs/36392388743) 记录 sender CPU 100.728%、remote 0.014%、steal 0，与 ESnet 3.18 修复的限速 CPU 问题一致。仅在临时 CI runner 构建官方 SHA-256 固定的 iperf3 3.18 后继续，不放宽产品门禁、不升级 VPS。新增离线回归后本地总计 72 项，71 通过、Windows flock 跳过 1 项。
 
 ## 本轮记录：2026-09-28（指定目标的低流量功能验收完成）
 

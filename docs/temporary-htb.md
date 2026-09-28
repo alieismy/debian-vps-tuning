@@ -8,6 +8,8 @@ HTB（分层令牌桶）限制所选接口的**全部出向流量**，包括其�
 
 按 Linux 能力检查，不用发行版名称、架构、CPU/RAM 档位或套餐带宽表限制本入口。依赖沿用普通测量；整形还需要 root、可用的 HTB/fq 和完整可恢复的 tc JSON。**只接受无 class/filter 的单一 root fq**；mq、clsact、ingress、额外对象或未知 fq 选项均在写入前拒绝。此时仍可使用普通 `measure`。旧 `dvt htb` 研究协议及受管配置支持范围保持原样。
 
+Ubuntu 24.04 的 iproute2 6.1 尚无 class JSON；本入口严格解析其 HTB 文本中的 rate/ceil，并保留整行参数用于漂移核验。未知 class 文本仍拒绝。iperf3 建议使用 3.18 或已包含相应修复的版本：[ESnet 3.18 发布说明](https://github.com/esnet/iperf/blob/2a2984488d6de8f7a2d1f5938e03ca7be57e227c/RELNOTES.md)记录限速测试 CPU 过高问题修复（#1741/#1743）；本轮 runner 的 3.16 在 1 Mbps 下实测约 100.7% sender CPU，正确触发 `CPU_PRESSURE` 并在整形前停止。程序不会自动安装或升级用户主机的依赖。
+
 保存并恢复 fq 的 limit、flow_limit、buckets、orphan_mask、quantum、initial_quantum、rate、pacing、时间、horizon 及可识别的 bands/priomap/weights 参数；不只恢复默认 `fq`。原 root handle 为 `0:` 时，内核可能分配新的非零 handle；仅该接口的单一 fq 允许此语义等价，参数必须一致。未知参数拒绝，不静默丢弃。
 
 ## 计划和执行

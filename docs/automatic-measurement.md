@@ -10,6 +10,8 @@
 
 当前实现只测 **VPS 出向单流 TCP**，用 iperf3 `--bitrate` 控制目标速率，保持当前 qdisc 和 sysctl；已有 HTB 仍会限制结果。1–10000 Mbps 是参数范围，不代表这些速率或所有发行版已运行验证。测试 cap 与服务商套餐、网卡显示速率、实测 goodput 和持久整形值是不同概念。
 
+限速测试建议使用 iperf3 3.18 或含等效修复的版本。3.16 在本轮 CI 的 1 Mbps 测试中因 sender CPU 约 100.7% 被 `CPU_PRESSURE` 拒绝；[ESnet 的 3.18 说明](https://github.com/esnet/iperf/blob/2a2984488d6de8f7a2d1f5938e03ca7be57e227c/RELNOTES.md)明确修复限速 CPU 过高问题。此类拒绝不代表路径容量不足，也不自动授权升级依赖。
+
 ## 使用
 
 在完整且经过摘要核验的源码/bundle 根目录中，先看不联网、不写文件的计划：
