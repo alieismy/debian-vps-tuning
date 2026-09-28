@@ -1,6 +1,6 @@
 # Debian VPS Tuning
 
-> 当前工作树为未发布的 **`0.2.0-rc.1` 测量与临时 HTB 候选**：新增无需 apply、无需匹配资源档位的 Linux `diagnose`，以及自动选择公共 iperf3 的 `measure`。参见[使用、预算与结果边界](docs/automatic-measurement.md)。后文 rc.19 联网安装入口仍指向已发布版本，不包含这些新能力。新候选的本地 installer SHA-256：`ac170910a798f937ba7aa346fea2b249cc4c3c7d9af477a29d2ec06aa2b62618`。
+> 当前工作树为未发布的 **`0.2.0-rc.1` 测量与临时 HTB 候选**：新增无需 apply、无需匹配资源档位的 Linux `diagnose`，以及自动选择公共 iperf3 的 `measure`。参见[使用、预算与结果边界](docs/automatic-measurement.md)。后文 rc.19 联网安装入口仍指向已发布版本，不包含这些新能力。新候选的本地 installer SHA-256：`b6ff95b7d950057797caf73008c143b2d63ff8bf933d5b1e456425945b0bfb01`。
 
 ```bash
 # 完整本地候选目录：仅查看计划，无网络流量/配置写入

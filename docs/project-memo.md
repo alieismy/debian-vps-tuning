@@ -13,6 +13,7 @@
 - 新增 `dvt_htb_transaction.py`，只接受无 class/filter 的单一根 fq，按 iproute2 JSON 的实际单位恢复完整参数；root-zero 句柄只在目标 fq 语义内规范化。冻结恢复程序、boot/netns/ifindex、PID/starttime、接口锁与独立看护；正常/中断恢复，owner 消失或期限到达由看护接手；外部参数漂移重复恢复仍拒绝覆盖。旧 HTB 协议、六份生成 profile、17 项 sysctl、BDP 和持久配置范围未变。
 - 本地门禁：全部 Python 70 项中 69 通过，真实 flock 因 Windows 缺少命令跳过 1 项；主静态/状态化 fixture、旧 HTB 静态、生成一致性、变更脚本 ShellCheck 0.11.0 通过。新增原生 CI 入口在两个专有 netns/veth 中运行真实 tc/iperf3，验证完整恢复、部分写入失败、外部漂移、看护期限及 SIGINT/SIGTERM，结果待运行后补充。21 项资产摘要及 installer 绑定已同步。
 - 配套[临时 HTB 契约与使用说明](temporary-htb.md)、README 中英文、CHANGELOG、验证与候选说明已同步。第一阶段真实低流量证据仍绑定 `d650709`，不提升为本轮 HTB 验收。无新增范围外延期事项；Ubuntu/ARM64/大资源持久配置、持久 HTB、高流量性能 campaign、真实 VPS 恢复/业务门禁与 AGENTS 阶段漂移保持原边界。
+- 首轮实现 `1820efc` 的 [CI 36391464786](https://github.com/alieismy/debian-vps-tuning/actions/runs/36391464786) 通过静态和安装生命周期，但原生预检发现 runner 的 iproute2 对空 class 列表成功返回空文本。已在确认命令成功后兼容空列表，并新增故障返回仍拒绝的回归；核对 Linux v6.11 `sch_htb.c`，补充 class 创建时内核自动 `pfifo 0:` 叶子的有限恢复识别。其余原生门禁尚待继续执行。
 - 当前成熟度为第二阶段本地实现候选，Linux 原生恢复 CI 尚待闭合；不得把 unit fixture 当真实内核/目标机通过。临时验证日志与私有运行准备材料留在忽略目录 `.tmp/local/`，用于复核，不进入公开安装资产。
 
 ## 本轮记录：2026-09-28（指定目标的低流量功能验收完成）

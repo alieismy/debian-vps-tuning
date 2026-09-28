@@ -75,12 +75,17 @@ def identity(iface):
 
 
 def snapshot(iface):
-    classes = json.loads(execute(['tc', '-j', '-d', 'class', 'show', 'dev', iface]))
-    filters = json.loads(execute(['tc', '-j', 'filter', 'show', 'dev', iface, 'root']))
+    # 一些 iproute2 版本在没有 class/filter 时成功返回空文本而不是 []。
+    def objects(argv):
+        rows = json.loads(execute(argv).strip() or '[]')
+        require(isinstance(rows, list) and all(isinstance(row, dict) for row in rows), '未知 tc 对象格式')
+        return rows
+    classes = objects(['tc', '-j', '-d', 'class', 'show', 'dev', iface])
+    filters = objects(['tc', '-j', 'filter', 'show', 'dev', iface, 'root'])
     for cls in classes:
         parent = cls.get('handle', cls.get('classid'))
         require(isinstance(parent, str), '无法核验 class filter')
-        filters.extend(json.loads(execute(['tc', '-j', 'filter', 'show', 'dev', iface, 'parent', parent])))
+        filters.extend(objects(['tc', '-j', 'filter', 'show', 'dev', iface, 'parent', parent]))
     return {'qdiscs': json.loads(execute(['tc', '-j', '-d', 'qdisc', 'show', 'dev', iface])),
             'classes': classes, 'filters': filters}
 
@@ -162,7 +167,7 @@ def owned(state, current):
         explicit = q.get('kind') == 'fq' and q.get('handle') == leaf_handle
         # class 创建后、显式叶子创建前，内核会自动挂接 handle 0: 的默认叶子。
         automatic = (state.get('recovery_phase', state['phase']) == 'MUTATING' and q.get('handle') == '0:' and
-                     q.get('kind') in ('fq', 'fq_codel', 'pfifo_fast'))
+                     q.get('kind') in ('fq', 'fq_codel', 'pfifo', 'pfifo_fast'))
         if not ((explicit or automatic) and q.get('parent') == root_handle + '1'):
             return False
     for c in current['classes']:

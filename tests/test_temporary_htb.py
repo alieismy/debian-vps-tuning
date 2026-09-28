@@ -86,6 +86,12 @@ class TemporaryHTBTests(unittest.TestCase):
         data['qdiscs'].append(dict(kind='ingress', handle='ffff:'))
         self.assertFalse(h.owned(state, data))
 
+    def test_empty_tc_objects_are_only_accepted_after_command_success(self):
+        with patch.object(h, 'execute', side_effect=['\n', '', json.dumps(ORIGINAL['qdiscs'])]):
+            self.assertEqual(h.snapshot('test0'), ORIGINAL)
+        with patch.object(h, 'execute', side_effect=h.HTBError('tc failed')), self.assertRaises(h.HTBError):
+            h.snapshot('test0')
+
     def test_plan_separates_offered_cap_and_shaping_range(self):
         p = m.make_htb_plan(args(), [])
         self.assertEqual(p['rates_mbps'], [2, 6, 10, 14, 18])
