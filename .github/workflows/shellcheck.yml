@@ -46,6 +46,7 @@ jobs:
             dvt-migrate.sh \
             install.sh \
             dvt-probe.sh \
+            dvt-measure-runtime.sh \
             dvt-htb.sh \
             experiments/htb-aggregate/experiment-plan.sh \
             experiments/htb-aggregate/htb-aggregate-experiment.sh \

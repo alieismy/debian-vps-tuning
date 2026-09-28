@@ -11,6 +11,13 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "tools" / "profile-template.sh.in"
 
+
+def expand_measurement(template: str) -> str:
+    for token in ("MEASUREMENT_COUNTERS", "MEASUREMENT_PHASE"):
+        fragment = (ROOT / "tools" / (token.lower() + ".sh.in")).read_text(encoding="utf-8")
+        template = template.replace("@" + token + "@", fragment.rstrip())
+    return template
+
 PROFILES = {
     "debian12-1c512m-vps-tuning.sh": {
         "DEBIAN_VERSION": "12",
@@ -139,7 +146,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true", help="fail if generated files differ")
     args = parser.parse_args()
-    template = TEMPLATE.read_text(encoding="utf-8")
+    template = expand_measurement(TEMPLATE.read_text(encoding="utf-8"))
     failed = False
     for name, values in PROFILES.items():
         target = ROOT / name
@@ -152,6 +159,15 @@ def main() -> int:
         else:
             target.write_text(expected, encoding="utf-8", newline="\n")
             print(f"rendered: {name}")
+    runtime = ROOT / "dvt-measure-runtime.sh"
+    expected = expand_measurement((ROOT / "tools/measurement-runtime.sh.in").read_text(encoding="utf-8"))
+    if args.check:
+        if not runtime.exists() or runtime.read_text(encoding="utf-8") != expected:
+            print("out of date: dvt-measure-runtime.sh", file=sys.stderr)
+            failed = True
+    else:
+        runtime.write_text(expected, encoding="utf-8", newline="\n")
+        print("rendered: dvt-measure-runtime.sh")
     return 1 if failed else 0
 
 

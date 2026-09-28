@@ -6,10 +6,10 @@ IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 
-INSTALLER_VERSION='0.1.0-rc.19'
-RELEASE_TAG='v0.1.0-rc.19'
+INSTALLER_VERSION='0.2.0-rc.1'
+RELEASE_TAG='v0.2.0-rc.1'
 REPOSITORY='alieismy/debian-vps-tuning'
-EXPECTED_MANIFEST_SHA256='68d0dea6df1f0e1f157d407e948792a7fcc2a19acbd530bef26fdf2ddfc49ca9'
+EXPECTED_MANIFEST_SHA256='a18818796c31d77cc2e0054032670562143cee17c24b9c210506f9a593d7f8ff'
 DEFAULT_PREFIX='/usr/local'
 
 source_dir=''
@@ -29,6 +29,9 @@ assets=(
   dvt-traffic-budget.sh
   dvt-migrate.sh
   dvt-probe.sh
+  dvt-measure.py
+  dvt-measure-runtime.sh
+  measurement-endpoints.json
   dvt-htb.sh
   experiments/htb-aggregate/experiment-plan.sh
   experiments/htb-aggregate/htb-aggregate-experiment.sh
@@ -47,7 +50,7 @@ Usage:
   bash install.sh [--no-launch]
   bash install.sh --source-dir /absolute/release-assets [--prefix /usr/local] [--no-launch]
 
-Remote mode downloads only the fixed v0.1.0-rc.19 Release. It first verifies
+Remote mode downloads only the fixed v0.2.0-rc.1 Release. It first verifies
 the pinned SHA-256 of SHA256SUMS, then verifies every installed asset. Local
 mode is intended for release validation and also requires a complete matching
 SHA256SUMS. Installation itself does not apply tuning or run network traffic.

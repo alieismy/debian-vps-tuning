@@ -7,9 +7,12 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = (ROOT / "tools/profile-template.sh.in").read_text(encoding="utf-8")
+sys.path.insert(0, str(ROOT / "tools"))
+from render_profiles import expand_measurement
+SOURCE = expand_measurement((ROOT / "tools/profile-template.sh.in").read_text(encoding="utf-8"))
 
 
 def function(name):

@@ -1,0 +1,63 @@
+# 独立诊断与公共端点速率阶梯测量
+
+适用：未发布的 `0.2.0-rc.1` 完整本地 bundle。实现边界见[第一阶段契约](automatic-measurement-design.md)，研究依据见[可研](tcpfit-policer-refactor-feasibility-2026-09-28.md)。当前仅有源码、离线 fixture 与宿主适用检查证据；公共服务、Linux 原生运行与性能尚未验收。
+
+## 能做什么
+
+`dvt diagnose` 按 Linux 实际能力读取系统、路由、qdisc、TCP 与资源计数，无需 root 或已安装 profile；不可读取项显示 unavailable。`dvt diagnose --managed` 保留原来的 profile 专用增量/代理诊断及支持范围。安装完整新 bundle 不等于对主机 apply，也不升级旧 managed state。
+
+`dvt measure` 在未 apply 的主机上也能运行，不检查 Debian/Ubuntu 名称、amd64/ARM64 或 CPU/RAM 档位。它需要 Python 3.9+、Bash、iperf3、iproute2（ip/tc/ss）、jq、awk、GNU coreutils 及 util-linux（flock/setsid）。`ping` 可缺失，仅影响 RTT 排序。主动测量仍须 root，因为复用 root 所有的共享账本；不自动安装依赖。平台没有相关计数能力时，该样本不能被标为有效。
+
+当前实现只测 **VPS 出向单流 TCP**，用 iperf3 `--bitrate` 控制目标速率，保持当前 qdisc 和 sysctl；已有 HTB 仍会限制结果。1–10000 Mbps 是参数范围，不代表这些速率或所有发行版已运行验证。测试 cap 与服务商套餐、网卡显示速率、实测 goodput 和持久整形值是不同概念。
+
+## 使用
+
+在完整且经过摘要核验的源码/bundle 根目录中，先看不联网、不写文件的计划：
+
+```bash
+bash debian-vps-tuning.sh measure --rate-cap 20 --plan-only
+```
+
+安装了新候选时，也可用 `dvt measure`。旧 rc.19 安装不含新入口；本候选尚未发布，不能用不存在的 Release URL 安装。仅本地安装的入口为 `bash install.sh --source-dir "$PWD" --no-launch`，安装会更新 `dvt` 指向，用户应在明确选择版本后执行；已有受管状态的 verify/rollback 继续使用其原版本脚本。
+
+确认所在机器可访问目录中的公开服务，并选择一个**新的、私有且父目录已存在的**证据目录。执行资产须由 root 所有且不可被 group/world 写入；安装器会设置这些权限，直接运行源码时也会核验摘要及文件权限。以下是显式启动流量的命令示例，本地开发验证没有执行它：
+
+```bash
+dvt measure --rate-cap 20 --family 4 --budget-mib 600 \
+  --ledger /root/dvt-traffic/window.json --window-id path-check-01 \
+  --output-dir /root/dvt-measure-01
+```
+
+命令先显示目录、额度、期限、速率和样本计划，再询问一次；非交互使用 `--yes` 表示接受该计划。默认最多尝试 4 个地址/公布端口组合、每档 3 次、每次 5 秒、流量调度期限 300 秒；最后的只读快照、账本结算和证据提交可能延长退出时间。目录公开服务会看到 VPS 的来源地址；报告中的网络地址只保存在本机，分享前需脱敏。
+
+自有端点可加 `--host iperf.example.net --server-port 5201`。公共模式不允许任意覆盖端口；节点忙时只能在目录列出的端口和尝试上限内回退。IPv4 与 IPv6 分别绑定实际 IP/出口；ICMP 无响应仍允许有预算的协议尝试。不保证挑中物理最近或容量足够的节点。
+
+默认阶梯为 cap 的 10%、25%、50%、75%、100%（向下取整，最小 1 Mbps，重复值合并），低速档在首尾各重复一组。协议预检固定为 1 Mbps，也计入预算。没有无限速基线、omit 预热或额外多流。
+
+## 预算、失败与结果
+
+预算按 application payload 记账，不包含 TCP/IP/链路、重传或服务商计费开销。每次 iperf3 启动前按 `rate × 125000 × (seconds + 10 + 8 + 5) + 1 MiB` 预留：覆盖 phase 超时余量、supervisor 等待与 TERM/KILL 清理窗口，并留有 pacing 余量。成功按 sender bytes 结算，失败保守扣除该次预留；因此剩余额度有时不足以启动下一档，即使该档正常完成的估算字节较少。不会扩大额度或自动新建窗口。
+
+同一 ledger 的 `window-id` 和预算必须一致；保留旧窗口历史，不能删账或换 ID 绕过额度。账本读写失败时停止并保留未确认的 reservation，需依据证据核对；不能手工把未知消费改成 0。`Ctrl-C`/TERM 通过 runtime trap 回收本次 iperf3 进程组并尝试保守结算；SIGKILL/掉电可能留下占用，需检查原账本。真实信号生命周期尚待 Linux 验证。
+
+完整采集不等于已识别拐点：
+
+| 状态 | 含义 |
+|---|---|
+| `NO_RISE_IN_TESTED_RANGE` | 有效控制与完整阶梯中未确认重传上升；不证明无 policer 或最大容量 |
+| `RETRANSMISSION_RISE_OBSERVED` | 在当前发送方式下观察到重复的重传上升区间；需路径/业务复核，不输出整形推荐 |
+| `INSUFFICIENT_EVIDENCE` | 样本/控制缺失、预算/时间不足、负载不足、receiver 背离、资源压力或路径不同；不生成区间 |
+
+筛选阈值是 `max(100, 5 × 首部控制中位重传/GiB)`，每档至少两次达到阈值才算重复上升；这是显式经验性筛选，不能换算为真实丢包率。sender 至少达到目标的 90%，不得超过 110%；receiver 至少为 sender 的 80%，还必须通过原有有效窗口与字节算术校验。CPU/softnet/qdisc 异常阻止生成区间。测试所得近端 RTT 不回填业务 BDP。
+
+每次运行保存原始 iperf3 JSON、共享计数器/窗口摘要、路径、发现过程、每次预留与结算、计划和最终结果。`SHA256SUMS` 由 `COMPLETED` 绑定；异常保留 `INCOMPLETE`。预算/时间耗尽可以生成完整的“部分测量”报告；命令返回 0 表示证据报告完成，不表示网络健康或性能验收。
+
+```bash
+dvt report --input-dir /root/dvt-measure-01
+```
+
+离线 `report` 先核验摘要再显示结果；也可用 `python3 dvt-measure.py report --input-dir ...`。独立测量使用 `dvt.path-measurement/1`，不输入旧 `tools/calibrate_probe.py` 冒充 `VERIFIED` profile 证据。
+
+## 阶段边界
+
+当前已实现候选是第一阶段。第二阶段的通用临时 HTB 需要原生 Linux 上验证端点、停止/结算与无配置变化，再验证真实 tc 拓扑和恢复；第三阶段的 Ubuntu/ARM64/大资源持久配置需要各自生命周期。当前不会将诊断可运行升级为这些平台的 apply 支持。

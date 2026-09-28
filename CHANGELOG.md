@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.0-rc.1] - Unreleased
+
+- 新增按实际 Linux 能力运行的 `diagnose` 和独立 `measure`，无需先 apply 或匹配 Debian/CPU/RAM/架构档位；`diagnose --managed` 保留原 profile 诊断。
+- 加入带官方出处的 Leaseweb/Clouvider 固定公共目录、有限 RTT 排序和有预算协议尝试、自有端点入口及 1–10000 Mbps 显式测试 cap。
+- 新测量在同一 IP/端口/出口上执行单流 application pacing、重复速率阶梯及首尾低速控制；记录有效窗口、receiver goodput、sender 重传/GiB、RTT 和资源状态。报告仅给路径观察，不识别服务商 policer、不自动整形。
+- 共享采集与解析从 profile 模板提取，生成后的旧 profile 除版本外保持相同行为。新证据使用独立 schema；离线校准器 0.1.2 另行接受同格式的 0.2.0-rc.1 受管 probe。
+- 新版账本继续读取 schema 1 的 rc.19 窗口，不重置额度；迁移器接受 rc.1–rc.19 来源至新候选。测量本身不需要迁移受管状态。
+- 这是第一阶段本地候选；Linux 运行、公共服务可达性、目标机/业务与发布验收分别记录，不能由离线测试替代。临时 HTB 泛化与扩展持久配置仍属后续阶段。
+
 ## [0.1.0-rc.19] - 2026-09-27
 
 ### Added

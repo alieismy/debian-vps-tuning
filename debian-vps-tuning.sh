@@ -6,8 +6,8 @@ IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 
-CONTROLLER_VERSION='0.1.0-rc.19'
-RELEASE_TAG='v0.1.0-rc.19'
+CONTROLLER_VERSION='0.2.0-rc.1'
+RELEASE_TAG='v0.2.0-rc.1'
 REPOSITORY='alieismy/debian-vps-tuning'
 RELEASE_BASE_URL="https://github.com/${REPOSITORY}/releases/download/${RELEASE_TAG}"
 
@@ -54,6 +54,7 @@ HTB_WRAPPER_PATH=''
 HTB_BUNDLE_DIR=''
 TRAFFIC_BUDGET_PATH=''
 MIGRATION_PATH=''
+MEASUREMENT_PATH=''
 
 info() { printf '[+] %s\n' "$*"; }
 warn() { printf '[!] %s\n' "$*" >&2; }
@@ -73,18 +74,24 @@ usage() {
   cat <<'EOF_USAGE'
 Usage:
   debian-vps-tuning.sh
-  debian-vps-tuning.sh {guided|preflight|apply|reconfigure|verify|status|diagnose|probe|benchmark|htb|update|migrate|rollback|recover} [options]
+  debian-vps-tuning.sh {guided|preflight|apply|reconfigure|verify|status|diagnose|measure|report|probe|benchmark|htb|update|migrate|rollback|recover} [options]
 
 Options:
   --port MBPS    provider port cap for guided/preflight/apply; default 200;
                  required explicitly by CLI reconfigure
-  --target TAG    update target, for example v0.1.0-rc.19; default is the
+  --target TAG    update target, for example v0.2.0-rc.1; default is the
                   highest non-draft Release in the installed major.minor line;
                   stable installations ignore prereleases automatically
   -h, --help     show this help
   --version      show controller and pinned release versions
 
 Behavior:
+  - diagnose uses Linux capabilities without a managed profile; use
+    diagnose --managed for the legacy profile-specific incremental diagnostics.
+  - measure automatically selects a public iperf3 endpoint; requires an explicit
+    test rate cap and a shared traffic budget. It does not change sysctl/qdisc.
+    Use "measure --rate-cap 20 --plan-only" for a network-free preview.
+  - report --input-dir PATH verifies and displays independent measurement evidence.
   - With a terminal and no action, shows an interactive menu.
   - Without a terminal, an explicit action is required.
   - guided runs preflight first and asks before apply.
@@ -232,11 +239,11 @@ state_profile_matches_detected() { [ "$1" = "$2" ]; }
 parse_arguments() {
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      guided | preflight | apply | reconfigure | verify | status | diagnose | benchmark | update | rollback | recover)
+      guided | preflight | apply | reconfigure | verify | status | benchmark | update | rollback | recover)
         [ -z "$ACTION" ] || die "$EXIT_USAGE" '只能指定一个 action。'
         ACTION="$1"
         ;;
-      probe | htb | migrate)
+      probe | htb | migrate | diagnose | measure | report)
         [ -z "$ACTION" ] || die "$EXIT_USAGE" '只能指定一个 action。'
         ACTION="$1"
         shift
@@ -277,7 +284,7 @@ choose_action_interactively() {
   3) 执行 apply
   4) verify
   5) status
-  6) diagnose（5 秒只读增量诊断）
+  6) diagnose（按实际 Linux 能力只读诊断，无需 profile）
   7) probe（重复、限速、advisory-only；需已授权 iperf3）
   8) benchmark（高级单次证据入口；需 BENCHMARK_HOST）
   9) HTB 实验（仅 Debian 13 / 200 Mbps / 非持久化）
@@ -610,6 +617,9 @@ resolve_profile_script() {
 resolve_companion_assets() {
   local local_dir local_manifest controller_source manifest logical source target remote_name
   local -a required=(dvt-traffic-budget.sh)
+  case "$ACTION" in
+    diagnose | measure | report) required=(dvt-measure.py dvt-measure-runtime.sh measurement-endpoints.json dvt-traffic-budget.sh) ;;
+  esac
   [ "$ACTION" != probe ] || required=(dvt-traffic-budget.sh dvt-probe.sh)
   [ "$ACTION" != migrate ] || required=(dvt-migrate.sh)
   [ "$ACTION" != htb ] || required=(
@@ -625,6 +635,11 @@ resolve_companion_assets() {
   local_manifest="${local_dir}/SHA256SUMS"
   controller_source="${BASH_SOURCE[0]}"
   if [[ "$controller_source" != /* ]]; then controller_source="${PWD}/${controller_source}"; fi
+  case "$ACTION" in
+    diagnose | measure | report)
+      [ -f "$local_manifest" ] || die "$EXIT_INTEGRITY" '独立诊断/测量需要完整的同版本本地 bundle；此入口不会下载缺失资产。'
+      ;;
+  esac
   if [ -f "$local_manifest" ]; then
     verify_manifest_entry "$local_manifest" "$controller_source" debian-vps-tuning.sh ||
       die "$EXIT_INTEGRITY" '同目录 companion 资产存在，但总控不属于该 SHA256SUMS。'
@@ -639,6 +654,7 @@ resolve_companion_assets() {
     HTB_WRAPPER_PATH="${local_dir}/dvt-htb.sh"
     HTB_BUNDLE_DIR="${local_dir}/experiments/htb-aggregate"
     MIGRATION_PATH="${local_dir}/dvt-migrate.sh"
+    MEASUREMENT_PATH="${local_dir}/dvt-measure.py"
     return 0
   fi
 
@@ -664,6 +680,7 @@ resolve_companion_assets() {
   HTB_WRAPPER_PATH="${TEMP_DIR}/dvt-htb.sh"
   HTB_BUNDLE_DIR="${TEMP_DIR}/experiments/htb-aggregate"
   MIGRATION_PATH="${TEMP_DIR}/dvt-migrate.sh"
+  MEASUREMENT_PATH="${TEMP_DIR}/dvt-measure.py"
 }
 
 print_environment_summary() {
@@ -854,15 +871,28 @@ main() {
   [ "$RELEASE_TAG" = "v${CONTROLLER_VERSION}" ] ||
     die "$EXIT_INTEGRITY" '总控版本与固定 Release tag 不一致。'
   parse_arguments "$@"
-  need_root
-  detect_environment
-  read_existing_state
-  print_environment_summary
-
   if [ -z "$ACTION" ]; then
     is_interactive_terminal || die "$EXIT_USAGE" '非交互环境必须明确指定 action。'
     choose_action_interactively
   fi
+  case "$ACTION" in
+    diagnose | measure | report)
+      if [ "$ACTION" = diagnose ] && [ "${ACTION_ARGS[0]:-}" = --managed ]; then
+        [ "${#ACTION_ARGS[@]}" -eq 1 ] || die "$EXIT_USAGE" 'diagnose --managed 不接受其他参数。'
+        ACTION_ARGS=()
+      else
+        [ -z "$CLI_PORT_SPEED_MBPS$CLI_UPDATE_TAG" ] || die "$EXIT_USAGE" '独立测量不接受受管 --port/--target。'
+        need_command python3
+        resolve_companion_assets
+        python3 "$MEASUREMENT_PATH" "$ACTION" "${ACTION_ARGS[@]}"
+        return
+      fi
+      ;;
+  esac
+  need_root
+  detect_environment
+  read_existing_state
+  print_environment_summary
   select_port_speed
   if [ "$ACTION" != 'update' ]; then
     resolve_profile_script

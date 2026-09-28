@@ -1,0 +1,135 @@
+benchmark_reap_active_child() {
+  local pid="${BENCHMARK_ACTIVE_CHILD_PID:-}" pgid="${BENCHMARK_ACTIVE_CHILD_PGID:-}" target='' attempt
+  [ -n "$pid" ] || return 0
+  if [[ "$pgid" =~ ^[0-9]+$ ]] && [ "$pgid" -gt 1 ] && [ "$pgid" = "$pid" ]; then
+    if kill -0 -- "-${pgid}" 2>/dev/null; then
+      target="-${pgid}"
+    fi
+  fi
+  if [ -z "$target" ] && [[ "$pid" =~ ^[0-9]+$ ]] && [ "$pid" -gt 1 ] && kill -0 "$pid" 2>/dev/null; then
+    target="$pid"
+  fi
+  if [ -n "$target" ]; then
+    kill -TERM -- "$target" 2>/dev/null || true
+    attempt=0
+    while [ "$attempt" -lt "$BENCHMARK_TIMEOUT_TERMINATE_GRACE_SECONDS" ]; do
+      kill -0 -- "$target" 2>/dev/null || break
+      sleep 1
+      attempt=$((attempt + 1))
+    done
+    if kill -0 -- "$target" 2>/dev/null; then
+      kill -KILL -- "$target" 2>/dev/null || true
+    fi
+  fi
+  wait "$pid" 2>/dev/null || true
+  BENCHMARK_ACTIVE_CHILD_PID=''
+  BENCHMARK_ACTIVE_CHILD_PGID=''
+  return 0
+}
+
+benchmark_handle_signal() {
+  local signal_name="$1" exit_code="$2"
+  benchmark_failure_stage="signal-${signal_name}"
+  benchmark_reap_active_child
+  exit "$exit_code"
+}
+
+run_iperf3_with_timeout() {
+  local output_file="$1"
+  shift
+  local rc=0 started_at="$SECONDS" elapsed=0
+  BENCHMARK_ACTIVE_CHILD_PID=''
+  BENCHMARK_ACTIVE_CHILD_PGID=''
+  setsid timeout --foreground --signal=TERM \
+    --kill-after="${BENCHMARK_TIMEOUT_TERMINATE_GRACE_SECONDS}s" \
+    "${BENCHMARK_PHASE_TIMEOUT_RESOLVED}s" iperf3 "$@" >"$output_file" &
+  BENCHMARK_ACTIVE_CHILD_PID=$!
+  BENCHMARK_ACTIVE_CHILD_PGID="$BENCHMARK_ACTIVE_CHILD_PID"
+  if wait "$BENCHMARK_ACTIVE_CHILD_PID"; then
+    rc=0
+  else
+    rc=$?
+  fi
+  elapsed=$((SECONDS - started_at))
+  if [ "$rc" -eq 0 ]; then
+    BENCHMARK_ACTIVE_CHILD_PID=''
+    BENCHMARK_ACTIVE_CHILD_PGID=''
+  else
+    benchmark_reap_active_child
+  fi
+  case "$rc" in
+    124)
+      warn "iperf3 超过 ${BENCHMARK_PHASE_TIMEOUT_RESOLVED} 秒硬上限；已终止隔离进程组并保留失败证据。"
+      ;;
+    137)
+      if [ "$elapsed" -ge "$BENCHMARK_PHASE_TIMEOUT_RESOLVED" ]; then
+        warn "iperf3 超过 ${BENCHMARK_PHASE_TIMEOUT_RESOLVED} 秒硬上限且 TERM 后仍未退出；已升级到 KILL、回收进程组并保留失败证据。"
+      else
+        warn 'iperf3 在硬上限前返回 137；进程可能收到外部 SIGKILL，已回收进程组并保留失败证据。'
+      fi
+      ;;
+  esac
+  return "$rc"
+}
+
+run_benchmark_phase() {
+  local label="$1" reverse="$2" tmp_dir="$3" ifaces_file="$4"
+  local current_rc=0 iface
+  local -a rate_args=()
+  if declare -p BENCHMARK_RATE_ARGS >/dev/null 2>&1; then
+    rate_args=("${BENCHMARK_RATE_ARGS[@]}")
+  fi
+  softnet_snapshot '/proc/net/softnet_stat' >"${tmp_dir}/${label}.softnet.before" || return "$EXIT_VERIFY"
+  tcp_counter_snapshot '/proc/net/snmp' '/proc/net/netstat' >"${tmp_dir}/${label}.tcp.before" || return "$EXIT_VERIFY"
+  cpu_snapshot '/proc/stat' >"${tmp_dir}/${label}.cpu.before" || return "$EXIT_VERIFY"
+  link_counter_snapshot "$ifaces_file" >"${tmp_dir}/${label}.link.before" || return "$EXIT_VERIFY"
+  qdisc_counter_snapshot "$ifaces_file" >"${tmp_dir}/${label}.qdisc.before" || return "$EXIT_VERIFY"
+  while IFS= read -r iface; do
+    [ -n "$iface" ] || continue
+    printf '[benchmark-%s-qdisc-before] interface=%s\n' "$label" "$iface"
+    tc -s -d qdisc show dev "$iface" 2>/dev/null | tee -a "${tmp_dir}/${label}.qdisc.raw.before" || true
+  done <"$ifaces_file"
+
+  if [ "$reverse" = '1' ]; then
+    if run_iperf3_with_timeout "${tmp_dir}/${label}.iperf3.json" \
+      --client "$BENCHMARK_HOST_RESOLVED" --port "$BENCHMARK_PORT_RESOLVED" \
+      --time "$BENCHMARK_SECONDS_RESOLVED" --omit "$BENCHMARK_OMIT_RESOLVED" \
+      --parallel "$BENCHMARK_PARALLEL_RESOLVED" "${BENCHMARK_FAMILY_ARGS[@]}" \
+      "${rate_args[@]}" --reverse --json; then
+      current_rc=0
+    else
+      current_rc=$?
+    fi
+  else
+    if run_iperf3_with_timeout "${tmp_dir}/${label}.iperf3.json" \
+      --client "$BENCHMARK_HOST_RESOLVED" --port "$BENCHMARK_PORT_RESOLVED" \
+      --time "$BENCHMARK_SECONDS_RESOLVED" --omit "$BENCHMARK_OMIT_RESOLVED" \
+      --parallel "$BENCHMARK_PARALLEL_RESOLVED" "${BENCHMARK_FAMILY_ARGS[@]}" \
+      "${rate_args[@]}" --json; then
+      current_rc=0
+    else
+      current_rc=$?
+    fi
+  fi
+  cat "${tmp_dir}/${label}.iperf3.json" 2>/dev/null || true
+
+  softnet_snapshot '/proc/net/softnet_stat' >"${tmp_dir}/${label}.softnet.after" || current_rc="$EXIT_VERIFY"
+  tcp_counter_snapshot '/proc/net/snmp' '/proc/net/netstat' >"${tmp_dir}/${label}.tcp.after" || current_rc="$EXIT_VERIFY"
+  cpu_snapshot '/proc/stat' >"${tmp_dir}/${label}.cpu.after" || current_rc="$EXIT_VERIFY"
+  link_counter_snapshot "$ifaces_file" >"${tmp_dir}/${label}.link.after" || current_rc="$EXIT_VERIFY"
+  qdisc_counter_snapshot "$ifaces_file" >"${tmp_dir}/${label}.qdisc.after" || current_rc="$EXIT_VERIFY"
+  show_counter_delta "${tmp_dir}/${label}.tcp.before" "${tmp_dir}/${label}.tcp.after" "benchmark-${label}-tcp-delta" || current_rc="$EXIT_VERIFY"
+  show_softnet_delta "${tmp_dir}/${label}.softnet.before" "${tmp_dir}/${label}.softnet.after" |
+    sed "s/^\[softnet-delta\]/[benchmark-${label}-softnet-delta]/" || current_rc="$EXIT_VERIFY"
+  show_cpu_delta "${tmp_dir}/${label}.cpu.before" "${tmp_dir}/${label}.cpu.after" "benchmark-${label}-cpu-delta" || current_rc="$EXIT_VERIFY"
+  show_counter_delta "${tmp_dir}/${label}.link.before" "${tmp_dir}/${label}.link.after" "benchmark-${label}-link-delta" || current_rc="$EXIT_VERIFY"
+  while IFS= read -r iface; do
+    [ -n "$iface" ] || continue
+    printf '[benchmark-%s-qdisc-after] interface=%s\n' "$label" "$iface"
+    tc -s -d qdisc show dev "$iface" 2>/dev/null | tee -a "${tmp_dir}/${label}.qdisc.raw.after" || true
+  done <"$ifaces_file"
+  if [ "$current_rc" -eq 0 ]; then
+    build_benchmark_phase_summary "$label" "$reverse" "$tmp_dir" || current_rc="$EXIT_VERIFY"
+  fi
+  return "$current_rc"
+}

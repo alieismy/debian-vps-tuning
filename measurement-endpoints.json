@@ -1,0 +1,461 @@
+{
+  "schema_version": 1,
+  "endpoints": [
+    {
+      "id": "leaseweb-hkg12-hk",
+      "provider": "Leaseweb",
+      "host": "speedtest.hkg12.hk.leaseweb.net",
+      "ports": [
+        5201,
+        5202,
+        5203,
+        5204,
+        5205,
+        5206,
+        5207,
+        5208,
+        5209,
+        5210
+      ],
+      "families": [
+        4,
+        6
+      ],
+      "source": "https://kb.leaseweb.com/kb/network/network-link-speeds",
+      "checked_on": "2026-09-28",
+      "limits": "Public speedtest; one connection per port; shared capacity."
+    },
+    {
+      "id": "leaseweb-sin1-sg",
+      "provider": "Leaseweb",
+      "host": "speedtest.sin1.sg.leaseweb.net",
+      "ports": [
+        5201,
+        5202,
+        5203,
+        5204,
+        5205,
+        5206,
+        5207,
+        5208,
+        5209,
+        5210
+      ],
+      "families": [
+        4,
+        6
+      ],
+      "source": "https://kb.leaseweb.com/kb/network/network-link-speeds",
+      "checked_on": "2026-09-28",
+      "limits": "Public speedtest; one connection per port; shared capacity."
+    },
+    {
+      "id": "leaseweb-syd12-au",
+      "provider": "Leaseweb",
+      "host": "speedtest.syd12.au.leaseweb.net",
+      "ports": [
+        5201,
+        5202,
+        5203,
+        5204,
+        5205,
+        5206,
+        5207,
+        5208,
+        5209,
+        5210
+      ],
+      "families": [
+        4,
+        6
+      ],
+      "source": "https://kb.leaseweb.com/kb/network/network-link-speeds",
+      "checked_on": "2026-09-28",
+      "limits": "Public speedtest; one connection per port; shared capacity."
+    },
+    {
+      "id": "leaseweb-tyo11-jp",
+      "provider": "Leaseweb",
+      "host": "speedtest.tyo11.jp.leaseweb.net",
+      "ports": [
+        5201,
+        5202,
+        5203,
+        5204,
+        5205,
+        5206,
+        5207,
+        5208,
+        5209,
+        5210
+      ],
+      "families": [
+        4,
+        6
+      ],
+      "source": "https://kb.leaseweb.com/kb/network/network-link-speeds",
+      "checked_on": "2026-09-28",
+      "limits": "Public speedtest; one connection per port; shared capacity."
+    },
+    {
+      "id": "leaseweb-fra1-de",
+      "provider": "Leaseweb",
+      "host": "speedtest.fra1.de.leaseweb.net",
+      "ports": [
+        5201,
+        5202,
+        5203,
+        5204,
+        5205,
+        5206,
+        5207,
+        5208,
+        5209,
+        5210
+      ],
+      "families": [
+        4,
+        6
+      ],
+      "source": "https://kb.leaseweb.com/kb/network/network-link-speeds",
+      "checked_on": "2026-09-28",
+      "limits": "Public speedtest; one connection per port; shared capacity."
+    },
+    {
+      "id": "leaseweb-ams2-nl",
+      "provider": "Leaseweb",
+      "host": "speedtest.ams2.nl.leaseweb.net",
+      "ports": [
+        5201,
+        5202,
+        5203,
+        5204,
+        5205,
+        5206,
+        5207,
+        5208,
+        5209,
+        5210
+      ],
+      "families": [
+        4,
+        6
+      ],
+      "source": "https://kb.leaseweb.com/kb/network/network-link-speeds",
+      "checked_on": "2026-09-28",
+      "limits": "Public speedtest; one connection per port; shared capacity."
+    },
+    {
+      "id": "leaseweb-lon12-uk",
+      "provider": "Leaseweb",
+      "host": "speedtest.lon12.uk.leaseweb.net",
+      "ports": [
+        5201,
+        5202,
+        5203,
+        5204,
+        5205,
+        5206,
+        5207,
+        5208,
+        5209,
+        5210
+      ],
+      "families": [
+        4,
+        6
+      ],
+      "source": "https://kb.leaseweb.com/kb/network/network-link-speeds",
+      "checked_on": "2026-09-28",
+      "limits": "Public speedtest; one connection per port; shared capacity."
+    },
+    {
+      "id": "leaseweb-lax12-us",
+      "provider": "Leaseweb",
+      "host": "speedtest.lax12.us.leaseweb.net",
+      "ports": [
+        5201,
+        5202,
+        5203,
+        5204,
+        5205,
+        5206,
+        5207,
+        5208,
+        5209,
+        5210
+      ],
+      "families": [
+        4,
+        6
+      ],
+      "source": "https://kb.leaseweb.com/kb/network/network-link-speeds",
+      "checked_on": "2026-09-28",
+      "limits": "Public speedtest; one connection per port; shared capacity."
+    },
+    {
+      "id": "leaseweb-sfo12-us",
+      "provider": "Leaseweb",
+      "host": "speedtest.sfo12.us.leaseweb.net",
+      "ports": [
+        5201,
+        5202,
+        5203,
+        5204,
+        5205,
+        5206,
+        5207,
+        5208,
+        5209,
+        5210
+      ],
+      "families": [
+        4,
+        6
+      ],
+      "source": "https://kb.leaseweb.com/kb/network/network-link-speeds",
+      "checked_on": "2026-09-28",
+      "limits": "Public speedtest; one connection per port; shared capacity."
+    },
+    {
+      "id": "leaseweb-sea11-us",
+      "provider": "Leaseweb",
+      "host": "speedtest.sea11.us.leaseweb.net",
+      "ports": [
+        5201,
+        5202,
+        5203,
+        5204,
+        5205,
+        5206,
+        5207,
+        5208,
+        5209,
+        5210
+      ],
+      "families": [
+        4,
+        6
+      ],
+      "source": "https://kb.leaseweb.com/kb/network/network-link-speeds",
+      "checked_on": "2026-09-28",
+      "limits": "Public speedtest; one connection per port; shared capacity."
+    },
+    {
+      "id": "leaseweb-dal13-us",
+      "provider": "Leaseweb",
+      "host": "speedtest.dal13.us.leaseweb.net",
+      "ports": [
+        5201,
+        5202,
+        5203,
+        5204,
+        5205,
+        5206,
+        5207,
+        5208,
+        5209,
+        5210
+      ],
+      "families": [
+        4,
+        6
+      ],
+      "source": "https://kb.leaseweb.com/kb/network/network-link-speeds",
+      "checked_on": "2026-09-28",
+      "limits": "Public speedtest; one connection per port; shared capacity."
+    },
+    {
+      "id": "leaseweb-chi11-us",
+      "provider": "Leaseweb",
+      "host": "speedtest.chi11.us.leaseweb.net",
+      "ports": [
+        5201,
+        5202,
+        5203,
+        5204,
+        5205,
+        5206,
+        5207,
+        5208,
+        5209,
+        5210
+      ],
+      "families": [
+        4,
+        6
+      ],
+      "source": "https://kb.leaseweb.com/kb/network/network-link-speeds",
+      "checked_on": "2026-09-28",
+      "limits": "Public speedtest; one connection per port; shared capacity."
+    },
+    {
+      "id": "leaseweb-nyc1-us",
+      "provider": "Leaseweb",
+      "host": "speedtest.nyc1.us.leaseweb.net",
+      "ports": [
+        5201,
+        5202,
+        5203,
+        5204,
+        5205,
+        5206,
+        5207,
+        5208,
+        5209,
+        5210
+      ],
+      "families": [
+        4,
+        6
+      ],
+      "source": "https://kb.leaseweb.com/kb/network/network-link-speeds",
+      "checked_on": "2026-09-28",
+      "limits": "Public speedtest; one connection per port; shared capacity."
+    },
+    {
+      "id": "leaseweb-mia11-us",
+      "provider": "Leaseweb",
+      "host": "speedtest.mia11.us.leaseweb.net",
+      "ports": [
+        5201,
+        5202,
+        5203,
+        5204,
+        5205,
+        5206,
+        5207,
+        5208,
+        5209,
+        5210
+      ],
+      "families": [
+        4,
+        6
+      ],
+      "source": "https://kb.leaseweb.com/kb/network/network-link-speeds",
+      "checked_on": "2026-09-28",
+      "limits": "Public speedtest; one connection per port; shared capacity."
+    },
+    {
+      "id": "leaseweb-mtl2-ca",
+      "provider": "Leaseweb",
+      "host": "speedtest.mtl2.ca.leaseweb.net",
+      "ports": [
+        5201,
+        5202,
+        5203,
+        5204,
+        5205,
+        5206,
+        5207,
+        5208,
+        5209,
+        5210
+      ],
+      "families": [
+        4,
+        6
+      ],
+      "source": "https://kb.leaseweb.com/kb/network/network-link-speeds",
+      "checked_on": "2026-09-28",
+      "limits": "Public speedtest; one connection per port; shared capacity."
+    },
+    {
+      "id": "clouvider-ams",
+      "provider": "Clouvider",
+      "host": "ams.speedtest.clouvider.net",
+      "ports": [
+        5200,
+        5201,
+        5202,
+        5203,
+        5204,
+        5205,
+        5206,
+        5207,
+        5208,
+        5209
+      ],
+      "families": [
+        4,
+        6
+      ],
+      "source": "https://as62240.net/speedtest",
+      "checked_on": "2026-09-28",
+      "limits": "Public speedtest; 10 Gbps best effort; shared capacity, no throughput guarantee."
+    },
+    {
+      "id": "clouvider-lon",
+      "provider": "Clouvider",
+      "host": "lon.speedtest.clouvider.net",
+      "ports": [
+        5200,
+        5201,
+        5202,
+        5203,
+        5204,
+        5205,
+        5206,
+        5207,
+        5208,
+        5209
+      ],
+      "families": [
+        4,
+        6
+      ],
+      "source": "https://as62240.net/speedtest",
+      "checked_on": "2026-09-28",
+      "limits": "Public speedtest; 10 Gbps best effort; shared capacity, no throughput guarantee."
+    },
+    {
+      "id": "clouvider-nyc",
+      "provider": "Clouvider",
+      "host": "nyc.speedtest.clouvider.net",
+      "ports": [
+        5200,
+        5201,
+        5202,
+        5203,
+        5204,
+        5205,
+        5206,
+        5207,
+        5208,
+        5209
+      ],
+      "families": [
+        4,
+        6
+      ],
+      "source": "https://as62240.net/speedtest",
+      "checked_on": "2026-09-28",
+      "limits": "Public speedtest; 10 Gbps best effort; shared capacity, no throughput guarantee."
+    },
+    {
+      "id": "clouvider-la",
+      "provider": "Clouvider",
+      "host": "la.speedtest.clouvider.net",
+      "ports": [
+        5200,
+        5201,
+        5202,
+        5203,
+        5204,
+        5205,
+        5206,
+        5207,
+        5208,
+        5209
+      ],
+      "families": [
+        4,
+        6
+      ],
+      "source": "https://as62240.net/speedtest",
+      "checked_on": "2026-09-28",
+      "limits": "Public speedtest; 10 Gbps best effort; shared capacity, no throughput guarantee."
+    }
+  ]
+}

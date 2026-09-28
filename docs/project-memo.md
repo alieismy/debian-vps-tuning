@@ -1,10 +1,35 @@
 # 项目阶段备忘
 
 文档性质：资料性状态与延期事项记录
-当前阶段：rc.19 已作为独立 Pre-release 发布，19 项公开资产通过反向完整性核验；目标机 rc.19 生命周期及代理业务验收仍待完成（rc.18 及更早资产保持不可变）
-更新日期：2026-09-27（Asia/Singapore）
+当前阶段：0.2.0-rc.1 第一阶段实现候选进入已授权的工作分支提交、推送与 Linux CI 验证；rc.19 及更早公开资产保持不可变。公共节点短测与目标机运行验收尚未完成
+更新日期：2026-09-28（Asia/Singapore）
 
 本文件是 `AGENTS.md` 指定的唯一项目阶段备忘入口，用于记录每轮对话工作的闭环状态，以及当前阶段不主动展开的后续候选事项。它不构成需求批准、生产变更授权、发布授权或下一阶段启动决定；控制规则以 [项目级 AGENTS.md](../AGENTS.md) 为准，具体验证事实以 [验证矩阵](validation.md) 和对应发布说明为准。
+
+## 本轮记录：2026-09-28（工作分支提交、推送与 Linux CI）
+
+- 用户针对上一轮提出的提交、推送 `codex/automatic-path-measurement` 并运行现有 GitHub Actions 方案，明确答复“允许执行你的方案”。本轮授权覆盖这些操作及范围内 CI 失败修复；不包含默认分支合并、tag、Release、真实 VPS 或公网测速。
+- 预检确认分支基线为 `efacf1941d8b6dd7504ca7fda76b4045b2fe46f2`，42 项候选变更与上一轮记录一致；GitHub 认证有效，远端没有同名分支。沿用上一轮本地验证证据，通过现有 `shell-static-checks` 补齐 Ubuntu 24.04 runner 上的 root 安装与迁移生命周期门禁，提交后按实际 run 结果更新记录。
+- 当前成熟度仍为本地实现候选，Linux CI 待执行；公共节点可用性、真实自动选点/重传采集、目标 VPS 生命周期及业务验收未验证。无新增延期事项；第二、三阶段范围和既有待验证事项保持原记录。
+
+## 本轮记录：2026-09-28（按推荐路线实施独立诊断与自动测量）
+
+- 用户明确要求“请按照你的推荐方案实施”。控制性交付物从研究切换为第一阶段本地实现候选；依据上一轮可研 §7.1，先闭合不改 qdisc/sysctl 的独立诊断与 application pacing 测量，再以运行证据进入 §7.2 的临时 HTB 和扩展持久配置。补充[需求/实现契约](automatic-measurement-design.md)、[使用说明](automatic-measurement.md)及 [0.2.0-rc.1 发布候选说明](releases/v0.2.0-rc.1.md)。没有修改 `AGENTS.md`；其中 rc.18 阶段描述漂移仍是既有事项，本轮范围以当前用户授权为准。
+- 在原工作树创建 `codex/automatic-path-measurement` 分支，基线仍为 `efacf1941d8b6dd7504ca7fda76b4045b2fe46f2`，保留原有研究报告与备忘未提交内容。总控将 `diagnose/measure/report` 提前分发，不要求已 apply、Debian 版本、架构或 CPU/RAM 档位；`diagnose --managed` 保留原增量/代理诊断。主动测量继续使用 root 所有的共享账本；配置应用仍保留旧支持范围与 17 项 sysctl/BDP/BBR+fq 策略。
+- 从 profile 模板提取共享计数器、有效窗口解析与单阶段采集，生成器同时嵌入六份旧 profile 和新 runtime；六份 profile 与原基线比较仅版本号变化。新增 Python 标准库调度器及独立 `dvt.path-measurement/1` schema。目录包含 15 个 Leaseweb、4 个 Clouvider 公开节点，本轮只读核对运营方地址/端口出处，不测可达性。协议预检、失败回退和所有阶梯/首尾控制样本均受同一预算约束；实际 IP、端口、地址族及包含源端口的 TCP 路由被核对，测量中不拼接不同路径。
+- 速率 cap 接受 1–10000 Mbps，固定出向单流、无 omit、不替换 qdisc。每档至少三次、重复重传上升需至少两次命中；窗口无效、负载不足、receiver 背离、CPU/softnet/队列异常、首尾控制或配置观察失效均阻止区间建议。报告不声称识别服务商 policer，也不产生持久整形参数。前后配置观察只覆盖所采集字段，不冒充整机或业务验收。
+- 预算预留覆盖正常窗口、phase 超时、supervisor 等待和 TERM/KILL 清理时间；成功按 sender bytes 结算，失败保守计账。新 runtime 自身也要求匹配的 RESERVED 记录，不能直接跳过父层预算启动流量；账本错误保留占用并停止。候选继续读取 rc.19 schema 1 窗口，不重置旧额度；新迁移目标为 0.2.0-rc.1，来源白名单扩至 rc.19，保留两个重启门禁。旧校准器 0.1.2 候选单独接受同格式新版受管 probe，不接收独立 measure 伪装的 VERIFIED 数据。
+- 本地验证：Python 共 56 项，55 通过、真实 flock 因 Windows 缺少命令跳过 1 项；其中新增独立测量专项 23 项。主 Shell 静态/状态化 fixture、HTB 静态/fixture、生成一致性、ShellCheck 0.11.0、20 项资产摘要、文档链接及 `git diff --check` 均已检查。故障注入覆盖 ICMP/DNS、mapped IPv6、busy、预算不足/结算失败、Ctrl-C 所有权、实际 socket 路由漂移、cap 超出、首尾控制和证据篡改。曾检出并修复新版本格式门禁、旧操作文档摘要、失败结算异常变量遮蔽及清理时间未纳入预留；失败记录与最终结果保留在 `.tmp/local/measurement-*.log`。这里的进程、网络和系统证据仍是 fixture，不是 Linux 原生结果。
+- `tests/installer-check.sh` 在宿主返回 `installer check requires root`；`tests/rc18-check.sh` 被预算工具的 root 前置检查拒绝。没有伪造 root 来把它们算成通过。当前缺口为 Linux CI/原生安装与迁移、真实信号回收与账本、受控公共端点短测、实际无配置变化观察、目标机和业务验收；未连接 VPS、未执行公网测速、未 commit/push/tag/Release。第一阶段仅达到本地候选成熟度，尚不满足可研定义的实际自动选点运行验收。
+- 无新增范围外延期事项。第二阶段通用临时 HTB、第三阶段 Ubuntu/ARM64/大资源持久策略仍按原路线等待前序运行证据；持久 HTB 不随本候选开启。忽略目录保留研究原件、验证日志及经官方 release digest 校验的临时 ShellCheck 工具，供复核使用，不进入安装资产或 Git。没有清理这些证据，也没有修改个人 Memory。
+
+## 本轮记录：2026-09-28（tcpfit 自动选点、Policer sweep 与新版本重构评估）
+
+- 用户重新要求研究 tcpfit 全部 fix/feat，重点评估自动寻找近端 iperf3、Policer sweep，以及放宽操作系统、内存/CPU 档位和带宽限制。本轮交付独立的[源码与重构可行性报告](tcpfit-policer-refactor-feasibility-2026-09-28.md)。本项目基线为 `efacf1941d8b6dd7504ca7fda76b4045b2fe46f2`（rc.19 后续文档提交）；现场远端引用确认 tcpfit main/v0.5.8 仍为 `76331588af487a973d3445a1bf8bba7037d566ca`，全历史 24 提交、13 fix/8 feat。报告逐项区分 rc.18/rc.19 已覆盖能力与新候选，不把旧源码当作新版本增量。
+- 核对 tcpfit 的 18 节点静态池、RTT 排序、多端口和真实 3 秒测试、临时 HTB 粗细扫、重传阈值及完整向导持久化路径；交叉读取 Leaseweb/Clouvider 官方测速说明、ESnet iperf3 和 Linux/tc 文档。自动选点可以降低用户准备端点的负担，但低 RTT、一次成功和多次重传跳变均不能独立证明服务商 policer；其 Loss% 为固定 MSS/请求时长估算，默认 cap 不限制前置不限速测试。官方文档证明服务用途与公布端口，不证明本轮可达性或容量。
+- 本地验证固定源码的 Bash 语法与 Python AST；隔离执行 4 组 scan_range 合成样本、恢复失败包装、tcp_mem 页大小算术和 5 组本项目支持门禁。确认一次异常后两次干净能被过滤，也确认低负载样本可被记为 LAST_OK、底层恢复失败可被包装成成功，以及固定 4 KiB 页计算的跨页大小问题。首轮研究 fixture 的 Windows CRLF 已修正为 LF，最终断言通过；均非真实 tc、VPS 或网络性能证据。`python tools/render_profiles.py --check` 通过；文档完成后核对链接、固定来源锚点和 diff 空白。固定源码、完整提交补丁、官方材料和本地检查脚本保留在忽略目录 `.tmp/local/tcpfit-research-20260928/`，用于复核，不进入 Release。
+- 采用判断变化：此前排除的公共端点自动选择，现建议在新版本以受维护目录、运营方公布用途/端口、一次计划确认和覆盖选点/重试的预算机制有条件纳入；diagnose/probe 与受管 profile 解耦列为优先候选。建议渐进形成独立测量、通用临时拐点实验、扩展平台应用三阶段，具体版本与需求尚未批准。既有预算/完整性/恢复约束不放宽，也不将近端 RTT 自动作为业务 BDP 输入。
+- 延期事项变化：自动选点、按能力开放诊断和通用临时 sweep 从历史排除/狭窄实验边界转为本轮有条件重构候选；Ubuntu/ARM64/大资源应用支持继续待立项及目标验证，持久 HTB 不作为首阶段默认能力。无新增其他延期事项；`AGENTS.md` 阶段描述漂移继续沿用既有独立治理待办。本轮只新增报告并更新备忘，没有改运行代码、版本、摘要链、指令文件或 Git/Release 状态，没有连接 VPS 或启动公网测速。成熟度保持 rc.19 公开 Pre-release；本轮达到源码研究与可行性决策输入，不代表重构完成、目标平台已支持或业务收益已验收。
 
 ## 本轮记录：2026-09-27（rc.16→rc.19 升级说明）
 

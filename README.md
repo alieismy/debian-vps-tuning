@@ -1,5 +1,14 @@
 # Debian VPS Tuning
 
+> 当前工作树为未发布的 **`0.2.0-rc.1` 第一阶段候选**：新增无需 apply、无需匹配资源档位的 Linux `diagnose`，以及自动选择公共 iperf3 的 `measure`。参见[使用、预算与结果边界](docs/automatic-measurement.md)。后文 rc.19 联网安装入口仍指向已发布版本，不包含这些新能力。新候选的本地 installer SHA-256：`0998529648da7d4ac8f8859566384ccd18376bdf10aa21381ed4c0e0996a90ae`。
+
+```bash
+# 完整本地候选目录：仅查看计划，无网络流量/配置写入
+bash debian-vps-tuning.sh measure --rate-cap 20 --plan-only
+```
+
+新入口采用实际能力检查；原 `apply/verify/rollback` 仍遵守下文 Debian 资源范围。旧 profile 专用增量诊断可通过 `diagnose --managed` 调用。新候选仅有本地验证，不等于公共服务可用性、Linux 生命周期或性能验收。
+
 Debian VPS Tuning 用于配置 Debian 12/13 小型云 VPS 的主机网络。主要验证场景是在原生 systemd 环境中运行 3X-UI、Xray-core 和 VLESS + REALITY + TCP。当前目标机基线为 3X-UI v3.4.2 和 Xray-core v26.6.27；其他版本需单独验证。脚本还可只读识别 S-UI、sing-box 和独立 Xray 服务。
 
 脚本管理 BBR + fq、TCP 缓冲上限、常规队列参数、应急 swap 和 journald 空间上限，并提供 `preflight`、`apply`、`reconfigure`、`verify` 和 `rollback` 生命周期。它不配置代理业务、路由或防火墙。吞吐、延迟和丢包还取决于线路、虚拟化平台及实际负载，不能由这些主机参数单独保证。
