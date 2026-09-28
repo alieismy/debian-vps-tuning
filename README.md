@@ -920,7 +920,7 @@ env PORT_SPEED_MBPS=1000 \
 
 ### 从 rc.16 升级到 rc.19
 
-**可以直接迁移，不必先经过 rc.17/rc.18。** 适用前提是：主机仍由原版 rc.16 管理，`dvt --version` 显示 rc.16，现有 profile 的 `status`/`verify` 通过且状态为 `VERIFIED`；目标系统、资源档及 100–1000 Mbps 端口带宽仍落在 rc.19 支持范围内。若版本、状态或原版核验不符，停在只读盘点，不运行 `recover`、`apply`、`rollback` 或覆盖状态文件。rc.19 的发布只验证了 Linux fixture 与资产完整性，不能代替这台 VPS 的迁移验收。
+**可以直接迁移，不必先经过 rc.17/rc.18。** 以下编号流程适用于主机仍由原版 rc.16 管理、`dvt --version` 显示 rc.16、现有 profile 的 `status`/`verify` 通过且状态为 `VERIFIED` 的情况；目标系统、资源档及 100–1000 Mbps 端口带宽也须仍落在 rc.19 支持范围内。若 `dvt` 总控已提前切到 rc.19、但状态仍记录 rc.16，请改用[下文的混合版本入口](#总控已是-rc19但状态仍是-rc16)，不要用 rc.19 的 `dvt status`/`verify` 代替旧 profile 核验。其他版本、状态或原版核验不符时，停在只读盘点，不运行 `recover`、`apply`、`rollback` 或覆盖状态文件。rc.19 的发布只验证了 Linux fixture 与资产完整性，不能代替这台 VPS 的迁移验收。
 
 迁移会撤销 rc.16 受管配置（包括清理由它创建的 swap），然后应用 rc.19 配置，**需要两次人工重启**。在维护窗口前确认服务商控制台/救援入口可用、系统与代理业务备份可恢复、SSH 管理路径和内存余量足够。以下每个代码块均在被迁移 VPS 的 root shell 执行；任一命令失败即停止，不跳过 checkpoint 阶段，也不要把不同版本的总控、清单和 profile 放在同一目录。
 
@@ -1005,6 +1005,34 @@ env PORT_SPEED_MBPS=1000 \
    ```
 
    最后还需独立确认控制台/SSH、3X-UI/Xray 服务和真实客户端业务连接。安装器只切换 `dvt` 文件入口，不执行 `apply`；旧版目录、checkpoint 与备份保留供核验和恢复，不因命令完成而立即删除。此流程不运行 `probe`/iperf3，也不宣称线路性能改善。
+
+#### 总控已是 rc.19，但状态仍是 rc.16
+
+这种中间状态下，`dvt status`/`verify` 调用 rc.19 profile；该 profile 要求自己的版本与 schema 4 状态中的 `script_version` 一致，因此可能把有效的 rc.16 状态报告为笼统的“状态文件为空、损坏、包含多份 JSON 或 schema/profile 不匹配”。**单凭这条报错不能判断状态已损坏，也不能据此运行 `recover`。** 先只读检查 `state.json` 是 root 所有的非空普通文件、只有一个 JSON 对象且标明 rc.16；然后运行 `dvt update --target v0.1.0-rc.19`。当前 rc.19 总控会从固定 rc.16 Release 获取并校验来源 profile，用它执行旧版 `verify`，再执行 rc.19 目标只读预检。任一步失败都停止；不能把仅通过 JSON 结构检查当作可迁移证明。
+
+```bash
+set -Eeuo pipefail
+STATE=/var/lib/proxy-vps-tuning/state.json
+test "$(id -u)" -eq 0
+test -f "$STATE" && test ! -L "$STATE" && test -s "$STATE"
+test "$(stat -c '%u' "$STATE")" = 0
+jq -e -s 'length == 1 and (.[0] | type == "object" and .schema_version == 4 and .script_version == "0.1.0-rc.16" and (.profile.id | type == "string") and (.network.port_speed_mbps | type == "number"))' "$STATE"
+dvt update --target v0.1.0-rc.19
+```
+
+仅在输出“升级检查通过；系统配置未修改”且来源 `verify`、目标预检均成功后，使用已安装的 rc.19 总控准备 checkpoint；不必重新运行上面第 1 步的 `dvt status`/`verify`，也不需要另建目录下载总控。下面路径也必须尚不存在：
+
+```bash
+set -Eeuo pipefail
+test ! -e /var/lib/debian-vps-tuning-migrations/rc16-to-rc19
+test ! -L /var/lib/debian-vps-tuning-migrations/rc16-to-rc19
+dvt migrate prepare --checkpoint /var/lib/debian-vps-tuning-migrations/rc16-to-rc19
+bash /var/lib/debian-vps-tuning-migrations/rc16-to-rc19/dvt-migrate.sh status \
+  --checkpoint /var/lib/debian-vps-tuning-migrations/rc16-to-rc19 |
+  jq -e 'select(.phase=="PREPARED" and .source_version=="0.1.0-rc.16" and .target_version=="0.1.0-rc.19") | {phase,source_version,target_version,profile_id,port_speed_mbps}'
+```
+
+此后按上面第 3、4 步使用 checkpoint 内固定的迁移器，完成旧版回滚与两次人工重启；第 5 步执行到 `COMPLETE` 检查为止。由于 `dvt` 入口已经是 rc.19，跳过第 5 步的安装器下载和 `--no-launch`，直接执行 `dvt --version`、`dvt status`、`dvt verify`，并独立检查业务。中途失败时保留现场和 checkpoint，不跳阶段。
 
 ### 从 rc.15 升级到 rc.16
 

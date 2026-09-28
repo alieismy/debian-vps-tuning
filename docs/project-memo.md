@@ -10,11 +10,12 @@
 
 - 用户整体授权后续实施、工作分支提交/推送、CI 与原边界内目标复验，不再逐步确认。本轮先离线重放原始证据，18 个正式样本均再次触发 receiver 背离；原始 JSON 已有发送/接收字节及窗口差异，不能通过改写旧报告或放宽门禁消除。
 - 固定 `335c53e` 的隔离 Linux 对照 CI `36405504325` 已通过，BBR 下默认 2 Mbps HTB/5 Mbps offered 样本出现约 1.61 MB 未发送积压；单独小块、显式 socket buffer、长窗口和逐档 offered rate 的对照及源码机制见[采样修正记录](temporary-htb-sampling-2026-09-28.md)。早先 `d1c5b26` 诊断运行在取得对照输出后取消，用后继提交扩充有界对照；不记为完整 CI 通过。
-- 首个修正 `844d5b5` 的 CI `36406521129` 被真实 1 Mbps 窗口门禁拒绝：110% offered rate 虽使收发字节一致，receiver 仍延长到 5.567 秒。后继修正采用与当前 HTB rate 相等的 payload offered rate，保留最多 50 ms/128 KiB write block；不改变 socket buffer、sysctl、HTB 参数或任何有效性阈值。调用路径回归先失败后通过，原 cap 的预算预留保持。现场只读确认目标配置、原 23 笔账本及 42070336 bytes 余额未变化；尚未消费新公网测试流量。后继原生回归与目标复验待执行。
+- 首个修正 `844d5b5` 的 CI `36406521129` 被真实 1 Mbps 窗口门禁拒绝：110% offered rate 虽使收发字节一致，receiver 仍延长到 5.567 秒。后继修正采用与当前 HTB rate 相等的 payload offered rate，保留最多 50 ms/128 KiB write block；不改变 socket buffer、sysctl、HTB 参数或任何有效性阈值。调用路径回归先失败后通过，原 cap 的预算预留保持。目标预检时确认配置、原 23 笔账本及 42070336 bytes 余额未变化；之后完成的 CI 与目标复验见下。
 - 后继修正 `cc821a8` 的 Linux CI `36406911845` 全部成功：80 项 Python 无跳过，1/2/4 Mbps BBR 原生回归 6/6 样本有效、正 overlimits/窗口/账本/恢复通过；完整 CLI 24/24 样本有效，但 netns 的 default_qdisc 不可观察仍正确阻止建议。Windows 同套 Python 为 79 通过、1 个真实 flock 跳过，主静态和旧 HTB fixture、21 资产摘要、installer/文档绑定、72 个本地链接、生成一致性、六份 profile 零差异及生成 runtime ShellCheck 通过。未展开的模板直接 ShellCheck 产生占位符未使用提示，未把它当作生成运行资产失败。
 - 同一 `cc821a8` bundle 完成公共节点自动选择及 1/2 Mbps、3 Mbps cap、5 秒/三重复的 15 个正式样本，CLI 返回 0、报告 `COMPLETED`、事务 `RESTORED`。无 receiver 背离，11/15 样本有效；一个控制样本 receiver 时长 5.269354 秒超容差，另三个样本有 softnet 压力，控制重传漂移使整轮保持 `INSUFFICIENT_EVIDENCE`，未输出候选。原 `fq 8001:`/14 项参数、17 项 sysctl、state/旧第一阶段账本、boot/接口/入口及其他 qdisc/class 与本轮前快照完全一致；无进程、watchdog、活动登记或预留残留。
 - 原 23 笔账本和旧两份归档摘要不变，新增加 16 笔成功结算，共消费 15792860 bytes（约 15.06 MiB）；共享窗口累计 107940252/134217728 bytes，余额 26277476 bytes（约 25.06 MiB），预留为零。新归档 288 项文件摘要及报告内部链、采集资产与原始参数/指标均独立通过，详情见采样修正记录。没有另开/重置窗口，没有为取得有效结论再次测速；私有材料保留为证据与恢复路径，不进入 Git。
 - 收尾同步中英文 README、使用/候选/验证说明和本备忘；把逐次日志明确写为 offered rate 与 budget cap，避免将 cap 误读成实际发送目标。该日志措辞修订不改变采集参数；目标机事实仍绑定 `cc821a8`，最终分支提交另跑 CI。21 资产、installer/文档摘要链、76 个本地链接、隐私扫描、六份 profile 零差异与 diff 空白均复核通过。
+- 已形成[草稿 PR #25](https://github.com/alieismy/debian-vps-tuning/pull/25)，供新版本候选审查。准备时发现默认分支新并入 PR #24 的混合版本迁移说明；通过普通 merge 保留其 README 与备忘内容，解决同一备忘插入位置的冲突，未覆盖另一任务的修改。最终 PR head 的 CI 状态以其检查页为准；本记录不把 Draft 或机器人跳过审查当作审查批准。
 - 未完成门禁：可靠拐点/业务收益、更多平台/IPv6/高速区间、原 root-zero 自动恢复、目标机 SIGKILL/期限接管、安装迁移/重启和发布审查。无新增范围外延期事项；本轮闭合采集修正与正常 CLI/恢复功能验证，整轮证据不足保持原判据，成熟度仍为未发布候选。本轮没有更改 AGENTS、个人 Memory、默认分支或已有 tag/Release。
 
 ## 本轮记录：2026-09-28（正常事务与公共路径信号复验通过）
@@ -93,6 +94,12 @@
 - 本地验证固定源码的 Bash 语法与 Python AST；隔离执行 4 组 scan_range 合成样本、恢复失败包装、tcp_mem 页大小算术和 5 组本项目支持门禁。确认一次异常后两次干净能被过滤，也确认低负载样本可被记为 LAST_OK、底层恢复失败可被包装成成功，以及固定 4 KiB 页计算的跨页大小问题。首轮研究 fixture 的 Windows CRLF 已修正为 LF，最终断言通过；均非真实 tc、VPS 或网络性能证据。`python tools/render_profiles.py --check` 通过；文档完成后核对链接、固定来源锚点和 diff 空白。固定源码、完整提交补丁、官方材料和本地检查脚本保留在忽略目录 `.tmp/local/tcpfit-research-20260928/`，用于复核，不进入 Release。
 - 采用判断变化：此前排除的公共端点自动选择，现建议在新版本以受维护目录、运营方公布用途/端口、一次计划确认和覆盖选点/重试的预算机制有条件纳入；diagnose/probe 与受管 profile 解耦列为优先候选。建议渐进形成独立测量、通用临时拐点实验、扩展平台应用三阶段，具体版本与需求尚未批准。既有预算/完整性/恢复约束不放宽，也不将近端 RTT 自动作为业务 BDP 输入。
 - 延期事项变化：自动选点、按能力开放诊断和通用临时 sweep 从历史排除/狭窄实验边界转为本轮有条件重构候选；Ubuntu/ARM64/大资源应用支持继续待立项及目标验证，持久 HTB 不作为首阶段默认能力。无新增其他延期事项；`AGENTS.md` 阶段描述漂移继续沿用既有独立治理待办。本轮只新增报告并更新备忘，没有改运行代码、版本、摘要链、指令文件或 Git/Release 状态，没有连接 VPS 或启动公网测速。成熟度保持 rc.19 公开 Pre-release；本轮达到源码研究与可行性决策输入，不代表重构完成、目标平台已支持或业务收益已验收。
+
+## 本轮记录：2026-09-27（rc.19 总控与 rc.16 状态并存的升级阻塞）
+
+- 用户在一台 Debian 13/1C2GB 主机报告 `dvt --version` 为 rc.19，而 `dvt status`/`verify` 显示状态版本 rc.16、端口带宽 500 Mbps，并报笼统的状态文件无效。输出中的本地 profile SHA-256 `47dc03b854708d822848372a2ddc2fe938e1142f41eb576bbb6bab9d4ecaf71f` 与官方 rc.19 `debian13-1c2g` Release 资产一致；rc.19 profile 的 schema 4 状态校验要求 `script_version` 等于 rc.19，因此该报错不能单独证明旧 state 损坏。rc.19 总控源码的 `update --target` 会解析旧版状态、校验并调用固定 rc.16 来源 profile 的 `verify`，随后只读预检 rc.19；`migrate prepare` 也使用固定旧 profile。尚无这台主机的单文档 JSON 检查和旧版 verify 结果。
+- README 增补“总控已是 rc.19、状态仍是 rc.16”的条件入口：先检查 state 的文件与基本结构，再运行只读 `dvt update --target v0.1.0-rc.19`；仅当旧版 verify 与目标预检通过，才用当前 rc.19 总控准备 checkpoint，后续沿用固定迁移器及两次人工重启。当前仍未在 VPS 上执行迁移、恢复或测速；未验证具体 state 完整性与运行配置，不能宣称该主机可迁移。
+- 新增待闭合事项：现场只读状态结构及 rc.16 来源 verify，随后按实际输出决定是否进入维护窗口；本轮无其他新增延期事项。项目成熟度仍是 rc.19 Pre-release，目标机生命周期和业务验收未完成。
 
 ## 本轮记录：2026-09-27（rc.16→rc.19 升级说明）
 
