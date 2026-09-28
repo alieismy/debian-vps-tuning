@@ -175,6 +175,11 @@ def measurement_cases():
                 events = json.loads((output / 'attempts.json').read_text())
                 print('attempt outcomes:', [{k: e.get(k) for k in ('role', 'status', 'issues', 'error')}
                                             for e in events], flush=True)
+                for event in events:
+                    if event.get('issues'):
+                        directory = output / event['directory']
+                        raw = json.loads((directory / 'upload.iperf3.json').read_text())
+                        print('resource evidence:', measure.resource_observation(directory, raw), flush=True)
                 assert_restored(output / 'htb-transaction', original)
                 budget = json.loads(ledger.read_text())
                 assert budget['reserved_bytes'] == 0 and budget['accounted_bytes'] > 0, budget
