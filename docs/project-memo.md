@@ -1,7 +1,7 @@
 # 项目阶段备忘
 
 文档性质：资料性状态与延期事项记录
-当前阶段：0.2.0-rc.1 第一阶段固定提交已有 Linux CI/单机低流量证据；第二阶段临时 HTB 本地候选已形成，正在完成原生恢复 CI；真实 VPS 整形、扩展平台与业务验收未完成，公开资产保持不可变
+当前阶段：0.2.0-rc.1 第二阶段临时 HTB 实现候选已通过本地适用门禁与 Linux 原生恢复 CI；第一阶段固定提交已有单机低流量证据，第二阶段真实 VPS 整形、扩展平台与业务验收未完成，公开资产保持不可变
 更新日期：2026-09-28（Asia/Singapore）
 
 本文件是 `AGENTS.md` 指定的唯一项目阶段备忘入口，用于记录每轮对话工作的闭环状态，以及当前阶段不主动展开的后续候选事项。它不构成需求批准、生产变更授权、发布授权或下一阶段启动决定；控制规则以 [项目级 AGENTS.md](../AGENTS.md) 为准，具体验证事实以 [验证矩阵](validation.md) 和对应发布说明为准。
@@ -17,6 +17,8 @@
 - 当前成熟度为第二阶段本地实现候选，Linux 原生恢复 CI 尚待闭合；不得把 unit fixture 当真实内核/目标机通过。临时验证日志与私有运行准备材料留在忽略目录 `.tmp/local/`，用于复核，不进入公开安装资产。
 - 后续证据：Ubuntu 24.04 自带 iproute2 6.1 不实现 class JSON，已核对其 `tc_class.c/q_htb.c` 并加入严格文本解析、rate/ceil 单位换算和完整原行漂移比较。[CI 36391994207](https://github.com/alieismy/debian-vps-tuning/actions/runs/36391994207) 已通过定制 fq/变速/锁/down、root/class/leaf 部分失败、外部参数漂移重复拒绝、owner SIGKILL 与忽略 TERM 后期限恢复。后续完整测量在选点阶段因 CPU 压力停止；[诊断 CI 36392388743](https://github.com/alieismy/debian-vps-tuning/actions/runs/36392388743) 记录 sender CPU 100.728%、remote 0.014%、steal 0，与 ESnet 3.18 修复的限速 CPU 问题一致。仅在临时 CI runner 构建官方 SHA-256 固定的 iperf3 3.18 后继续，不放宽产品门禁、不升级 VPS。新增离线回归后本地总计 72 项，71 通过、Windows flock 跳过 1 项。
 - 使用 iperf3 3.18 的 [CI 36392709179](https://github.com/alieismy/debian-vps-tuning/actions/runs/36392709179) 已完成 24 个真实 HTB 样本，全部 overlimits 增长、23 个有效、1 个 receiver 背离拒绝，恢复与账本归零通过；失败来自测试错误要求隔离 netns 暴露 `net.core.default_qdisc`。产品正确保留 `CONFIGURATION_UNAVAILABLE`，测试改为仅接受该不可观测字段，同时要求其他字段不变、fq 完整恢复和无候选建议。另修正未找到端点时不能把计划中的整形意图写成实际配置变更，并加入离线回归；信号/全 CI 闭环继续等待。
+- 最终实现 `6fd5030ce37c4c85abf851bdfa2238f09f7aa59d` 的 [CI 36393226085](https://github.com/alieismy/debian-vps-tuning/actions/runs/36393226085) 全部成功：73 项 Python、0 跳过，原生全部恢复/完整 CLI/信号用例、旧静态和 root 生命周期、ShellCheck 通过。该轮 24 个正式样本均暴露于 HTB，21 个有效、3 个 receiver 背离；隔离 netns 的 default_qdisc 不可观测仍导致 `INSUFFICIENT_EVIDENCE`，没有候选建议。SIGINT/TERM 分别验证退出 130/143、无预留/采集进程残留、fq 恢复和不完整报告保留。完整日志和固定 head 元数据在 `.tmp/local/htb-stage2-ci-36393226085.*`，本地最终 Python 72 通过/1 跳过、21 资产摘要及 58 文档链接复核通过。
+- 当前成熟度更新为“第二阶段源码、离线回归、原生 Linux 调度/恢复与 CI 门禁通过的未发布候选”。已经形成指定 VPS 的私有可审阅计划：HTB 2/3/4 Mbps、application cap 5 Mbps，18 个正式样本，每档 3 次×5 秒、每次调度期限 240 秒，再分别中断验证；共用 128 MiB payload 窗口，保留既有账本历史。它影响整个接口的 IPv4/IPv6/SSH，尚未取得此项 qdisc 写入授权，未执行。无新增范围外延期事项；真实 root-zero/新 fq 参数恢复、业务与平台持久配置仍为后续门禁。工作分支已推送，未合并、tag 或 Release。
 
 ## 本轮记录：2026-09-28（指定目标的低流量功能验收完成）
 

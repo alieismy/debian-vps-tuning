@@ -4,7 +4,13 @@
 
 新增 [`htb-sweep`](temporary-htb.md)，此处与下节第一阶段固定提交的证据分开。当前已实现单根 fq 完整恢复事务、独立 watchdog、自动选点/预算复用、粗细扫描及 reference 门禁。离线检查覆盖 fq 单位与未知选项拒绝、所有权/路由、精扫、预算停止、恢复失败及报告门禁；原生入口 `tests/temporary-htb-check.sh` 在两个专有 netns/veth 上验证真实 tc 与 iperf3，不经过公网或 runner 主出口。
 
-本地门禁：70 项 Python 中 69 通过，Windows 缺少真实 flock 跳过 1 项；主静态/旧 HTB fixture、生成一致性与变更脚本 ShellCheck 0.11.0 通过。Linux 原生门禁尚待 CI 记录，不能以第一阶段 CI 或 VPS 低流量结果替代。真实 VPS 临时整形、更多内核/iproute2 版本、IPv6、业务中断影响和性能仍未验收。持久 HTB 与平台 apply 范围未扩展。
+实现提交 `6fd5030ce37c4c85abf851bdfa2238f09f7aa59d` 的 [Linux CI 36393226085](https://github.com/alieismy/debian-vps-tuning/actions/runs/36393226085) 全部通过：73 项 Python、0 跳过，主静态/旧 HTB fixture、生成与安装资产一致性、root 安装/预算/迁移生命周期、固定 ShellCheck 0.11.0，以及新增真实 tc/iperf3 原生门禁。Windows 本地同一套 Python 为 72 通过、真实 flock 跳过 1 项；21 项清单资产及 installer 绑定、58 个本地文档链接和六份 profile 零差异已核验。
+
+原生环境为 Ubuntu 24.04 runner，iproute2 6.1.0 与经官方 SHA-256 校验并在 runner 构建的 iperf3 3.18，流量只经过两个专有 netns/veth。完整验证了定制 fq 参数/显式 handle 恢复、变速、并发拒绝、接口 down 后恢复，root/class/leaf 写入失败，外部参数漂移及重复恢复拒绝，owner SIGKILL、忽略 TERM 后的看护期限恢复，以及完整 CLI 和 SIGINT/SIGTERM 后的 fq 恢复、清除活动登记、账本预留归零和无采集进程残留。中断分别要求退出 130/143、保留 `INCOMPLETE` 且没有 `COMPLETED`。
+
+完整 CLI 的 24 个正式样本均观察到 HTB overlimits 增长；21 个有效，3 个因 `RECEIVER_DIVERGENCE` 被排除。隔离 netns 不暴露 `net.core.default_qdisc`，因此前后观察如实保留 `UNAVAILABLE`，其他已观察字段无变化，最终 `INSUFFICIENT_EVIDENCE`、无候选区间。CI 证明调度、真实整形、恢复和拒绝路径，不证明该环境产生了有效拐点建议。先前 iperf3 3.16 的 CPU 压力拒绝及 iproute2 旧文本兼容修正见[项目备忘](project-memo.md)。
+
+真实 VPS 临时整形、原 root `0:`/新版 fq bands 的目标机恢复、更多内核/iproute2 组合、IPv6、业务影响和性能仍未验收。普通测量的第一阶段真实证据不替代这些项目；持久 HTB 与平台 apply 范围未扩展。
 
 ## 0.2.0-rc.1 自动测量候选（2026-09-28）
 
