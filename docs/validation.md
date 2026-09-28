@@ -8,7 +8,9 @@
 
 实现提交 `8a59688664883cf55f734bbb5b595220471f5309` 的 [Linux CI](https://github.com/alieismy/debian-vps-tuning/actions/runs/36374065438) 已通过：Python 56 项通过、0 跳过，主静态与 HTB 套件、生成/资产一致性、root 安装生命周期、共享预算及 rc.16/17/18/19 → 0.2.0-rc.1 迁移 fixture、共享 benchmark 进程组超时回收、ShellCheck 0.11.0。安装使用 runner 的临时目录；迁移的 profile/boot ID 为合成值，进程用例使用假 iperf3 与真实 Linux 子进程，不访问公共服务。
 
-新测量端到端信号/结算、公共节点可用性、实际无配置变化及真实 VPS 生命周期尚未验收；不能由 CI fixture 替代。完整结果与剩余边界记录在[项目备忘](project-memo.md)。发布、真实网络测试和后续通用临时 HTB 不因 CI 通过而自动启动。
+2026-09-28，经授权在一台 Debian 13/x86_64 主机完成[单机低流量功能验收](automatic-measurement-acceptance-2026-09-28.md)：自动选择公共 IPv4 端点，1/2 Mbps 的 9 个样本完整有效；报告和预算结算通过；另用 loopback 真实 iperf3 完成 SIGINT/SIGTERM 清理，最终无预留/进程/监听残留，17 项受管 sysctl、qdisc/class 与原状态等观察一致。该运行证据独立于 CI fixture。
+
+更多节点/平台、IPv6、高速区间、公共路径信号中断、真实安装/迁移/重启生命周期和业务效果仍未验收。完整结果与剩余边界记录在[项目备忘](project-memo.md)。发布和后续通用临时 HTB 不因本次有限验收通过而自动启动。
 
 ## rc.19 增量验证范围（2026-09-22）
 
