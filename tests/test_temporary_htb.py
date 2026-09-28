@@ -92,6 +92,17 @@ class TemporaryHTBTests(unittest.TestCase):
         with patch.object(h, 'execute', side_effect=h.HTBError('tc failed')), self.assertRaises(h.HTBError):
             h.snapshot('test0')
 
+    def test_legacy_class_rate_units_and_full_parameter_observation(self):
+        raw = 'class htb 1234:1 root leaf 9234: prio 0 quantum 15140 rate 2Mbit ceil 2000Kbit burst 256Kb/8 mpu 0b cburst 32Kb/8 mpu 0b level 0'
+        cls = h.parse_classes(raw)[0]
+        self.assertEqual(cls['options'], dict(rate=250000, ceil=250000))
+        self.assertEqual(cls['raw_parameters'], raw)
+        self.assertNotEqual(h.parse_classes(raw.replace('quantum 15140', 'quantum 1000')), [cls])
+        for invalid in (raw.replace('htb', 'hfsc'), raw.replace('2Mbit', 'unknown'),
+                        raw + ' rate 3Mbit', '{"kind":"htb"}'):
+            with self.assertRaises(h.HTBError):
+                h.parse_classes(invalid)
+
     def test_plan_separates_offered_cap_and_shaping_range(self):
         p = m.make_htb_plan(args(), [])
         self.assertEqual(p['rates_mbps'], [2, 6, 10, 14, 18])

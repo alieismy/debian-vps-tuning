@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """临时 HTB 事务：严格拓扑、完整 fq 恢复、独立看护；不安装持久策略。"""
 from contextlib import contextmanager
+from decimal import Decimal
 import hashlib
 import json
 import os
@@ -74,13 +75,37 @@ def identity(iface):
             'boot_id': Path('/proc/sys/kernel/random/boot_id').read_text().strip()}
 
 
+def parse_classes(raw):
+    """旧 iproute2 的 class 命令忽略 -j；保留完整文本以核对参数漂移。"""
+    raw = raw.strip()
+    if not raw or raw.startswith('['):
+        rows = json.loads(raw or '[]')
+        require(isinstance(rows, list) and all(isinstance(row, dict) for row in rows), '未知 tc class 格式')
+        return rows
+    rows = []
+    for line in raw.splitlines():
+        match = re.match(r'^class htb ([0-9a-fA-F]+:[0-9a-fA-F]+) (?:root|parent\s+[0-9a-fA-F]+:)\s', line)
+        require(match is not None, '无法核验旧版 tc class 文本')
+        options = {}
+        for key in ('rate', 'ceil'):
+            rates = re.findall(r'\b' + key + r'\s+([0-9]+(?:\.[0-9]+)?)([KMGT]?bit)\b', line)
+            require(len(rates) == 1, '旧版 tc class 缺少唯一 rate/ceil')
+            value, unit = rates[0]
+            number = Decimal(value) * {'bit': 1, 'Kbit': 10**3, 'Mbit': 10**6,
+                                      'Gbit': 10**9, 'Tbit': 10**12}[unit] / 8
+            require(number == int(number) and number > 0, '旧版 tc class rate 无法精确换算')
+            options[key] = int(number)
+        rows.append({'kind': 'htb', 'handle': match[1], 'options': options, 'raw_parameters': line})
+    return rows
+
+
 def snapshot(iface):
     # 一些 iproute2 版本在没有 class/filter 时成功返回空文本而不是 []。
     def objects(argv):
         rows = json.loads(execute(argv).strip() or '[]')
         require(isinstance(rows, list) and all(isinstance(row, dict) for row in rows), '未知 tc 对象格式')
         return rows
-    classes = objects(['tc', '-j', '-d', 'class', 'show', 'dev', iface])
+    classes = parse_classes(execute(['tc', '-j', '-d', 'class', 'show', 'dev', iface]))
     filters = objects(['tc', '-j', 'filter', 'show', 'dev', iface, 'root'])
     for cls in classes:
         parent = cls.get('handle', cls.get('classid'))

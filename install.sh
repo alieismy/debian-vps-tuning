@@ -9,7 +9,7 @@ export PATH
 INSTALLER_VERSION='0.2.0-rc.1'
 RELEASE_TAG='v0.2.0-rc.1'
 REPOSITORY='alieismy/debian-vps-tuning'
-EXPECTED_MANIFEST_SHA256='f96a7ff79f7599516d91c17bbe5026b6d7cf5fb61dd824ba9dd2fd4bcf94aaad'
+EXPECTED_MANIFEST_SHA256='dc5988ea5163add0b0c21dc62461a1da2e2eb4bbfbf30047e828b864870c841c'
 DEFAULT_PREFIX='/usr/local'
 
 source_dir=''
