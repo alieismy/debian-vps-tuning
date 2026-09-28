@@ -60,4 +60,4 @@ dvt report --input-dir /root/dvt-measure-01
 
 ## 阶段边界
 
-当前已实现候选是第一阶段。第二阶段的通用临时 HTB 需要原生 Linux 上验证端点、停止/结算与无配置变化，再验证真实 tc 拓扑和恢复；第三阶段的 Ubuntu/ARM64/大资源持久配置需要各自生命周期。当前不会将诊断可运行升级为这些平台的 apply 支持。
+第一阶段固定 `d650709` 已有上述低流量运行证据。第二阶段新增独立的 [`htb-sweep`](temporary-htb.md)，会临时修改所选接口的 qdisc，其恢复验证与真实 VPS 授权单独记录；普通 `measure` 保持不写 qdisc。第三阶段的 Ubuntu/ARM64/大资源持久配置需要各自生命周期。当前不会将诊断可运行升级为这些平台的 apply 支持。

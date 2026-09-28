@@ -1,5 +1,11 @@
 # 验证说明
 
+## 0.2.0-rc.1 第二阶段临时 HTB 候选（2026-09-28）
+
+新增 [`htb-sweep`](temporary-htb.md)，此处与下节第一阶段固定提交的证据分开。当前已实现单根 fq 完整恢复事务、独立 watchdog、自动选点/预算复用、粗细扫描及 reference 门禁。离线检查覆盖 fq 单位与未知选项拒绝、所有权/路由、精扫、预算停止、恢复失败及报告门禁；原生入口 `tests/temporary-htb-check.sh` 在两个专有 netns/veth 上验证真实 tc 与 iperf3，不经过公网或 runner 主出口。
+
+本地门禁：70 项 Python 中 69 通过，Windows 缺少真实 flock 跳过 1 项；主静态/旧 HTB fixture、生成一致性与变更脚本 ShellCheck 0.11.0 通过。Linux 原生门禁尚待 CI 记录，不能以第一阶段 CI 或 VPS 低流量结果替代。真实 VPS 临时整形、更多内核/iproute2 版本、IPv6、业务中断影响和性能仍未验收。持久 HTB 与平台 apply 范围未扩展。
+
 ## 0.2.0-rc.1 自动测量候选（2026-09-28）
 
 本节覆盖未发布的第一阶段候选；以下 rc.19 及更早记录保留历史效力。实现与验收映射见[独立测量契约](automatic-measurement-design.md)。新测量不要求 profile，旧配置策略和生命周期保持原范围。

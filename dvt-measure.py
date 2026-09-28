@@ -21,9 +21,11 @@ import subprocess
 import sys
 import time
 import uuid
+from dvt_htb_transaction import HTBError
 
 VERSION = "0.2.0-rc.1"
 SCHEMA = "dvt.path-measurement/1"
+HTB_SCHEMA = "dvt.htb-measurement/1"
 ROOT = Path(__file__).resolve().parent
 SAFE_HOST = re.compile(r"[A-Za-z0-9:][A-Za-z0-9.:%_-]{0,252}\Z")
 
@@ -64,7 +66,7 @@ def sha(path):
 def verify_assets():
     """直接调用 Python 入口时也保持与总控相同的 bundle 摘要边界。"""
     lines = (ROOT / "SHA256SUMS").read_text(encoding="utf-8").splitlines()
-    for name in ("dvt-measure.py", "dvt-measure-runtime.sh", "dvt-traffic-budget.sh", "measurement-endpoints.json"):
+    for name in ("dvt-measure.py", "dvt-measure-runtime.sh", "dvt-traffic-budget.sh", "measurement-endpoints.json", "dvt_htb_transaction.py"):
         path = ROOT / name
         entries = [line.split("  ", 1)[0] for line in lines if line.endswith("  " + name)]
         require(len(entries) == 1 and entries[0] == sha(path), "测量 bundle 摘要不一致：" + name)
@@ -129,6 +131,24 @@ def make_plan(args, endpoints):
             "budget_policy": "reserve each attempt; stop when remaining budget cannot cover its timeout window",
             "protocol_overhead_included": False, "schedule": schedule,
             "endpoints": endpoints, "public_source_address_disclosed": not bool(args.host)}
+
+
+def make_htb_plan(args, endpoints):
+    require(re.fullmatch(r'[A-Za-z0-9_.:-]{1,15}', args.interface or ''), 'htb-sweep 必须明确 --interface')
+    require(1 <= args.lower < args.upper < args.rate_cap, '需要 1 <= lower < upper < rate-cap；发送 cap 必须高于 HTB 上界')
+    plan = make_plan(args, endpoints)
+    rates = sorted({args.lower + (args.upper - args.lower) * p // 100 for p in (0, 25, 50, 75, 100)})
+    schedule = [('control-start', args.lower)] * args.samples + [('reference-start', args.upper)] * args.samples
+    schedule += [('sweep', rate) for rate in rates[1:] for _ in range(args.samples)]
+    schedule += [('reference-end', args.upper)] * args.samples + [('control-end', args.lower)] * args.samples
+    plan.update(schema=HTB_SCHEMA, mode='temporary-aggregate-htb', configuration_changed=True,
+                affected_interface=args.interface, impact='all egress traffic on this interface, IPv4 and IPv6',
+                topology='single root fq with fully restorable options; no mq/clsact/filters',
+                rates_mbps=rates, schedule=schedule, fine_step_mbps=args.fine_step, max_fine_rates=3,
+                worst_case_reservations_bytes=plan['max_attempts'] * reservation_bytes(1, args.seconds) +
+                    (len(schedule) + 3 * args.samples) * reservation_bytes(args.rate_cap, args.seconds),
+                shaping={'burst_bytes': 262144, 'cburst_bytes': 32768, 'quantum_bytes': 15140})
+    return plan
 
 
 def discover_one(item, family):
@@ -335,6 +355,21 @@ class MeasurementRun:
                     pass
                 child.wait()
 
+    def collect_row(self, directory, role, rate, endpoint, route):
+        return sample_row(directory, role, rate, endpoint, route)
+
+    def run_schedule(self, selected, fixed_route):
+        for role, rate in self.plan["schedule"]:
+            require(route_for(selected) == fixed_route, "固定端点的出口已改变；不拼接路径")
+            self.rows.append(self.attempt(selected, role, rate))
+            write_json(self.output / "samples.json", self.rows)
+
+    def analyze_result(self, stop_reason):
+        return analyze(self.rows, self.plan, stop_reason)
+
+    def configuration_observation(self, before, after):
+        return compare_configuration(before, after)
+
     def attempt(self, endpoint, role, rate):
         timeout = self.args.seconds + 10
         if time.monotonic() + timeout + 8 >= self.deadline:
@@ -376,7 +411,7 @@ class MeasurementRun:
                 code = self.active.wait(timeout=timeout + 8)
                 self.active = None
             require(code == 0, "采集失败，见本次 attempt 日志")
-            row = sample_row(directory, role, rate, endpoint, route)
+            row = self.collect_row(directory, role, rate, endpoint, route)
             event["route_after"] = route_for(endpoint)
             event["socket_route"] = route_for(endpoint, row["local_socket"])
             same_egress = all(event["socket_route"][key] == route[key] for key in ("dev", "gateway", "table"))
@@ -421,7 +456,7 @@ class MeasurementRun:
         write_json(self.output / "capabilities.json", before)
         write_json(self.output / "execution-assets.json", {
             "files": {name: sha(ROOT / name) for name in
-                      ("dvt-measure.py", "dvt-measure-runtime.sh", "dvt-traffic-budget.sh", "measurement-endpoints.json")},
+                      ("dvt-measure.py", "dvt-measure-runtime.sh", "dvt-traffic-budget.sh", "measurement-endpoints.json", "dvt_htb_transaction.py")},
             "iperf3_version": bounded(["iperf3", "--version"], 3),
             "python_version": platform.python_version()})
         # init 对已存在的窗口只核对标识/额度，不重置消费。
@@ -439,6 +474,8 @@ class MeasurementRun:
                     if row["eligible"]:
                         selected = endpoint
                         break
+                except MeasurementInvalid:
+                    raise
                 except MeasurementError as exc:
                     if self.reservation:
                         raise
@@ -448,29 +485,151 @@ class MeasurementRun:
             else:
                 fixed_route = route_for(selected)
                 write_json(self.output / "selected-endpoint.json", {"endpoint": selected, "route": fixed_route})
-                for role, rate in self.plan["schedule"]:
-                    require(route_for(selected) == fixed_route, "固定端点的出口已改变；不拼接路径")
-                    self.rows.append(self.attempt(selected, role, rate))
-                    write_json(self.output / "samples.json", self.rows)
+                self.run_schedule(selected, fixed_route)
         except StopMeasurement as exc:
             stop_reason = str(exc)
         after = diagnose()
-        configuration_observation = compare_configuration(before, after)
-        analysis = analyze(self.rows, self.plan, stop_reason)
+        configuration_observation = self.configuration_observation(before, after)
+        analysis = self.analyze_result(stop_reason)
         if configuration_observation["status"] != "UNCHANGED":
             analysis["issues"].append("CONFIGURATION_" + configuration_observation["status"])
             analysis["status"] = "INSUFFICIENT_EVIDENCE"
             analysis["candidate_interval"] = None
-        result = {"schema": SCHEMA, "version": VERSION, "generated_utc": datetime.now(timezone.utc).isoformat(),
-                  "configuration_changed": False, "management_state": "INDEPENDENT_MEASUREMENT",
+        result = {"schema": self.plan['schema'], "version": VERSION, "generated_utc": datetime.now(timezone.utc).isoformat(),
+                  "configuration_changed": self.plan['configuration_changed'], "management_state": "INDEPENDENT_MEASUREMENT",
                   "configuration_observation": configuration_observation,
                   "endpoint": selected, "stop_reason": stop_reason, "samples": self.rows,
                   "analysis": analysis, "budget": self.budget("status"),
-                  "limitations": ["application-paced upload only", "public endpoint capacity and route are variable",
+                  "limitations": [self.plan['mode'], "public endpoint capacity and route are variable",
                                   "no provider policer attribution", "no business-path or persistent tuning recommendation"]}
         write_json(self.output / "measurement-result.json", result)
         write_json(self.output / "capabilities-after.json", after)
         finalize_evidence(self.output)
+        return result
+
+
+class HTBMeasurementRun(MeasurementRun):
+    """共用发现/采集/账本；把整机 qdisc 写入限制在可恢复事务内。"""
+    def __init__(self, args, plan):
+        super().__init__(args, plan)
+        self.transaction = None
+        self.shaping_rate = None
+
+    def collect_row(self, directory, role, rate, endpoint, route):
+        row = super().collect_row(directory, role, rate, endpoint, route)
+        if role == 'discovery':
+            return row
+        self.transaction.assert_active(self.shaping_rate)
+        summary = read_json(directory / 'upload.summary.json')
+        # 发送 cap 负责预算；负载充分性相对于实际 HTB rate，不能沿用 cap 的 90%。
+        row['issues'] = [issue for issue in row['issues'] if issue != 'UNDERDRIVEN']
+        if min(row['sender']['mbps'], row['receiver']['mbps']) < self.shaping_rate * .9:
+            row['issues'].append('UNDERDRIVEN')
+        exposure = summary.get('qdisc_root_totals', {}).get('overlimits_delta')
+        coverage = summary.get('qdisc_coverage', {})
+        if not isinstance(exposure, (int, float)) or exposure <= 0 or coverage.get('topology') != 'htb-fq':
+            row['issues'].append('HTB_EXPOSURE_NOT_OBSERVED')
+        row.update(rate_mbps=self.shaping_rate, offered_rate_mbps=rate,
+                   htb_overlimits_delta=exposure, eligible=not row['issues'])
+        return row
+
+    def take(self, selected, fixed_route, role, rate):
+        require(route_for(selected) == fixed_route, 'HTB 测量路径变化')
+        if time.monotonic() + self.args.seconds + 18 >= self.deadline:
+            raise StopMeasurement('TIME_LIMIT')
+        self.transaction.set_rate(rate)
+        self.shaping_rate = rate
+        self.rows.append(self.attempt(selected, role, self.args.rate_cap))
+        write_json(self.output / 'samples.json', self.rows)
+
+    def bracket(self):
+        controls = [r for r in self.rows if r['role'] == 'control-start']
+        if len(controls) != self.args.samples or not all(r['eligible'] for r in controls):
+            return None
+        baseline = statistics.median(r['sender']['retransmits_per_gib'] for r in controls)
+        if baseline > 100:
+            return None
+        threshold, lower = max(100, baseline * 5), self.args.lower
+        for rate in self.plan['rates_mbps'][1:]:
+            rows = [r for r in self.rows if r['role'] == 'sweep' and r['rate_mbps'] == rate]
+            if len(rows) != self.args.samples or not all(r['eligible'] for r in rows):
+                return None
+            if sum(r['sender']['retransmits_per_gib'] >= threshold for r in rows) >= 2:
+                return lower, rate
+            lower = rate
+        return None
+
+    def run_schedule(self, selected, fixed_route):
+        import dvt_htb_transaction as htb
+        require(fixed_route['dev'] == self.args.interface, '选定端点不经过已确认接口；未写入 qdisc')
+        transaction = htb.Transaction(self.args.interface, self.output / 'htb-transaction',
+                                      max(1, self.deadline - time.monotonic()) + 30)
+        self.transaction = transaction
+        transaction.begin()
+        try:
+            head = [(role, rate) for role, rate in self.plan['schedule'] if role not in ('reference-end', 'control-end')]
+            tail = [(role, rate) for role, rate in self.plan['schedule'] if role in ('reference-end', 'control-end')]
+            for role, rate in head:
+                self.take(selected, fixed_route, role, rate)
+            for _ in range(self.plan['max_fine_rates']):
+                bracket = self.bracket()
+                if not bracket or bracket[1] - bracket[0] <= self.args.fine_step:
+                    break
+                rate = (bracket[0] + bracket[1]) // 2
+                self.plan['rates_mbps'].append(rate)
+                self.plan['rates_mbps'].sort()
+                head += [('sweep', rate)] * self.args.samples
+                self.plan['schedule'] = head + tail
+                write_json(self.output / 'plan.json', self.plan)
+                for _ in range(self.args.samples):
+                    self.take(selected, fixed_route, 'sweep', rate)
+            for role, rate in tail:
+                self.take(selected, fixed_route, role, rate)
+        finally:
+            # 先停止自有采集进程；恢复失败会向上抛出，绝不写 COMPLETED。
+            self.cleanup_child()
+            transaction.close()
+
+    def analyze_result(self, stop_reason):
+        result = super().analyze_result(stop_reason)
+        start = [r for r in self.rows if r['role'] == 'reference-start']
+        end = [r for r in self.rows if r['role'] == 'reference-end']
+        if len(start) != self.args.samples or len(end) != self.args.samples or not all(r['eligible'] for r in start + end):
+            result['issues'].append('INVALID_REFERENCE')
+        else:
+            a, b = (statistics.median(r['receiver']['mbps'] for r in group) for group in (start, end))
+            threshold = result['spike_threshold_retransmits_per_gib']
+            categories = [sum(r['sender']['retransmits_per_gib'] >= threshold for r in group) >= 2 for group in (start, end)] if threshold else []
+            if min(a, b) < max(a, b) * .8 or (categories and categories[0] != categories[1]):
+                result['issues'].append('REFERENCE_DRIFT')
+        if result['issues']:
+            result.update(status='INSUFFICIENT_EVIDENCE', candidate_interval=None)
+        result['fine_step_mbps'] = self.args.fine_step
+        result['fine_rates_limit'] = self.plan['max_fine_rates']
+        return result
+
+    def configuration_observation(self, before, after):
+        import copy
+        import dvt_htb_transaction as htb
+        a, b = copy.deepcopy(before), copy.deepcopy(after)
+        # root 0: 恢复后可能被内核分配非零 handle；只对本接口、同 fq 参数规范化。
+        if self.transaction is not None:
+            state, original = htb.load(self.transaction.checkpoint)
+            require(state['phase'] == 'RESTORED', 'HTB 未确认恢复')
+            require(htb.equivalent(original, htb.snapshot(self.args.interface)), '恢复后拓扑再次变化')
+            for data in (a, b):
+                item = data['observations']['qdisc']
+                if item['status'] == 'available':
+                    qdiscs = json.loads(item['stdout'])
+                    for q in qdiscs:
+                        if q.get('dev') == self.args.interface and q.get('root') and q.get('kind') == 'fq':
+                            q.pop('refcnt', None)
+                            if int(original['qdiscs'][0]['handle'][:-1], 16) == 0:
+                                q['handle'] = '0:'
+                    item['stdout'] = json.dumps(qdiscs, sort_keys=True)
+        result = compare_configuration(a, b)
+        if self.transaction is not None:
+            result['scope'] += '; temporary HTB restored with fq options; root-zero handle normalized only on target'
         return result
 
 
@@ -498,7 +657,10 @@ def verify_report(directory):
         names.add(name)
     require({"plan.json", "measurement-result.json"} <= names, "核心证据缺失")
     result = read_json(directory / "measurement-result.json")
-    require(result.get("schema") == SCHEMA, "不是独立测量 schema")
+    require(result.get("schema") in (SCHEMA, HTB_SCHEMA), "不是独立测量 schema")
+    if result['schema'] == HTB_SCHEMA and result.get('endpoint'):
+        state_path = 'htb-transaction/state.json'
+        require(state_path in names and read_json(directory / state_path)['phase'] == 'RESTORED', 'HTB 恢复证据缺失')
     return result
 
 
@@ -570,7 +732,7 @@ def main(argv=None):
     sub.add_parser("diagnose", help="按实际能力进行只读诊断")
     report = sub.add_parser("report", help="离线校验并显示独立测量报告")
     report.add_argument("--input-dir", required=True)
-    measure = sub.add_parser("measure", help="自动选择公开节点并测量出向路径；不修改 qdisc")
+    measure = argparse.ArgumentParser(add_help=False)
     measure.add_argument("--host", help="自有/获准节点；省略时使用固定公共目录")
     measure.add_argument("--server-port", type=integer(1, 65535))
     measure.add_argument("--rate-cap", type=integer(1, 10000), required=True, help="本轮测试上限 Mbps，与套餐/受管带宽独立")
@@ -586,6 +748,12 @@ def main(argv=None):
     measure.add_argument("--output-dir")
     measure.add_argument("--plan-only", action="store_true")
     measure.add_argument("--yes", action="store_true", help="确认计划范围、公共服务及流量预算")
+    sub.add_parser('measure', parents=[measure], help='自动选择公开节点并测量出向路径；不修改 qdisc')
+    sweep = sub.add_parser('htb-sweep', parents=[measure], help='临时替换指定接口根 fq；影响该接口全部出向流量')
+    sweep.add_argument('--interface', required=True)
+    sweep.add_argument('--lower', type=integer(1, 9999), required=True)
+    sweep.add_argument('--upper', type=integer(2, 9999), required=True)
+    sweep.add_argument('--fine-step', type=integer(1, 10000), default=1)
     args = parser.parse_args(argv)
     if args.action == "report":
         print_report(verify_report(args.input_dir))
@@ -600,7 +768,7 @@ def main(argv=None):
         endpoints = [{"id": "user", "host": args.host, "ports": [args.server_port or 5201], "provider": "user", "families": [4, 6]}]
     else:
         endpoints = load_catalog(ROOT / "measurement-endpoints.json")
-    plan = make_plan(args, endpoints)
+    plan = make_htb_plan(args, endpoints) if args.action == 'htb-sweep' else make_plan(args, endpoints)
     if args.plan_only:
         print(json.dumps(plan, ensure_ascii=False, indent=2))
         return 0
@@ -610,16 +778,21 @@ def main(argv=None):
     for command in ("bash", "ip", "tc", "jq", "iperf3", "flock", "setsid", "timeout", "awk", "sha256sum"):
         require(shutil.which(command), "缺少依赖：" + command)
     require(args.ledger and Path(args.ledger).is_absolute() and args.window_id and args.output_dir, "执行需要 --ledger 绝对路径、--window-id 和 --output-dir")
+    if args.action == 'htb-sweep':
+        import dvt_htb_transaction as htb
+        htb.preflight(args.interface)
+        print(f'临时 HTB 将替换 {args.interface} 根 fq，影响该接口全部 IPv4/IPv6 出向业务和 SSH；结束后核验恢复。')
     print(f"出向测量计划：速率 {plan['rates_mbps']} Mbps，每档 {args.samples} 次 × {args.seconds} 秒；首尾低速控制。")
     print(f"窗口 {args.window_id}，预算 {args.budget_mib} MiB payload，流量调度期限 {args.max_duration} 秒，最多 {plan['max_attempts']} 次选点尝试。")
-    print("预算包含协议短测和失败预留，不含重传/协议/账单开销；余额不足停止。不会修改系统配置。")
+    print("预算包含协议短测和失败预留，不含重传/协议/账单开销；余额不足停止。" +
+          ('临时修改 qdisc，不写持久策略。' if args.action == 'htb-sweep' else '不会修改系统配置。'))
     for endpoint in endpoints:
         ports = endpoint["ports"]
         print(f"  {endpoint['provider']}: {endpoint['host']}  ports={ports[0]}..{ports[-1]}")
     if not args.yes:
         require(sys.stdin.isatty(), "非交互执行需用 --yes 确认上述计划")
         require(input("按计划向所列服务发送流量（包括选点），继续？[y/N] ").lower() in ("y", "yes"), "已取消")
-    run = MeasurementRun(args, plan)
+    run = HTBMeasurementRun(args, plan) if args.action == 'htb-sweep' else MeasurementRun(args, plan)
     def interrupted(signum, _frame):
         raise KeyboardInterrupt(signum)
     old = {sig: signal.signal(sig, interrupted) for sig in (signal.SIGINT, signal.SIGTERM)}
@@ -643,6 +816,6 @@ if __name__ == "__main__":
             sys.exit(main())
         except KeyboardInterrupt as exc:
             sys.exit(143 if exc.args and exc.args[0] == signal.SIGTERM else 130)
-        except (MeasurementError, OSError, ValueError, KeyError, subprocess.TimeoutExpired) as exc:
+        except (MeasurementError, HTBError, OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
             print("[measure][FAIL] " + str(exc), file=sys.stderr)
             sys.exit(2)

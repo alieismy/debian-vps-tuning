@@ -9,7 +9,7 @@ export PATH
 INSTALLER_VERSION='0.2.0-rc.1'
 RELEASE_TAG='v0.2.0-rc.1'
 REPOSITORY='alieismy/debian-vps-tuning'
-EXPECTED_MANIFEST_SHA256='a18818796c31d77cc2e0054032670562143cee17c24b9c210506f9a593d7f8ff'
+EXPECTED_MANIFEST_SHA256='439a2ec04e67382b7d4a6878e083b098b5c7f5fd319609b6609c5ff9f680925e'
 DEFAULT_PREFIX='/usr/local'
 
 source_dir=''
@@ -31,6 +31,7 @@ assets=(
   dvt-probe.sh
   dvt-measure.py
   dvt-measure-runtime.sh
+  dvt_htb_transaction.py
   measurement-endpoints.json
   dvt-htb.sh
   experiments/htb-aggregate/experiment-plan.sh

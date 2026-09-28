@@ -74,7 +74,7 @@ usage() {
   cat <<'EOF_USAGE'
 Usage:
   debian-vps-tuning.sh
-  debian-vps-tuning.sh {guided|preflight|apply|reconfigure|verify|status|diagnose|measure|report|probe|benchmark|htb|update|migrate|rollback|recover} [options]
+  debian-vps-tuning.sh {guided|preflight|apply|reconfigure|verify|status|diagnose|measure|htb-sweep|report|probe|benchmark|htb|update|migrate|rollback|recover} [options]
 
 Options:
   --port MBPS    provider port cap for guided/preflight/apply; default 200;
@@ -92,6 +92,8 @@ Behavior:
     test rate cap and a shared traffic budget. It does not change sysctl/qdisc.
     Use "measure --rate-cap 20 --plan-only" for a network-free preview.
   - report --input-dir PATH verifies and displays independent measurement evidence.
+  - htb-sweep temporarily shapes all egress traffic on an explicitly selected
+    interface; requires a recoverable root fq and restores it before completion.
   - With a terminal and no action, shows an interactive menu.
   - Without a terminal, an explicit action is required.
   - guided runs preflight first and asks before apply.
@@ -243,7 +245,7 @@ parse_arguments() {
         [ -z "$ACTION" ] || die "$EXIT_USAGE" '只能指定一个 action。'
         ACTION="$1"
         ;;
-      probe | htb | migrate | diagnose | measure | report)
+      probe | htb | migrate | diagnose | measure | htb-sweep | report)
         [ -z "$ACTION" ] || die "$EXIT_USAGE" '只能指定一个 action。'
         ACTION="$1"
         shift
@@ -618,7 +620,7 @@ resolve_companion_assets() {
   local local_dir local_manifest controller_source manifest logical source target remote_name
   local -a required=(dvt-traffic-budget.sh)
   case "$ACTION" in
-    diagnose | measure | report) required=(dvt-measure.py dvt-measure-runtime.sh measurement-endpoints.json dvt-traffic-budget.sh) ;;
+    diagnose | measure | htb-sweep | report) required=(dvt-measure.py dvt-measure-runtime.sh dvt_htb_transaction.py measurement-endpoints.json dvt-traffic-budget.sh) ;;
   esac
   [ "$ACTION" != probe ] || required=(dvt-traffic-budget.sh dvt-probe.sh)
   [ "$ACTION" != migrate ] || required=(dvt-migrate.sh)
@@ -636,7 +638,7 @@ resolve_companion_assets() {
   controller_source="${BASH_SOURCE[0]}"
   if [[ "$controller_source" != /* ]]; then controller_source="${PWD}/${controller_source}"; fi
   case "$ACTION" in
-    diagnose | measure | report)
+    diagnose | measure | htb-sweep | report)
       [ -f "$local_manifest" ] || die "$EXIT_INTEGRITY" '独立诊断/测量需要完整的同版本本地 bundle；此入口不会下载缺失资产。'
       ;;
   esac
@@ -876,7 +878,7 @@ main() {
     choose_action_interactively
   fi
   case "$ACTION" in
-    diagnose | measure | report)
+    diagnose | measure | htb-sweep | report)
       if [ "$ACTION" = diagnose ] && [ "${ACTION_ARGS[0]:-}" = --managed ]; then
         [ "${#ACTION_ARGS[@]}" -eq 1 ] || die "$EXIT_USAGE" 'diagnose --managed 不接受其他参数。'
         ACTION_ARGS=()

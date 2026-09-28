@@ -2,6 +2,8 @@
 
 # Debian VPS Tuning
 
+The unpublished `0.2.0-rc.1` working branch now includes a second-stage `htb-sweep` entry. It reuses automatic endpoint selection and the shared traffic budget, requires an explicit interface and rate bounds, and temporarily shapes **all egress traffic** on that interface. Only a single root fq with fully restorable options is accepted; a frozen checkpoint and an independent watchdog protect restoration. See the [temporary HTB contract](docs/temporary-htb.md) and [validation record](docs/validation.md). Earlier VPS acceptance applies to the first-stage `d650709` measurement code; it does not establish real-VPS HTB acceptance. Persistent configuration support remains unchanged.
+
 A conservative host network tuning script for Debian 12/13 small cloud VPS. The project primarily targets natively systemd-deployed **3X-UI, Xray-core, VLESS + REALITY + TCP** scenarios; the current target machine acceptance baseline includes 3X-UI v3.4.2 and Xray-core v26.6.27, but this is not a compatibility guarantee for other versions. The script also provides limited read-only recognition for S-UI, sing-box, and standalone Xray services.
 
 The script uses BBR + fq, controlled TCP buffering, standard queue parameters, emergency swap, and journald space limits, with explicit `preflight`, `apply`, `reconfigure`, `verify`, and rollback lifecycles. It does not configure proxy services, routing, or firewalls, nor does it promise to increase throughput or reduce latency across all routes, virtualization platforms, and loads.

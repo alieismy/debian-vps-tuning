@@ -23,6 +23,12 @@ jobs:
           sudo bash tests/installer-check.sh
           sudo bash tests/rc18-check.sh
 
+      - name: Check temporary HTB with native tc and isolated traffic
+        run: |
+          sudo apt-get update -qq
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y iperf3 iproute2 jq
+          sudo bash tests/temporary-htb-check.sh
+
       - name: ShellCheck 0.11.0
         run: |
           mkdir -p .tmp/ci-helpers
@@ -57,5 +63,6 @@ jobs:
             tests/controller-check.sh \
             tests/installer-check.sh \
             tests/rc18-check.sh \
+            tests/temporary-htb-check.sh \
             experiments/htb-aggregate/tests/static-check.sh \
             .tmp/ci-helpers/*.helper

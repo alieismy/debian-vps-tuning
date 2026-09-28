@@ -42,7 +42,8 @@ fi
 bash -n "${scripts[@]}" "$controller" "$tcpquality_tool" "$installer" "$probe_tool" "$htb_wrapper" \
   "$traffic_budget_tool" "$migration_tool" tools/profile-template.sh.in \
   dvt-measure-runtime.sh \
-  tests/static-check.sh tests/controller-check.sh tests/installer-check.sh tests/rc18-check.sh
+  tests/static-check.sh tests/controller-check.sh tests/installer-check.sh tests/rc18-check.sh \
+  tests/temporary-htb-check.sh
 
 bash tests/controller-check.sh
 

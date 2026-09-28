@@ -328,6 +328,16 @@ main measure --rate-cap 20 --plan-only
         after["observations"]["qdisc"]["status"] = "unavailable"
         self.assertEqual(m.compare_configuration(before, after)["status"], "UNAVAILABLE")
 
+    def test_discovery_rate_or_path_violation_stops_without_failover(self):
+        output = self.root / 'invalid-discovery'
+        run = m.MeasurementRun(args(output_dir=str(output)), self.plan)
+        run.budget = Mock(return_value=dict(status='OPEN'))
+        run.attempt = Mock(side_effect=m.MeasurementInvalid('rate or path changed'))
+        with patch.object(m, 'diagnose', return_value={}), patch.object(m, 'bounded', return_value={}), patch.object(m, 'candidates_from', return_value=[ENDPOINT, dict(ENDPOINT, port=5202)]), redirect_stdout(io.StringIO()), self.assertRaises(m.MeasurementInvalid):
+            run.run()
+        self.assertEqual(run.attempt.call_count, 1)
+        self.assertFalse((output / 'COMPLETED').exists())
+
     def test_migration_version_gate_accepts_rc19_to_new_line(self):
         if not m.shutil.which("bash"):
             self.skipTest("Bash unavailable")
