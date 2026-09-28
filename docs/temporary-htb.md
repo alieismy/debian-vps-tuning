@@ -4,7 +4,7 @@
 
 ## 行为与适用范围
 
-HTB（分层令牌桶）限制所选接口的**全部出向流量**，包括其他连接、IPv4/IPv6 和 SSH；不是只限制本次 iperf3。用户必须显式提供接口、上下界和 application cap，且 `1 <= lower < upper < rate-cap <= 10000`。`rate-cap` 是 iperf3 的发送目标与预算依据；`lower/upper` 是本轮临时整形区间，均不代表套餐速率或持久配置建议。
+HTB（分层令牌桶）限制所选接口的**全部出向流量**，包括其他连接、IPv4/IPv6 和 SSH；不是只限制本次 iperf3。用户必须显式提供接口、上下界和 application cap，且 `1 <= lower < upper < rate-cap <= 10000`。`rate-cap` 是 iperf3 发送目标的上限与预算依据；正式样本目标取当前 HTB 速率的 110%，且不超过 cap。`lower/upper` 是本轮临时整形区间，均不代表套餐速率或持久配置建议。
 
 按 Linux 能力检查，不用发行版名称、架构、CPU/RAM 档位或套餐带宽表限制本入口。依赖沿用普通测量；整形还需要 root、可用的 HTB/fq 和完整可恢复的 tc JSON。**只接受无 class/filter 的单一 root fq**；mq、clsact、ingress、额外对象或未知 fq 选项均在写入前拒绝。此时仍可使用普通 `measure`。旧 `dvt htb` 研究协议及受管配置支持范围保持原样。
 
@@ -36,7 +36,7 @@ dvt htb-sweep --interface eth0 --lower 10 --upper 20 --rate-cap 25 \
 
 默认每档三次、每次五秒。低档首部控制后运行上界 reference，再运行最多五档粗扫；只有有效样本确认了重复重传上升，才在相邻区间最多增加三档二分精扫，随后执行上界和低档尾部控制。`--fine-step` 是停止精扫的区间宽度，最多三档的预算边界可能使实际分辨率较粗。
 
-沿用 `burst=262144 bytes`、`cburst=32768 bytes`、`quantum=15140 bytes`，不在本阶段探索这些参数。短窗口中的 burst、套接字缓冲和排队会使低速样本失效；无有效结果是允许的结果，不能自动延长时间或提高预算补测。
+沿用 `burst=262144 bytes`、`cburst=32768 bytes`、`quantum=15140 bytes`。为减少低速短窗的入队积压，正式样本按上述逐档 offered rate 发送，write block 最多为该档 50 ms 数据量且不超过 128 KiB；不改变 socket buffer。原生及目标验证状态见[采样修正记录](temporary-htb-sampling-2026-09-28.md)。短窗口、路径或资源条件仍可能使样本失效；无有效结果是允许的结果，不能自动延长时间或提高预算补测。
 
 每个样本的预留按固定 application cap 计算，包含选点、失败和超时余量。计划最坏预留包含全部三档精扫，但执行仍逐次预留、成功按 sender bytes 结算、失败保守结算。额度不足或时间到达时停止并恢复；协议、重传和其他业务流量不属于该 payload 账本。
 

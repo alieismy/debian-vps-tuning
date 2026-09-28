@@ -2,6 +2,8 @@
 
 ## 0.2.0-rc.1 第二阶段临时 HTB 候选（2026-09-28）
 
+低速短窗口的收发背离已在固定 `335c53e` 的隔离 Linux 对照中复现并完成参数比较；当前新增逐档 offered rate 与小块采集修正，原有效性和预算门禁保留。修复版本原生链路及目标机结果以[采样修正记录](temporary-htb-sampling-2026-09-28.md)为准，不能用历史恢复通过替代。
+
 新增 [`htb-sweep`](temporary-htb.md)，此处与下节第一阶段固定提交的证据分开。当前已实现单根 fq 完整恢复事务、独立 watchdog、自动选点/预算复用、粗细扫描及 reference 门禁。离线检查覆盖 fq 单位与未知选项拒绝、所有权/路由、精扫、预算停止、恢复失败及报告门禁；原生入口 `tests/temporary-htb-check.sh` 在两个专有 netns/veth 上验证真实 tc 与 iperf3，不经过公网或 runner 主出口。
 
 实现提交 `6fd5030ce37c4c85abf851bdfa2238f09f7aa59d` 的 [Linux CI 36393226085](https://github.com/alieismy/debian-vps-tuning/actions/runs/36393226085) 全部通过：73 项 Python、0 跳过，主静态/旧 HTB fixture、生成与安装资产一致性、root 安装/预算/迁移生命周期、固定 ShellCheck 0.11.0，以及新增真实 tc/iperf3 原生门禁。Windows 本地同一套 Python 为 72 通过、真实 flock 跳过 1 项；21 项清单资产及 installer 绑定、58 个本地文档链接和六份 profile 零差异已核验。

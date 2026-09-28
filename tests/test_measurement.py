@@ -291,10 +291,32 @@ main measure --rate-cap 20 --plan-only
         # 参数有效；缺少父层预留时应在 mkdir/任何 iperf3 调用之前拒绝。
         output = "/dvt-test-no-budget-" + m.uuid.uuid4().hex
         result = subprocess.run([m.shutil.which("bash"), str(ROOT / "dvt-measure-runtime.sh"),
-                                 "192.0.2.1", "5201", "4", "eth0", "20", "5", output],
+                                 "192.0.2.1", "5201", "4", "eth0", "20", "5", "20000000", "131072", output],
                                 capture_output=True, env=env)
         self.assertEqual(result.returncode, 2)
         self.assertIn("budget reservation", result.stderr.decode(errors="replace"))
+
+    def test_htb_take_bounds_short_window_backlog_without_reducing_reservation(self):
+        a = args(rate_cap=5, lower=1, upper=4, interface="eth0", fine_step=1,
+                 output_dir=str(self.root / 'bounded'))
+        run = m.HTBMeasurementRun(a, m.make_htb_plan(a, []))
+        run.output.mkdir()
+        run.transaction = Mock(assert_active=Mock())
+        run.budget = Mock(return_value=dict(window_id=a.window_id,
+            budget_bytes=run.plan['window_budget_bytes'], remaining_bytes=10**9))
+        commands = []
+        def process(command, **kwargs):
+            commands.append(command)
+            write_sample(Path(command[-1]), rate=2.2)
+            return Mock(wait=Mock(return_value=0))
+        with patch.object(m, 'route_for', return_value=ROUTE), patch.object(m.subprocess, 'Popen', side_effect=process), redirect_stdout(io.StringIO()):
+            run.take(ENDPOINT, ROUTE, 'sweep', 2)
+        # 2 Mbps 的短窗不再持续按 5 Mbps 向 socket 入队；不缩小 TCP window。
+        self.assertEqual(commands[0][-3:-1], ['2200000', '12500'])
+        reservation = next(c for c in run.budget.call_args_list if c.args[0] == 'reserve')
+        self.assertEqual(reservation.args[-1], m.reservation_bytes(5, 5))
+        self.assertEqual(run.rows[0]['offered_rate_mbps'], 2.2)
+        self.assertEqual(run.rows[0]['write_block_bytes'], 12500)
 
     def test_full_flow_failover_and_complete_report(self):
         output = self.root / "full"

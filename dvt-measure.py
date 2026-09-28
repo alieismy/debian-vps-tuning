@@ -145,6 +145,9 @@ def make_htb_plan(args, endpoints):
                 affected_interface=args.interface, impact='all egress traffic on this interface, IPv4 and IPv6',
                 topology='single root fq with fully restorable options; no mq/clsact/filters',
                 rates_mbps=rates, schedule=schedule, fine_step_mbps=args.fine_step, max_fine_rates=3,
+                sampling={'offered_rate': 'min(application cap, 110% of current HTB rate)',
+                          'write_block': 'min(128 KiB, 50 ms of current HTB rate)',
+                          'socket_buffer': 'system default'},
                 worst_case_reservations_bytes=plan['max_attempts'] * reservation_bytes(1, args.seconds) +
                     (len(schedule) + 3 * args.samples) * reservation_bytes(args.rate_cap, args.seconds),
                 shaping={'burst_bytes': 262144, 'cburst_bytes': 32768, 'quantum_bytes': 15140})
@@ -370,7 +373,8 @@ class MeasurementRun:
     def configuration_observation(self, before, after):
         return compare_configuration(before, after)
 
-    def attempt(self, endpoint, role, rate):
+    def attempt(self, endpoint, role, rate, *, offered_bps=None, block_bytes=131072):
+        offered_bps = rate * 1000000 if offered_bps is None else offered_bps
         timeout = self.args.seconds + 10
         if time.monotonic() + timeout + 8 >= self.deadline:
             raise StopMeasurement("TIME_LIMIT")
@@ -386,6 +390,7 @@ class MeasurementRun:
         reservation = "measure-" + uuid.uuid4().hex
         # reserve 在发出流量前；若其结果不确定则保留 ID 和现场，禁止后续尝试。
         event = {"directory": name, "role": role, "rate_mbps": rate, "endpoint": endpoint,
+                 "offered_rate_bps": offered_bps, "write_block_bytes": block_bytes,
                  "route_before": route, "reservation_id": reservation, "planned_bytes": planned, "status": "RESERVING"}
         self.events.append(event)
         self.save_events()
@@ -404,7 +409,8 @@ class MeasurementRun:
             with (self.output / (name + ".log")).open("w", encoding="utf-8") as log:
                 self.active = subprocess.Popen(["bash", str(ROOT / "dvt-measure-runtime.sh"), endpoint["ip"],
                                                str(endpoint["port"]), str(endpoint["family"]), route["dev"],
-                                               str(rate), str(self.args.seconds), str(directory)],
+                                               str(rate), str(self.args.seconds), str(offered_bps),
+                                               str(block_bytes), str(directory)],
                                               stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
                                               env={**os.environ, "DVT_TRAFFIC_LEDGER": self.args.ledger,
                                                    "DVT_MEASURE_RESERVATION": reservation})
@@ -412,6 +418,7 @@ class MeasurementRun:
                 self.active = None
             require(code == 0, "采集失败，见本次 attempt 日志")
             row = self.collect_row(directory, role, rate, endpoint, route)
+            row.update(offered_rate_mbps=offered_bps / 1000000, write_block_bytes=block_bytes)
             event["route_after"] = route_for(endpoint)
             event["socket_route"] = route_for(endpoint, row["local_socket"])
             same_egress = all(event["socket_route"][key] == route[key] for key in ("dev", "gateway", "table"))
@@ -530,7 +537,7 @@ class HTBMeasurementRun(MeasurementRun):
         coverage = summary.get('qdisc_coverage', {})
         if not isinstance(exposure, (int, float)) or exposure <= 0 or coverage.get('topology') != 'htb-fq':
             row['issues'].append('HTB_EXPOSURE_NOT_OBSERVED')
-        row.update(rate_mbps=self.shaping_rate, offered_rate_mbps=rate,
+        row.update(rate_mbps=self.shaping_rate,
                    htb_overlimits_delta=exposure, eligible=not row['issues'])
         return row
 
@@ -540,7 +547,11 @@ class HTBMeasurementRun(MeasurementRun):
             raise StopMeasurement('TIME_LIMIT')
         self.transaction.set_rate(rate)
         self.shaping_rate = rate
-        self.rows.append(self.attempt(selected, role, self.args.rate_cap))
+        # 固定高 cap 会把未交付数据积在 socket；预算仍按 cap 预留。
+        # 小块避免低速下一个 128 KiB write 跨越显著比例的测量窗口。
+        self.rows.append(self.attempt(selected, role, self.args.rate_cap,
+                         offered_bps=min(self.args.rate_cap * 1000000, rate * 1100000),
+                         block_bytes=min(131072, rate * 6250)))
         write_json(self.output / 'samples.json', self.rows)
 
     def bracket(self):

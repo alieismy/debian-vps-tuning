@@ -8,6 +8,7 @@ import re
 import subprocess
 import sys
 import time
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import dvt_htb_transaction as h
@@ -229,13 +230,8 @@ def low_rate_window_cases():
         h.execute(['sysctl', '-w', 'net.ipv4.tcp_congestion_control=bbr'])
     print('sampling congestion control:', h.execute(['sysctl', '-n', 'net.ipv4.tcp_congestion_control']), flush=True)
     results = []
-    for name, seconds, offered, extra in (
-        ('default', 5, '5M', []), ('block16k', 5, '5M', ['--length', '16384']),
-        ('window64k', 5, '5M', ['--window', '65536']), ('window32k', 5, '5M', ['--window', '32768']),
-        ('window32k-block16k', 5, '5M', ['--window', '32768', '--length', '16384']),
-        ('long-window', 30, '5M', []),
-        ('offered-110-percent', 5, '2.2M', []), ('offered-105-percent', 5, '2.1M', []),
-    ):
+    # 保留最小旧行为复现；其他单变量诊断结果记录在日期化报告和 CI。
+    for name, seconds, offered, extra in (('default', 5, '5M', []),):
         original = reset_fq()
         transaction = h.Transaction(IFACE, ROOT / ('sampling-' + name), 90)
         transaction.begin()
@@ -268,11 +264,48 @@ def low_rate_window_cases():
             if 'child' in locals() and child.poll() is None:
                 child.terminate()
                 child.wait(timeout=5)
+            if 'stream' in locals():
+                stream.close()
             transaction.close()
         assert_restored(transaction.checkpoint, original)
     assert results[0]['receiver_mbps'] < results[0]['sender_mbps'] * .8, results[0]
-    h.execute(['sysctl', '-w', 'net.ipv4.tcp_congestion_control=' + original_cc])
     print('PASS reproduced short-window send backlog in isolated Linux', flush=True)
+    spec = importlib.util.spec_from_file_location('measure', ROOT / 'dvt-measure.py')
+    measure = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(measure)
+    args = SimpleNamespace(interface=IFACE, lower=1, upper=4, rate_cap=5, seconds=5,
+                           samples=3, max_attempts=1, host='192.0.2.2', family='4', fine_step=1,
+                           max_duration=180, budget_mib=200, window_id='low-rate',
+                           ledger=str(ROOT / 'budget-low-rate' / 'ledger.json'),
+                           output_dir=str(ROOT / 'low-rate-product'))
+    run = measure.HTBMeasurementRun(args, measure.make_htb_plan(args, []))
+    run.output.mkdir()
+    run.budget('init', '--window-id', args.window_id, '--budget-bytes', run.plan['window_budget_bytes'])
+    endpoint = dict(id='isolated', ip=args.host, family=4, port=5201)
+    route = measure.route_for(endpoint)
+    original = reset_fq()
+    transaction = h.Transaction(IFACE, run.output / 'htb-transaction', 180)
+    run.transaction = transaction
+    transaction.begin()
+    try:
+        for rate in (1, 2, 4, 1, 2, 4):
+            run.take(endpoint, route, 'sweep', rate)
+            row = run.rows[-1]
+            raw = measure.read_json(run.output / row['directory'] / 'upload.iperf3.json')
+            print('product low-rate sample:', json.dumps({key: row[key] for key in
+                  ('rate_mbps', 'offered_rate_mbps', 'write_block_bytes', 'sender', 'receiver', 'issues', 'htb_overlimits_delta')}), flush=True)
+            assert raw['start']['test_start']['target_bitrate'] == rate * 1100000
+            assert raw['start']['test_start']['blksize'] == rate * 6250
+            assert not set(row['issues']) & {'RECEIVER_DIVERGENCE', 'INVALID_MEASUREMENT_WINDOW',
+                                            'UNDERDRIVEN', 'HTB_EXPOSURE_NOT_OBSERVED'}, row['issues']
+        assert any(row['eligible'] for row in run.rows)
+        assert run.budget('status')['reserved_bytes'] == 0
+    finally:
+        run.cleanup_child()
+        transaction.close()
+        h.execute(['sysctl', '-w', 'net.ipv4.tcp_congestion_control=' + original_cc])
+    assert_restored(transaction.checkpoint, original)
+    print('PASS product low-rate windows, shaping exposure, ledger and restoration', flush=True)
 
 
 if __name__ == '__main__':

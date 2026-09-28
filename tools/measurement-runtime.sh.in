@@ -17,16 +17,18 @@ info() { printf '[measure-runtime] %s\n' "$*"; }
 @MEASUREMENT_PHASE@
 
 main() {
-  [ "$#" -eq 7 ] || { warn 'internal usage: IP PORT FAMILY IFACE RATE SECONDS NEW_OUTPUT_DIR'; return 2; }
+  [ "$#" -eq 9 ] || { warn 'internal usage: IP PORT FAMILY IFACE CAP SECONDS OFFERED_BPS BLOCK_BYTES NEW_OUTPUT_DIR'; return 2; }
   BENCHMARK_HOST_RESOLVED="$1"
   BENCHMARK_PORT_RESOLVED="$2"
   BENCHMARK_FAMILY_ARGS=("--version${3}")
-  local iface="$4" rate="$5" output_dir="$7"
+  local iface="$4" rate="$5" offered_bps="$7" block_bytes="$8" output_dir="$9"
   [[ "$1" =~ ^[0-9a-fA-F:.]+$ ]] && [[ "$2" =~ ^[0-9]{1,5}$ ]] || return 2
   [[ "$3" = 4 || "$3" = 6 ]] || return 2
   [[ "$iface" =~ ^[a-zA-Z0-9_.:-]{1,64}$ ]] || return 2
   [[ "$rate" =~ ^[0-9]{1,5}$ ]] && [ "$rate" -ge 1 ] && [ "$rate" -le 10000 ] || return 2
   [[ "$6" =~ ^[0-9]{1,2}$ ]] && [ "$6" -ge 5 ] && [ "$6" -le 30 ] || return 2
+  [[ "$offered_bps" =~ ^[1-9][0-9]{0,10}$ ]] && [ "$offered_bps" -le "$((rate * 1000000))" ] || return 2
+  [[ "$block_bytes" =~ ^[1-9][0-9]{0,5}$ ]] && [ "$block_bytes" -le 131072 ] || return 2
   [[ "$output_dir" = /* ]] && [ ! -e "$output_dir" ] && [ ! -L "$output_dir" ] || return 2
   # 内部执行器也核对父层预留，防止绕过调度器直接启动未记账流量。
   [[ "${DVT_TRAFFIC_LEDGER:-}" = /* ]] &&
@@ -45,7 +47,7 @@ main() {
   BENCHMARK_OMIT_RESOLVED=0
   BENCHMARK_PARALLEL_RESOLVED=1
   BENCHMARK_PHASE_TIMEOUT_RESOLVED=$((BENCHMARK_SECONDS_RESOLVED + 10))
-  BENCHMARK_RATE_ARGS=(--bitrate "$((rate * 1000000))")
+  BENCHMARK_RATE_ARGS=(--bitrate "$offered_bps" --length "$block_bytes")
   umask 077
   mkdir -m 0700 -- "$output_dir"
   printf '%s\n' "$iface" >"${output_dir}/ifaces"
