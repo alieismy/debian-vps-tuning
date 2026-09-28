@@ -7,7 +7,7 @@
 bash debian-vps-tuning.sh measure --rate-cap 20 --plan-only
 ```
 
-新入口采用实际能力检查；原 `apply/verify/rollback` 仍遵守下文 Debian 资源范围。旧 profile 专用增量诊断可通过 `diagnose --managed` 调用。新候选仅有本地验证，不等于公共服务可用性、Linux 生命周期或性能验收。
+新入口采用实际能力检查；原 `apply/verify/rollback` 仍遵守下文 Debian 资源范围。旧 profile 专用增量诊断可通过 `diagnose --managed` 调用。新候选已通过本地适用门禁及 [Linux CI](docs/validation.md)，公共服务可用性、新测量端到端运行、目标 VPS 生命周期及性能仍未验收。
 
 Debian VPS Tuning 用于配置 Debian 12/13 小型云 VPS 的主机网络。主要验证场景是在原生 systemd 环境中运行 3X-UI、Xray-core 和 VLESS + REALITY + TCP。当前目标机基线为 3X-UI v3.4.2 和 Xray-core v26.6.27；其他版本需单独验证。脚本还可只读识别 S-UI、sing-box 和独立 Xray 服务。
 

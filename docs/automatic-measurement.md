@@ -1,6 +1,6 @@
 # 独立诊断与公共端点速率阶梯测量
 
-适用：未发布的 `0.2.0-rc.1` 完整本地 bundle。实现边界见[第一阶段契约](automatic-measurement-design.md)，研究依据见[可研](tcpfit-policer-refactor-feasibility-2026-09-28.md)。当前仅有源码、离线 fixture 与宿主适用检查证据；公共服务、Linux 原生运行与性能尚未验收。
+适用：未发布的 `0.2.0-rc.1` 完整本地 bundle。实现边界见[第一阶段契约](automatic-measurement-design.md)，研究依据见[可研](tcpfit-policer-refactor-feasibility-2026-09-28.md)。本地适用门禁与 [Linux CI](validation.md) 已通过；公共服务、新测量端到端运行与性能尚未验收。
 
 ## 能做什么
 
@@ -38,7 +38,7 @@ dvt measure --rate-cap 20 --family 4 --budget-mib 600 \
 
 预算按 application payload 记账，不包含 TCP/IP/链路、重传或服务商计费开销。每次 iperf3 启动前按 `rate × 125000 × (seconds + 10 + 8 + 5) + 1 MiB` 预留：覆盖 phase 超时余量、supervisor 等待与 TERM/KILL 清理窗口，并留有 pacing 余量。成功按 sender bytes 结算，失败保守扣除该次预留；因此剩余额度有时不足以启动下一档，即使该档正常完成的估算字节较少。不会扩大额度或自动新建窗口。
 
-同一 ledger 的 `window-id` 和预算必须一致；保留旧窗口历史，不能删账或换 ID 绕过额度。账本读写失败时停止并保留未确认的 reservation，需依据证据核对；不能手工把未知消费改成 0。`Ctrl-C`/TERM 通过 runtime trap 回收本次 iperf3 进程组并尝试保守结算；SIGKILL/掉电可能留下占用，需检查原账本。真实信号生命周期尚待 Linux 验证。
+同一 ledger 的 `window-id` 和预算必须一致；保留旧窗口历史，不能删账或换 ID 绕过额度。账本读写失败时停止并保留未确认的 reservation，需依据证据核对；不能手工把未知消费改成 0。`Ctrl-C`/TERM 通过 runtime trap 回收本次 iperf3 进程组并尝试保守结算；SIGKILL/掉电可能留下占用，需检查原账本。共享超时回收已通过 Linux 假 iperf3/真实进程组 fixture；新测量完整链路的真实信号与结算仍待目标环境验证。
 
 完整采集不等于已识别拐点：
 

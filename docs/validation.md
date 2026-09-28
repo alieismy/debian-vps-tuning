@@ -6,7 +6,9 @@
 
 新增离线检查覆盖固定公共目录/公布端口、ICMP 失败与 mapped IPv6、端点路由、预算启动顺序/不足/失败结算、仅回收自有子进程、重复重传与低负载/首尾控制门禁、证据摘要和总控提前分发。复用原有有效窗口解析、profile 生成及受管生命周期 fixture。
 
-Linux 原生安装/进程/公共节点与真实 VPS 生命周期尚未执行；不能由合成用例替代。最终本地结果记录在[项目备忘](project-memo.md)。发布、真实网络测试和后续通用临时 HTB 不因本地候选形成而自动启动。
+实现提交 `8a59688664883cf55f734bbb5b595220471f5309` 的 [Linux CI](https://github.com/alieismy/debian-vps-tuning/actions/runs/36374065438) 已通过：Python 56 项通过、0 跳过，主静态与 HTB 套件、生成/资产一致性、root 安装生命周期、共享预算及 rc.16/17/18/19 → 0.2.0-rc.1 迁移 fixture、共享 benchmark 进程组超时回收、ShellCheck 0.11.0。安装使用 runner 的临时目录；迁移的 profile/boot ID 为合成值，进程用例使用假 iperf3 与真实 Linux 子进程，不访问公共服务。
+
+新测量端到端信号/结算、公共节点可用性、实际无配置变化及真实 VPS 生命周期尚未验收；不能由 CI fixture 替代。完整结果与剩余边界记录在[项目备忘](project-memo.md)。发布、真实网络测试和后续通用临时 HTB 不因 CI 通过而自动启动。
 
 ## rc.19 增量验证范围（2026-09-22）
 
