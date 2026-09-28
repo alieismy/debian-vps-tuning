@@ -399,7 +399,8 @@ class MeasurementRun:
                     "--tool", "measure", "--run-id", reservation, "--reservation-id", reservation, "--planned-bytes", planned)
         event["status"] = "RUNNING"
         self.save_events()
-        print(f"[{name}] {role}: {rate} Mbps, {endpoint['id']} / IPv{endpoint['family']}", flush=True)
+        print(f"[{name}] {role}: offered {offered_bps / 1000000:g} Mbps (cap {rate} Mbps), "
+              f"{endpoint['id']} / IPv{endpoint['family']}", flush=True)
         try:
             if time.monotonic() + timeout + 8 >= self.deadline:
                 # 预留过程可能等待账本锁；尚未创建子进程，能确定消费为零。
