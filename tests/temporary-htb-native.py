@@ -4,6 +4,7 @@ import importlib.util
 import json
 from pathlib import Path
 import signal
+import re
 import subprocess
 import sys
 import time
@@ -218,6 +219,55 @@ def measurement_cases():
         print('PASS real HTB collector / ledger / restoration: ' + name, flush=True)
 
 
+def low_rate_window_cases():
+    """低速短窗对照；所有 sysctl 和流量仅在测试专用 netns 内。"""
+    h.execute(['sysctl', '-w', 'net.ipv4.tcp_wmem=4096 65536 67108864'])
+    available = h.execute(['sysctl', '-n', 'net.ipv4.tcp_available_congestion_control'])
+    # 已部署主机使用 BBR；若 runner 未提供则显式报告实际算法。
+    if 'bbr' in available.split():
+        h.execute(['sysctl', '-w', 'net.ipv4.tcp_congestion_control=bbr'])
+    print('sampling congestion control:', h.execute(['sysctl', '-n', 'net.ipv4.tcp_congestion_control']), flush=True)
+    results = []
+    for name, seconds, extra in (
+        ('default', 5, []), ('block16k', 5, ['--length', '16384']),
+        ('window64k', 5, ['--window', '65536']), ('window32k', 5, ['--window', '32768']),
+        ('window32k-block16k', 5, ['--window', '32768', '--length', '16384']),
+        ('long-window', 30, []),
+    ):
+        original = reset_fq()
+        transaction = h.Transaction(IFACE, ROOT / ('sampling-' + name), 90)
+        transaction.begin()
+        try:
+            transaction.set_rate(2)
+            child = subprocess.Popen(['iperf3', '-c', '192.0.2.2', '-p', '5201', '-t', str(seconds),
+                                      '-b', '5M', '-J', *extra], stdout=subprocess.PIPE, text=True)
+            notsent = []
+            while child.poll() is None:
+                socket = h.execute(['ss', '-tinm', 'dst', '192.0.2.2'])
+                notsent += [int(v) for v in re.findall(r'notsent:(\d+)', socket)]
+                time.sleep(.2)
+            stdout, _ = child.communicate(timeout=3)
+            assert child.returncode == 0, stdout
+            raw = json.loads(stdout)
+            (ROOT / (name + '-sampling.json')).write_text(stdout)
+            sent, received = raw['end']['sum_sent'], raw['end']['sum_received']
+            result = dict(case=name, seconds=seconds, sent=sent['bytes'], received=received['bytes'],
+                          sender_mbps=sent['bits_per_second'] / 1e6,
+                          receiver_mbps=received['bits_per_second'] / 1e6,
+                          sender_seconds=sent['seconds'], receiver_seconds=received['seconds'],
+                          max_notsent=max(notsent, default=0))
+            results.append(result)
+            print('low-rate sampling:', json.dumps(result), flush=True)
+        finally:
+            if 'child' in locals() and child.poll() is None:
+                child.terminate()
+                child.wait(timeout=5)
+            transaction.close()
+        assert_restored(transaction.checkpoint, original)
+    assert results[0]['receiver_mbps'] < results[0]['sender_mbps'] * .8, results[0]
+    print('PASS reproduced short-window send backlog in isolated Linux', flush=True)
+
+
 if __name__ == '__main__':
     if len(sys.argv) == 5 and sys.argv[1] == '--owner':
         if sys.argv[4] == 'ignore-term':
@@ -230,5 +280,6 @@ if __name__ == '__main__':
     else:
         transaction_cases()
         watchdog_cases()
+        low_rate_window_cases()
         measurement_cases()
         print('temporary HTB native checks passed', flush=True)

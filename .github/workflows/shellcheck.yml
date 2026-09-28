@@ -40,6 +40,7 @@ jobs:
             sudo make install > ../install.log 2>&1 || { cat ../install.log; exit 1; }
           )
           iperf3 --version
+          sudo modprobe tcp_bbr || true
           sudo bash tests/temporary-htb-check.sh
 
       - name: ShellCheck 0.11.0
