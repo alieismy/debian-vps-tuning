@@ -194,6 +194,18 @@ class TemporaryHTBTests(unittest.TestCase):
             with self.assertRaisesRegex(m.MeasurementError, '恢复证据'):
                 m.verify_report(root)
 
+    def test_no_endpoint_does_not_claim_temporary_configuration_change(self):
+        with tempfile.TemporaryDirectory() as temp:
+            a = args(output_dir=str(Path(temp) / 'output'))
+            run = m.HTBMeasurementRun(a, m.make_htb_plan(a, []))
+            run.budget = Mock(return_value={})
+            with patch.object(m, 'diagnose', return_value={}), patch.object(m, 'bounded', return_value={}), patch.object(m, 'candidates_from', return_value=[]):
+                result = run.run()
+            self.assertEqual(result['stop_reason'], 'NO_USABLE_ENDPOINT')
+            self.assertFalse(result['configuration_changed'])
+            self.assertIsNone(run.transaction)
+            self.assertTrue(run.plan['configuration_changed'])
+
 
 if __name__ == '__main__':
     unittest.main()

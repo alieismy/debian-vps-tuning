@@ -16,6 +16,7 @@
 - 首轮实现 `1820efc` 的 [CI 36391464786](https://github.com/alieismy/debian-vps-tuning/actions/runs/36391464786) 通过静态和安装生命周期，但原生预检发现 runner 的 iproute2 对空 class 列表成功返回空文本。已在确认命令成功后兼容空列表，并新增故障返回仍拒绝的回归；核对 Linux v6.11 `sch_htb.c`，补充 class 创建时内核自动 `pfifo 0:` 叶子的有限恢复识别。其余原生门禁尚待继续执行。
 - 当前成熟度为第二阶段本地实现候选，Linux 原生恢复 CI 尚待闭合；不得把 unit fixture 当真实内核/目标机通过。临时验证日志与私有运行准备材料留在忽略目录 `.tmp/local/`，用于复核，不进入公开安装资产。
 - 后续证据：Ubuntu 24.04 自带 iproute2 6.1 不实现 class JSON，已核对其 `tc_class.c/q_htb.c` 并加入严格文本解析、rate/ceil 单位换算和完整原行漂移比较。[CI 36391994207](https://github.com/alieismy/debian-vps-tuning/actions/runs/36391994207) 已通过定制 fq/变速/锁/down、root/class/leaf 部分失败、外部参数漂移重复拒绝、owner SIGKILL 与忽略 TERM 后期限恢复。后续完整测量在选点阶段因 CPU 压力停止；[诊断 CI 36392388743](https://github.com/alieismy/debian-vps-tuning/actions/runs/36392388743) 记录 sender CPU 100.728%、remote 0.014%、steal 0，与 ESnet 3.18 修复的限速 CPU 问题一致。仅在临时 CI runner 构建官方 SHA-256 固定的 iperf3 3.18 后继续，不放宽产品门禁、不升级 VPS。新增离线回归后本地总计 72 项，71 通过、Windows flock 跳过 1 项。
+- 使用 iperf3 3.18 的 [CI 36392709179](https://github.com/alieismy/debian-vps-tuning/actions/runs/36392709179) 已完成 24 个真实 HTB 样本，全部 overlimits 增长、23 个有效、1 个 receiver 背离拒绝，恢复与账本归零通过；失败来自测试错误要求隔离 netns 暴露 `net.core.default_qdisc`。产品正确保留 `CONFIGURATION_UNAVAILABLE`，测试改为仅接受该不可观测字段，同时要求其他字段不变、fq 完整恢复和无候选建议。另修正未找到端点时不能把计划中的整形意图写成实际配置变更，并加入离线回归；信号/全 CI 闭环继续等待。
 
 ## 本轮记录：2026-09-28（指定目标的低流量功能验收完成）
 

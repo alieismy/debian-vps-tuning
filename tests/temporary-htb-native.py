@@ -188,9 +188,20 @@ def measurement_cases():
                     assert (output / 'INCOMPLETE').exists() and not (output / 'COMPLETED').exists()
                 else:
                     result = measure.verify_report(output)
-                    assert result['configuration_observation']['status'] == 'UNCHANGED', result
-                    assert len(result['samples']) >= 18, result
-                    assert all(row['htb_overlimits_delta'] > 0 for row in result['samples']), result
+                    observation = result['configuration_observation']
+                    # default_qdisc 只在初始 netns 暴露；不能伪造为已观察，也不能丢掉产品门禁。
+                    assert not observation['changed_fields'], observation
+                    assert set(observation['unavailable_fields']) <= {'default_qdisc'}, observation
+                    if observation['unavailable_fields']:
+                        assert observation['status'] == 'UNAVAILABLE', observation
+                        assert result['analysis']['status'] == 'INSUFFICIENT_EVIDENCE'
+                        assert result['analysis']['candidate_interval'] is None
+                    else:
+                        assert observation['status'] == 'UNCHANGED', observation
+                    assert result['configuration_changed']
+                    assert len(result['samples']) >= 24, len(result['samples'])
+                    assert all(row['htb_overlimits_delta'] > 0 for row in result['samples'])
+                    assert any(row['eligible'] for row in result['samples'])
                     print('native sample eligibility:', sum(row['eligible'] for row in result['samples']),
                           '/', len(result['samples']), 'analysis:', result['analysis']['status'], flush=True)
             finally:

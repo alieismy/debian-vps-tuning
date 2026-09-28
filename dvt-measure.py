@@ -496,7 +496,8 @@ class MeasurementRun:
             analysis["status"] = "INSUFFICIENT_EVIDENCE"
             analysis["candidate_interval"] = None
         result = {"schema": self.plan['schema'], "version": VERSION, "generated_utc": datetime.now(timezone.utc).isoformat(),
-                  "configuration_changed": self.plan['configuration_changed'], "management_state": "INDEPENDENT_MEASUREMENT",
+                  "configuration_changed": configuration_observation.get('temporary_qdisc_changed', False),
+                  "management_state": "INDEPENDENT_MEASUREMENT",
                   "configuration_observation": configuration_observation,
                   "endpoint": selected, "stop_reason": stop_reason, "samples": self.rows,
                   "analysis": analysis, "budget": self.budget("status"),
@@ -612,10 +613,12 @@ class HTBMeasurementRun(MeasurementRun):
         import copy
         import dvt_htb_transaction as htb
         a, b = copy.deepcopy(before), copy.deepcopy(after)
+        changed = False
         # root 0: 恢复后可能被内核分配非零 handle；只对本接口、同 fq 参数规范化。
         if self.transaction is not None:
             state, original = htb.load(self.transaction.checkpoint)
             require(state['phase'] == 'RESTORED', 'HTB 未确认恢复')
+            changed = state['rate_mbps'] is not None
             require(htb.equivalent(original, htb.snapshot(self.args.interface)), '恢复后拓扑再次变化')
             for data in (a, b):
                 item = data['observations']['qdisc']
@@ -628,6 +631,7 @@ class HTBMeasurementRun(MeasurementRun):
                                 q['handle'] = '0:'
                     item['stdout'] = json.dumps(qdiscs, sort_keys=True)
         result = compare_configuration(a, b)
+        result['temporary_qdisc_changed'] = changed
         if self.transaction is not None:
             result['scope'] += '; temporary HTB restored with fq options; root-zero handle normalized only on target'
         return result
