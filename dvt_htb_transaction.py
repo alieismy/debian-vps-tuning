@@ -153,6 +153,40 @@ def fq_options(options):
     return normalized, args
 
 
+def fq_restore_arg_variants(options):
+    args = fq_options(options)[1]
+    variants = [args]
+    if 'weights' in args:
+        compatibility = args.copy()
+        # iproute2 6.15 q_fq.c 的 weights 分支多调用一次 NEXT_ARG。
+        # 只有现场 parser 验证接受时才选择这个被跳过的 token。
+        compatibility.insert(compatibility.index('weights') + 1, '0')
+        variants.append(compatibility)
+    return variants
+
+
+def validated_fq_restore_args(options):
+    def parse(args):
+        # 不提供 dev，末尾 help 使 parser 退出；即使解析异常也无法修改接口。
+        result = subprocess.run(['tc', 'qdisc', 'add', 'root', 'fq', *args, 'help'],
+                                capture_output=True, text=True, timeout=5,
+                                env={**os.environ, 'LC_ALL': 'C'})
+        return result.returncode, result.stdout, result.stderr
+
+    expected = parse([])
+    require(expected[0] != 0 and 'Usage:' in expected[1] + expected[2] and
+            re.search(r'\bfq\b', expected[1] + expected[2]), '无法验证 tc fq 恢复语法')
+    for index, args in enumerate(fq_restore_arg_variants(options)):
+        observed = parse(args)
+        if observed == expected:
+            return args
+        error = observed[1] + observed[2]
+        require(index == 0 and ('Illegal "weights" element' in error or
+                               'Not enough elements in weights' in error),
+                'tc 不接受完整 fq 恢复参数；未修改 qdisc：' + error.strip())
+    raise HTBError('tc 不接受 fq weights 恢复语法；未修改 qdisc')
+
+
 def preflight(iface):
     require(re.fullmatch(r'[A-Za-z0-9_.:-]{1,15}', iface), '无效接口名')
     ident = identity(iface)
@@ -231,7 +265,8 @@ def load(checkpoint):
             state['recovery_sha256'] == digest(checkpoint / 'recovery.py'), '恢复材料摘要不一致')
     require(identity(state['interface']) == state['identity'], '接口/命名空间/boot 身份变化')
     original = json.loads((checkpoint / 'original.json').read_text())
-    fq_options(original['qdiscs'][0]['options'])
+    variants = fq_restore_arg_variants(original['qdiscs'][0]['options'])
+    require(state.get('restore_fq_argv', variants[0]) in variants, '保存的 fq 恢复参数与原快照不符')
     return state, original
 
 
@@ -252,7 +287,7 @@ def restore(checkpoint):
                 args = ['tc', 'qdisc', 'replace', 'dev', state['interface'], 'root']
                 if int(root['handle'][:-1], 16):
                     args += ['handle', root['handle']]
-                execute(args + ['fq', *fq_options(root['options'])[1]])
+                execute(args + ['fq', *state.get('restore_fq_argv', fq_options(root['options'])[1])])
                 require(equivalent(original, snapshot(state['interface'])), 'fq 恢复后语义复核失败')
             state['phase'] = 'RESTORED'
             save(checkpoint / 'state.json', state)
@@ -279,6 +314,7 @@ class Transaction:
         secure(Path(__file__).resolve())
         require(not self.checkpoint.exists(), 'checkpoint 必须是新目录')
         ident, original = preflight(self.iface)
+        restore_fq_argv = validated_fq_restore_args(original['qdiscs'][0]['options'])
         require(not Path('/run/htb-aggregate-experiment/active.json').exists(), '旧 HTB 实验尚未关闭')
         lock_dir = Path('/run/dvt-temporary-htb')
         lock_dir.mkdir(mode=0o700, exist_ok=True)
@@ -311,6 +347,7 @@ class Transaction:
             state = {'schema': SCHEMA, 'phase': 'PREPARED', 'interface': self.iface, 'identity': ident,
                      'root_handle': f'{root_major}:',
                      'leaf_handle': f'{6000 + nonce % 3000}:', 'rate_mbps': None,
+                     'restore_fq_argv': restore_fq_argv,
                      'original_sha256': digest(self.checkpoint / 'original.json'),
                      'recovery_sha256': digest(self.checkpoint / 'recovery.py'),
                      'owner_pid': os.getpid(), 'owner_token': owner_token(os.getpid()),

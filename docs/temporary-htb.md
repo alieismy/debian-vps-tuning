@@ -12,6 +12,8 @@ Ubuntu 24.04 的 iproute2 6.1 尚无 class JSON；本入口严格解析其 HTB �
 
 保存并恢复 fq 的 limit、flow_limit、buckets、orphan_mask、quantum、initial_quantum、rate、pacing、时间、horizon 及可识别的 bands/priomap/weights 参数；不只恢复默认 `fq`。原 root handle 为 `0:` 时，内核可能分配新的非零 handle；仅该接口的单一 fq 允许此语义等价，参数必须一致。未知参数拒绝，不静默丢弃。
 
+2026-09-28 的[单机验收](temporary-htb-acceptance-2026-09-28.md)发现目标 iproute2 6.15.0 的 `weights` 参数解析问题，导致原候选自动恢复失败；已完成受控补救恢复并停止后续测试。当前修复在开始事务前，通过无 `dev`、末尾 `help` 的命令验证完整恢复语法，优先标准语法，仅在实际解析器确认接受时使用限定兼容形式，并将参数保存在 checkpoint。修复后的目标机完整自动恢复和信号验收仍未完成。
+
 ## 计划和执行
 
 先查看离线计划（以下接口名和参数为示例）：

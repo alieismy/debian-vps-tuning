@@ -62,6 +62,9 @@ def transaction_cases():
     original = reset_fq()
     transaction = h.Transaction(IFACE, ROOT / 'normal', 60)
     transaction.begin()
+    assert h.snapshot(IFACE) == original, 'restore syntax preflight changed qdisc'
+    state, _ = h.load(transaction.checkpoint)
+    assert state['restore_fq_argv'] in h.fq_restore_arg_variants(original['qdiscs'][0]['options'])
     contender = h.Transaction(IFACE, ROOT / 'contender', 60)
     try:
         contender.begin()

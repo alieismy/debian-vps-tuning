@@ -1,9 +1,11 @@
 """临时整形的计划、恢复参数和所有权边界；不启动真实 tc 或公网流量。"""
 import copy
+from contextlib import nullcontext
 import importlib.util
 import json
 from pathlib import Path
 import tempfile
+import subprocess
 import unittest
 from unittest.mock import Mock, patch
 
@@ -36,7 +38,7 @@ def row(role, rate, retrans=0, eligible=True):
 
 class TemporaryHTBTests(unittest.TestCase):
     def test_fq_restore_units_flags_and_bands(self):
-        options = dict(OPTIONS, bands=3, **{'priomap ': [1] * 16, 'weights ': [9, 3, 1]}, maxrate=125000)
+        options = dict(OPTIONS, bands=3, **{'priomap ': [1] * 16, 'weights ': [589824, 196608, 65536]}, maxrate=125000)
         normalized, argv = h.fq_options(options)
         for pair in (('maxrate', '1000000bit'), ('low_rate_threshold', '550000bit'),
                      ('refill_delay', '40000us'), ('timer_slack', '10000ns')):
@@ -44,6 +46,78 @@ class TemporaryHTBTests(unittest.TestCase):
         self.assertIn('nopacing', argv)
         self.assertIn('horizon_drop', argv)
         self.assertEqual(normalized['priomap'], [1] * 16)
+
+    def test_restore_parser_uses_standard_syntax_when_supported(self):
+        help_result = subprocess.CompletedProcess([], 1, '', 'Usage: ... fq [ limit PACKETS ]\n')
+        with patch.object(h.subprocess, 'run', return_value=help_result) as run:
+            argv = h.validated_fq_restore_args(OPTIONS)
+        self.assertEqual(argv, h.fq_options(OPTIONS)[1])
+        for call in run.call_args_list:
+            command = call.args[0]
+            self.assertEqual(command[:5], ['tc', 'qdisc', 'add', 'root', 'fq'])
+            self.assertNotIn('dev', command)  # 无接口，绝不向真实 qdisc 写入。
+            self.assertEqual(command[-1], 'help')
+
+    def test_restore_parser_handles_iproute2_weights_skip_token(self):
+        options = dict(OPTIONS, **{'weights ': [589824, 196608, 65536]})
+        help_result = subprocess.CompletedProcess([], 1, '', 'Usage: ... fq [ limit PACKETS ]\n')
+        # 6.15 的额外 NEXT_ARG 跳过首个权重，将末尾 help 当成第三个数字。
+        failure = subprocess.CompletedProcess([], 1, '', 'Illegal "weights" element, positive number expected\n')
+        with patch.object(h.subprocess, 'run', side_effect=[help_result, failure, help_result]):
+            argv = h.validated_fq_restore_args(options)
+        self.assertEqual(argv[argv.index('weights') + 1:], ['0', '589824', '196608', '65536'])
+        self.assertEqual(h.fq_options(options)[0]['weights'], [589824, 196608, 65536])
+
+    def test_restore_parser_refuses_unrecognized_or_failed_syntax(self):
+        options = dict(OPTIONS, weights=[589824, 196608, 65536])
+        help_result = subprocess.CompletedProcess([], 1, '', 'Usage: ... fq [ limit PACKETS ]\n')
+        unknown = subprocess.CompletedProcess([], 1, '', 'What is "weights"?\n')
+        malformed = subprocess.CompletedProcess([], 1, '', 'Illegal "weights" element, positive number expected\n')
+        for responses in ([unknown], [help_result, unknown], [help_result, malformed, unknown]):
+            with patch.object(h.subprocess, 'run', side_effect=responses), self.assertRaises(h.HTBError):
+                h.validated_fq_restore_args(options)
+
+    def test_restore_syntax_failure_blocks_transaction_before_writes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            checkpoint = Path(temp) / 'checkpoint'
+            transaction = h.Transaction('test0', checkpoint, 30)
+            with patch.object(h.os, 'geteuid', return_value=0, create=True), patch.object(h, 'secure'), \
+                    patch.dict('sys.modules', {'fcntl': Mock()}), \
+                    patch.object(h, 'preflight', return_value=({}, ORIGINAL)), \
+                    patch.object(h, 'validated_fq_restore_args', side_effect=h.HTBError('restore syntax')), \
+                    patch.object(h, 'execute') as execute, self.assertRaisesRegex(h.HTBError, 'restore syntax'):
+                transaction.begin()
+            execute.assert_not_called()
+            self.assertFalse(checkpoint.exists())
+
+    def test_restore_replays_validated_weights_arguments(self):
+        original = copy.deepcopy(ORIGINAL)
+        original['qdiscs'][0]['options']['weights'] = [589824, 196608, 65536]
+        argv = h.fq_restore_arg_variants(original['qdiscs'][0]['options'])[1]
+        current = dict(qdiscs=[dict(root=True, kind='htb', handle='1234:')], classes=[], filters=[])
+        state = dict(phase='ACTIVE', interface='test0', root_handle='1234:', leaf_handle='9234:',
+                     active_snapshot=current, restore_fq_argv=argv)
+        with tempfile.TemporaryDirectory() as temp, patch.object(h, 'locked', return_value=nullcontext()), \
+                patch.object(h, 'load', return_value=(state, original)), \
+                patch.object(h, 'snapshot', side_effect=[current, original]), \
+                patch.object(h, 'clear_registry'), patch.object(h, 'execute') as execute:
+            h.restore(Path(temp))
+        execute.assert_called_once_with(['tc', 'qdisc', 'replace', 'dev', 'test0', 'root', 'fq', *argv])
+        self.assertEqual(state['phase'], 'RESTORED')
+
+    def test_checkpoint_rejects_restore_args_unrelated_to_snapshot(self):
+        with tempfile.TemporaryDirectory() as temp:
+            checkpoint = Path(temp)
+            h.save(checkpoint / 'original.json', ORIGINAL)
+            (checkpoint / 'recovery.py').write_text('fixture')
+            state = dict(schema=h.SCHEMA, phase='PREPARED', interface='test0', identity={},
+                         original_sha256=h.digest(checkpoint / 'original.json'),
+                         recovery_sha256=h.digest(checkpoint / 'recovery.py'),
+                         restore_fq_argv=['limit', '9999'])
+            h.save(checkpoint / 'state.json', state)
+            with patch.object(h, 'secure'), patch.object(h, 'identity', return_value={}), \
+                    self.assertRaisesRegex(h.HTBError, '恢复参数与原快照不符'):
+                h.load(checkpoint)
 
     def test_unknown_and_ambiguous_options_rejected(self):
         for addition in ({'new_kernel_option': 1}, {'quantum': True}, {'priomap': [1]},

@@ -10,7 +10,11 @@
 
 完整 CLI 的 24 个正式样本均观察到 HTB overlimits 增长；21 个有效，3 个因 `RECEIVER_DIVERGENCE` 被排除。隔离 netns 不暴露 `net.core.default_qdisc`，因此前后观察如实保留 `UNAVAILABLE`，其他已观察字段无变化，最终 `INSUFFICIENT_EVIDENCE`、无候选区间。CI 证明调度、真实整形、恢复和拒绝路径，不证明该环境产生了有效拐点建议。先前 iperf3 3.16 的 CPU 压力拒绝及 iproute2 旧文本兼容修正见[项目备忘](project-memo.md)。
 
-真实 VPS 临时整形、原 root `0:`/新版 fq bands 的目标机恢复、更多内核/iproute2 组合、IPv6、业务影响和性能仍未验收。普通测量的第一阶段真实证据不替代这些项目；持久 HTB 与平台 apply 范围未扩展。
+2026-09-28，固定 `b172efc` 的[真实单机 HTB 验收](temporary-htb-acceptance-2026-09-28.md)已执行但未通过：完成公共端点选点和 18 次实际 HTB 采集，全部因 receiver 背离被排除；目标 iproute2 6.15.0 的 weights 解析问题导致自动恢复失败。已核对所有权后补救恢复原 fq 全部 14 项参数，受管状态及 17 项 sysctl 等观察一致，预留/进程/活动登记归零，保留不完整报告。账本共计 51.25 MiB；SIGINT/SIGTERM 按停止条件未执行。
+
+修复增加完整恢复参数的无写入语法预检、受影响 weights 解析器的限定兼容、checkpoint 参数重放与校验。目标实际解析器已通过无 `dev` 的完整命令检查，qdisc 前后不变；本地新增六项回归，完整 Python 79 项中 78 通过、Windows flock 跳过 1 项。修复后 Linux 原生 CI 待本轮提交运行；原 CI 结果不能自动继承为修复提交通过。
+
+修复候选的真实 VPS 完整自动恢复及 SIGINT/SIGTERM、更多内核/iproute2 组合、IPv6、业务影响和性能仍未验收。已完成的补救恢复不替代原自动流程通过；普通测量的第一阶段真实证据也不替代这些项目。持久 HTB 与平台 apply 范围未扩展。
 
 ## 0.2.0-rc.1 自动测量候选（2026-09-28）
 
