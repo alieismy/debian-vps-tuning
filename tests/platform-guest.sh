@@ -86,7 +86,17 @@ for name in ('rollback', 'final'):
     for dev, saved in before.items():
         current = after[dev]
         assert saved['kind'] == current['kind'], (name, dev, 'root kind changed')
-        assert saved.get('options', {}) == current.get('options', {}), (name, dev, 'options changed')
+        if saved.get('handle') != '0:':
+            assert saved.get('handle') == current.get('handle'), (name, dev, 'explicit handle changed')
+        old_options, new_options = saved.get('options', {}), current.get('options', {})
+        assert old_options.keys() == new_options.keys(), (name, dev, 'option set changed')
+        for key, value in old_options.items():
+            observed = new_options[key]
+            # fq_codel 的内核 tick↔微秒换算存在 1 us 量化差；与受管恢复契约一致。
+            if saved['kind'] == 'fq_codel' and key in ('target', 'interval', 'ce_threshold'):
+                assert abs(value - observed) <= 1, (name, dev, key, value, observed)
+            else:
+                assert value == observed, (name, dev, key, value, observed)
 print('PASS install/apply/idempotence/reconfigure/reboot/verify/rollback/reboot')
 (p / 'COMPLETED').write_text('Functional VM lifecycle; no proxy business or performance acceptance\n')
 PY

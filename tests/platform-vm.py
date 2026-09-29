@@ -88,8 +88,13 @@ def main():
         raise TimeoutError('guest readiness timeout; see serial.log')
 
     def phase(name):
-        with (evidence / (name + '.log')).open('wb') as log:
-            run(ssh + ['bash /root/dvt-bundle/tests/platform-guest.sh ' + name], stdout=log, stderr=subprocess.STDOUT, timeout=600)
+        path = evidence / (name + '.log')
+        try:
+            with path.open('wb') as log:
+                run(ssh + ['bash /root/dvt-bundle/tests/platform-guest.sh ' + name], stdout=log, stderr=subprocess.STDOUT, timeout=600)
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            print(path.read_text(errors='replace'), flush=True)
+            raise
 
     def reboot():
         old_boot = wait_guest('cat /proc/sys/kernel/random/boot_id')
