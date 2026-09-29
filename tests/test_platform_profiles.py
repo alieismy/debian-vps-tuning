@@ -1,6 +1,7 @@
 """跨平台选择与资源策略回归；真实 OS/重启由 VM 生命周期检查承担。"""
 
 from pathlib import Path
+import json
 import re
 import shutil
 import subprocess
@@ -144,6 +145,40 @@ check_resource_profile
             keys = re.search(r'PROFILE_SYSCTL_KEYS=\((.*?)\n\)', source, re.S)[1]
             self.assertEqual(len(keys.split()), 17)
             self.assertNotIn('tcp_mem', keys)
+
+    def test_sysctl_snapshot_preserves_tab_separated_vectors(self):
+        raw = self.run_shell(functions('original_sysctls_json') + r'''
+set -euo pipefail
+PROFILE_SYSCTL_KEYS=(net.ipv4.tcp_rmem net.ipv4.tcp_wmem)
+sysctl() {
+  case "$2" in
+    net.ipv4.tcp_rmem) printf '4096\t131072\t6291456\n' ;;
+    net.ipv4.tcp_wmem) printf '4096\t16384\t4194304\n' ;;
+  esac
+}
+original_sysctls_json
+''')
+        self.assertEqual(json.loads(raw), {'net.ipv4.tcp_rmem': '4096\t131072\t6291456',
+                                          'net.ipv4.tcp_wmem': '4096\t16384\t4194304'})
+
+    def test_incomplete_original_vectors_block_rollback_before_writes(self):
+        self.run_shell(functions('original_sysctl_vectors_are_complete', 'rollback_internal') + r'''
+set -euo pipefail
+STATE_FILE=$(mktemp)
+trap 'rm -f -- "$STATE_FILE"' EXIT
+error() { :; }
+validate_state_file() { :; }
+state_get() { printf 'VERIFIED\n'; }
+state_set_phase() { exit 99; }
+sysctl() { exit 99; }
+systemctl() { exit 99; }
+for value in '4096' '4096 131072'; do
+  jq -n --arg value "$value" '{original_sysctls:{"net.ipv4.tcp_rmem":$value,"net.ipv4.tcp_wmem":"4096 16384 4194304"}}' >"$STATE_FILE"
+  if (rollback_internal 0); then exit 1; else [ $? = 1 ]; fi
+done
+printf '%s\n' '{"original_sysctls":{"net.ipv4.tcp_rmem":"4096\t131072\t6291456","net.ipv4.tcp_wmem":"4096 16384 4194304"}}' >"$STATE_FILE"
+original_sysctl_vectors_are_complete
+''')
 
 
 if __name__ == '__main__':

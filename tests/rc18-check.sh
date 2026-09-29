@@ -36,7 +36,7 @@ target_profile="${migration_root}/target-profile.sh"
 checkpoint="${migration_root}/checkpoint"
 printf '%s\n' boot-a >"$boot_file"
 jq -n --arg version "$source_release" \
-  '{schema_version:4,script_version:$version,state:"VERIFIED",profile:{id:"debian13-1c1g"},network:{port_speed_mbps:200}}' >"$state_file"
+  '{schema_version:4,script_version:$version,state:"VERIFIED",profile:{id:"debian13-1c1g"},network:{port_speed_mbps:200},original_sysctls:{"net.ipv4.tcp_rmem":"4096\t131072\t6291456","net.ipv4.tcp_wmem":"4096\t16384\t4194304"}}' >"$state_file"
 {
 printf '%s\n' '#!/usr/bin/env bash'
 printf "SCRIPT_VERSION='%s'\n" "$source_release"
@@ -80,6 +80,20 @@ grep -Fq '本版迁移器只接受 rc.1–rc.19 来源' "${migration_root}/rejec
 [ ! -e "${checkpoint}-rejected" ]
 [ "$(sha256sum "$state_file" | awk '{print $1}')" = "$state_hash" ]
 done
+bad_state="${migration_root}/truncated-state.json"
+jq '.original_sysctls["net.ipv4.tcp_rmem"]="4096"' "$state_file" >"$bad_state"
+bad_hash="$(sha256sum "$bad_state" | awk '{print $1}')"
+if env DVT_STATE_FILE="$bad_state" DVT_BOOT_ID_FILE="$boot_file" \
+  bash "${repo_root}/dvt-migrate.sh" prepare --checkpoint "${checkpoint}-truncated" \
+  --source-profile "$source_profile" --target-profile "$target_profile" \
+  --source-version "$source_release" --target-version 0.2.0-rc.1 \
+  --profile-id debian13-1c1g --port 200 --state-sha256 "$bad_hash" >"${migration_root}/truncated.log" 2>&1; then
+  printf 'migration accepted an incomplete original TCP buffer vector\n' >&2
+  exit 1
+fi
+grep -Fq '来源状态缺少完整 TCP buffer 三元组' "${migration_root}/truncated.log"
+[ ! -e "${checkpoint}-truncated" ]
+[ "$(sha256sum "$bad_state" | awk '{print $1}')" = "$bad_hash" ]
 env DVT_STATE_FILE="$state_file" DVT_BOOT_ID_FILE="$boot_file" \
   bash "${repo_root}/dvt-migrate.sh" prepare --checkpoint "$checkpoint" \
   --source-profile "$source_profile" --target-profile "$target_profile" \

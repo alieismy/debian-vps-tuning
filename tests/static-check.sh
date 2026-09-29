@@ -3077,6 +3077,8 @@ qdisc_snapshot_matches_current() { return 1; }
 restore_qdiscs() { return 0; }
 qdisc_snapshot_semantically_matches_current() { QDISC_MATCH_REASON='restored options differ'; return 1; }
 restore_original_sysctls() { return 0; }
+original_sysctl_vectors_are_complete() { return 0; }
+original_sysctls_match_current() { return 0; }
 purge_owned_swap() { return 0; }
 systemctl() { return 0; }
 sysctl() { return 0; }

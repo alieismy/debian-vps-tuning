@@ -943,9 +943,9 @@ write_qdisc_snapshot() {
 original_sysctls_json() {
   local key value
   for key in "${PROFILE_SYSCTL_KEYS[@]}"; do
-    value="$(sysctl -n "$key" 2>/dev/null || true)"
+    value="$(sysctl -n "$key")" || return 1
     printf '%s\t%s\n' "$key" "$value"
-  done | jq -Rn '[inputs | split("\t") | {(.[0]): .[1]}] | add'
+  done | jq -Rn '[inputs | split("\t") | {(.[0]): (.[1:] | join("\t"))}] | add'
 }
 
 write_initial_state() {
@@ -2114,6 +2114,15 @@ provider_sysctl_key_was_transferred() {
   ' "$STATE_FILE" >/dev/null 2>&1
 }
 
+original_sysctl_vectors_are_complete() {
+  # 旧快照可能只保存三元组首项；写入单值会被内核接受但不能恢复后两项。
+  jq -e '.original_sysctls | all(."net.ipv4.tcp_rmem", ."net.ipv4.tcp_wmem";
+    type == "string" and test("^[0-9]+[\\t ]+[0-9]+[\\t ]+[0-9]+$"))' "$STATE_FILE" >/dev/null || {
+    error '原始 TCP buffer 三元组不完整；保留状态并停止回滚，不能猜测缺失的原始值。'
+    return 1
+  }
+}
+
 restore_original_sysctls() {
   local key value failures=0
   for key in "${PROFILE_SYSCTL_KEYS[@]}"; do
@@ -2367,6 +2376,7 @@ rollback_internal() {
     fi
     return 0
   fi
+  original_sysctl_vectors_are_complete || return 1
   case "$phase" in
     PREPARED | ROLLBACK_PENDING | DEGRADED)
       if rollback_already_restored; then
@@ -2426,6 +2436,10 @@ rollback_internal() {
     failures=$((failures + 1))
   fi
   restore_original_sysctls || failures=$((failures + 1))
+  if ! original_sysctls_match_current; then
+    error '回滚步骤失败：sysctl 读回值与原始快照不一致。'
+    failures=$((failures + 1))
+  fi
   systemctl try-restart systemd-journald.service >/dev/null 2>&1 || true
   if [ "$force_purge" = '1' ] || [ "$PURGE_CREATED_SWAP" = '1' ]; then
     if ! purge_owned_swap; then

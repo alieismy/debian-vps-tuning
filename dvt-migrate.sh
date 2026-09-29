@@ -109,6 +109,9 @@ prepare() {
   [[ "$port_mbps" =~ ^[0-9]+$ ]] && [ "$((10#$port_mbps))" -ge 100 ] && [ "$((10#$port_mbps))" -le 1000 ] || die 'port 必须是 100..1000。'
   [[ "$state_sha256" =~ ^[0-9a-f]{64}$ ]] || die 'state-sha256 格式无效。'
   [ -f "$STATE_FILE" ] && [ "$(sha256sum "$STATE_FILE" | awk '{print $1}')" = "$state_sha256" ] || die '当前 managed state 与准备输入不一致。'
+  jq -e '.original_sysctls | all(."net.ipv4.tcp_rmem", ."net.ipv4.tcp_wmem";
+    type == "string" and test("^[0-9]+[\\t ]+[0-9]+[\\t ]+[0-9]+$"))' "$STATE_FILE" >/dev/null ||
+    die '来源状态缺少完整 TCP buffer 三元组；无法证明旧版回滚可恢复原值，拒绝创建迁移 checkpoint。'
   grep -Fq "SCRIPT_VERSION='${source_version}'" "$source_profile" || die 'source profile 版本契约不匹配。'
   grep -Fq "SCRIPT_VERSION='${target_version}'" "$target_profile" || die 'target profile 版本契约不匹配。'
   if ! grep -Fq "PROFILE_ID='${profile_id}'" "$source_profile" ||
