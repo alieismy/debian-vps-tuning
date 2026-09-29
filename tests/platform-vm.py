@@ -83,7 +83,14 @@ touch /root/dvt-cloud-ready''']]
            '-o', 'ConnectTimeout=5', '-p', '2222', 'root@127.0.0.1']
     qemu = ['qemu-system-' + ('x86_64' if args.arch == 'amd64' else 'aarch64')]
     kvm = os.access('/dev/kvm', os.R_OK | os.W_OK)
-    qemu += ['-accel', 'kvm' if kvm else 'tcg', '-cpu', 'host' if kvm else ('max' if args.arch == 'arm64' else 'qemu64')]
+    cpu = 'host' if kvm else ('max' if args.arch == 'arm64' else 'qemu64')
+    if not kvm and args.platform == 'ubuntu2404' and args.arch == 'arm64':
+        # Ubuntu 的 PAC 指令在 TCG 默认 QARMA5 下使启动与生命周期超时。
+        # 只在隔离功能客体使用 QEMU 的快速实现，保留 PAuth 能力和所有断言；
+        # 不据此证明硬件性能或指针认证的密码强度。
+        # https://github.com/qemu/qemu/blob/v8.2.2/docs/system/arm/cpu-features.rst
+        cpu = 'max,pauth-impdef=on'
+    qemu += ['-accel', 'kvm' if kvm else 'tcg', '-cpu', cpu]
     if args.arch == 'arm64':
         qemu += ['-machine', 'virt', '-bios', '/usr/share/qemu-efi-aarch64/QEMU_EFI.fd']
     # KVM 覆盖 4C4G；TCG 的 ARM 客体用 2C1.5G 降低软件模拟内存初始化开销。
@@ -97,7 +104,7 @@ touch /root/dvt-cloud-ready''']]
              '-nic', 'user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:2222-:22']
     (evidence / 'hypervisor.json').write_text(json.dumps({'arch': args.arch, 'acceleration': 'kvm' if kvm else 'tcg',
                                                        'vcpus': vcpus, 'ram_mib': ram_mib,
-                                                       'resource_profile': args.resource_profile}))
+                                                       'resource_profile': args.resource_profile, 'cpu': cpu}))
     serial = (evidence / 'serial.log').open('wb')
     vm = subprocess.Popen(qemu, stdout=serial, stderr=subprocess.STDOUT)
 
