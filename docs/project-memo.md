@@ -1,10 +1,21 @@
 # 项目阶段备忘
 
 文档性质：资料性状态与延期事项记录
-当前阶段：0.2.0-rc.1 三阶段实现与七组平台生命周期验收完成，进入合并与发布收尾；存量测试主机因历史 TCP 原值缺失未升级
+当前阶段：0.2.0-rc.1 三阶段实现、七组平台生命周期、Pre-release 与公开资产核验完成；存量测试主机因历史 TCP 原值缺失未升级
 更新日期：2026-09-29（Asia/Singapore）
 
 本文件是 `AGENTS.md` 指定的唯一项目阶段备忘入口，用于记录每轮对话工作的闭环状态，以及当前阶段不主动展开的后续候选事项。它不构成需求批准、生产变更授权、发布授权或下一阶段启动决定；控制规则以 [项目级 AGENTS.md](../AGENTS.md) 为准，具体验证事实以 [验证矩阵](validation.md) 和对应发布说明为准。
+
+## 本轮记录：2026-09-29（三阶段重构预发行交付完成）
+
+- 在用户对后续交付链的既有授权内，完成 [PR #25](https://github.com/alieismy/debian-vps-tuning/pull/25) 合并；合并提交为 `b3909f0070ea403aef7fcbb08141d4fb76202a34`，文件树与最终验收提交 `a914db4fa4b60f291a318de869c2085ec4db2f5f` 完全一致。没有直接推送默认分支、改写历史或修改旧 tag/Release。
+- 最终提交的 [push CI 36544345482](https://github.com/alieismy/debian-vps-tuning/actions/runs/36544345482)、[PR CI 36544350425](https://github.com/alieismy/debian-vps-tuning/actions/runs/36544350425) 与 [平台矩阵 36544345458](https://github.com/alieismy/debian-vps-tuning/actions/runs/36544345458) 全部成功。七份最终归档的大小、GitHub digest、实际系统/架构、两次真实客体重启、17 项 sysctl、qdisc、三类 HTB 恢复和 legacy swap 已独立复核；没有借用旧提交的通过状态替代最终矩阵。
+- 最后一次实质审查新增 host `apt-get download` 无独立期限的 Minor；`a914db4` 为其增加 120 秒上限和明确的准备失败信息，正常路径、客体断言和运行资产不变。两条审查 thread 均已处理；机器人 review 状态是 `COMMENTED`，不冒充人工批准。
+- annotated tag `v0.2.0-rc.1` 指向上述合并提交。[Pre-release](https://github.com/alieismy/debian-vps-tuning/releases/tag/v0.2.0-rc.1) 的 ID 为 `398981730`，于 `2026-09-29T09:11:57Z` 公开发布，`draft=false`、`prerelease=true`。先核对草稿中 26 项资产的名字/大小/digest、正文和 tag 目标，再公开发布；发布后匿名下载全部 26 项，内容与本地验收资产逐字节一致，API digest、安装清单、正文及固定 tag 文档链接也通过。
+- `install.sh` SHA-256 为 `a039922793710a90b281a10ba5076761f6a8efd43c96c916328e0fe7c5f70d06`；`SHA256SUMS` SHA-256 为 `f83cc0f5b32bca8c35ca01181db30e2c35246f9a999a1f2458abdb7e569a122c`。发布文件保持与 `5b53adc` 及固定运行实现 `9ea12a6` 一致。文档检查通过 101 个本地链接、94 个 Bash 代码块、24 项清单摘要、installer/controller 固定值和增量隐私检查；本地下载检查器的 Windows UTF-8 解码问题已修正，不属于产品或公开资产故障。
+- 本轮完成的是三阶段功能实现、平台功能验收与预发行交付。第一阶段公共 IPv4 测量、第二阶段正常/中断/完整 CLI 恢复仍分别绑定原运行记录；可靠 policer 拐点、更多平台上的公网测量、高速/IPv6、特定云厂商大资源硬件和代理业务收益未验收。持久 HTB 未启用。本轮没有追加公网测速、重置预算或修改测试 VPS 配置。
+- 存量测试 VPS 尚未升级：此前只读核对确认 rc.16 来源状态丢失 TCP 原值字段，缺少可核验的应用前快照，不能自动恢复或绕过迁移检查。这是恢复证据缺口，不是缺少用户授权。无新增范围外延期事项；既有业务/硬件边界和该存量主机恢复事项继续保留。当前成熟度为已发布、资产已核验的 Pre-release，不提升为稳定版或生产性能验收。
+- 本记录是发布后的资料性同步，运行资产和已公开 tag/Release 保持不变；合并后自动触发的相同文件树 CI 不替代上述已经闭合的固定提交证据。
 
 ## 本轮记录：2026-09-29（Ubuntu ARM64 模拟开销诊断与最终验收）
 
