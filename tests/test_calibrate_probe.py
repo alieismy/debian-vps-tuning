@@ -235,6 +235,11 @@ class CalibrationTest(unittest.TestCase):
         self.assertEqual(up["decision"], "RESOURCE_LIMITED")
         self.assertEqual(up["candidate_buffer_max_bytes"], 16777216)
 
+    def test_adaptive_profile_does_not_inherit_static_calibration_budget(self):
+        fixture(self.root, profile="ubuntu2404-adaptive")
+        with self.assertRaisesRegex(EvidenceError, "实际内存上限"):
+            self.result()
+
     def test_missing_reverse_rtt_does_not_borrow_upload_rtt(self):
         def mutate(data, *_):
             for (sample, phase), (raw, _, __) in data.items():

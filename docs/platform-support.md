@@ -33,11 +33,13 @@ schema 4 的 `profile` 增加 `os_id`/`os_version` 描述字段；Debian 保留 
 
 | 平台 | x86_64 | ARM64 |
 |---|---|---|
-| Debian 12 | 待执行原生 VM 生命周期 | 待执行原生 VM 生命周期 |
-| Debian 13 | 待执行原生 VM 生命周期 | 待执行原生 VM 生命周期 |
-| Ubuntu 24.04 LTS | 待执行原生 VM 生命周期 | 待执行原生 VM 生命周期 |
+| Debian 12 | `8e318c4` 完整生命周期通过 | 运行中 |
+| Debian 13 | `8e318c4` 完整生命周期通过 | 运行中 |
+| Ubuntu 24.04 LTS | `8e318c4` 完整生命周期通过 | 运行中 |
 
-`tests/platform-vm.py` 使用固定官方镜像摘要、一次性 SSH 凭据、严格主机密钥校验和独立 QEMU 客体；生命周期覆盖校验安装、重复安装、preflight、apply、同值幂等、1→10000→1 Mbps 重配置、真实客体重启、verify、rollback 及再次重启。比较 17 项 sysctl、qdisc 参数、受管文件和状态，保存镜像/架构/内存/页大小/boot ID 及运行输出。客体内不执行公网 iperf3，不接触用户 VPS。
+x86_64 证据来自 [CI 36533428824](https://github.com/alieismy/debian-vps-tuning/actions/runs/36533428824) 的对应三个已完成 job，不能把仍运行的 ARM64 job 记为通过。另增加 Debian 13/x86_64 1C1G 旧 profile 的默认 swap/生命周期兼容用例。
+
+`tests/platform-vm.py` 使用固定日期目录和官方镜像摘要、一次性 SSH 凭据、严格主机密钥校验和独立 QEMU 客体；生命周期覆盖校验安装、重复安装、preflight、apply、同值幂等、1→10000→1 Mbps 重配置、真实客体重启、verify、rollback 及再次重启。比较 17 项 sysctl、qdisc 参数、受管文件和状态，保存镜像/架构/内存/页大小/boot ID 及运行输出。客体内不执行公网 iperf3，不接触用户 VPS。
 
 控制器与资源策略另有原有档位、扩展组合、极端输入、缓冲封顶及显式超限的离线回归。它们不能替代上表的原生生命周期，更不能证明 3X-UI/Xray 业务或吞吐改善。
 
@@ -48,3 +50,5 @@ schema 4 的 `profile` 增加 `os_id`/`os_version` 描述字段；Debian 保留 
 ## 与前两阶段的关系
 
 自动 `measure` 仍不修改系统配置。临时 `htb-sweep` 仍只接受单根 fq；Ubuntu/ARM64 的持久 apply 支持不会扩大临时实验到 mq。候选区间必须满足原预算与有效性门禁；未出现可靠拐点并不阻止独立的平台功能验收。持久 HTB 仍是需临时实验与业务对照的独立策略，没有在本候选中启用。
+
+旧 `probe`、离线 `calibrate_probe.py` 和 `dvt htb` 研究入口保留各自的速率/证据范围。离线校准明确拒绝 adaptive profile，不能把生成器中 256 MiB 的绝对封顶误当成小内存主机的实际资源预算；这不影响独立 `measure`、`htb-sweep` 或持久配置生命周期。

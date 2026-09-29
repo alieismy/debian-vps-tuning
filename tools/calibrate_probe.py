@@ -220,6 +220,8 @@ def analyze(root, path_label, representative=False, max_age_hours=24, now=None):
             probe.get("status") in ("REVIEW_REQUIRED", "REVIEW_BLOCKED"), "不支持的 probe 结果")
     profile = PROFILES.get(probe.get("profile", "") + "-vps-tuning.sh")
     require(profile is not None, "未知资源 profile")
+    require(profile["RESOURCE_POLICY"] == "fixed",
+            "自适应 profile 尚无此离线校准的资源预算契约；不能用静态封顶代替实际内存上限")
     control = probe["traffic_control"]
     require(control.get("enforced") is True and control.get("method") == "iperf3-bitrate" and
             integer(control.get("rate_cap_mbps"), 100, 1000), "probe 缺少受限测量契约")
