@@ -1,5 +1,12 @@
 # 验证说明
 
+## 0.2.0-rc.1 第三阶段跨平台候选（2026-09-29）
+
+新增九份生成 profile、ARM64 和 Ubuntu 24.04 LTS、内存自适应策略与 1–10000 Mbps 配置参数，契约和逐平台状态见[平台支持矩阵](platform-support.md)。固定 `d38ec3f` 的主 Linux CI [36531809720](https://github.com/alieismy/debian-vps-tuning/actions/runs/36531809720) 已通过；同版本真实 VM 在回滚读回中暴露 TCP buffer 原始向量截断，不能记为平台生命周期通过。
+
+修正由完整向量回归、来源状态拒绝和回滚读回检查约束。`tests/platform-vm.py` 使用官方固定摘要镜像、原生客体 OS/架构、真实 boot ID 变化及系统状态对照；`tests/platform-htb-native.py` 补充 kernel-created fq 0: 与看护恢复。下列较早提交的通过证据均保留固定版本边界，不替代第三阶段最终提交的结果。
+
+
 ## 0.2.0-rc.1 第二阶段临时 HTB 候选（2026-09-28）
 
 低速短窗口采集修正 `cc821a8` 已通过 [Linux CI 36406911845](https://github.com/alieismy/debian-vps-tuning/actions/runs/36406911845)：80 项 Python 无跳过、6/6 低速 BBR 样本和完整 CLI 24/24 样本有效、原生恢复/信号/预算及安装生命周期通过。随后同机公共路径完整 CLI 正常退出并恢复，15 个正式样本中 11 个有效、无 receiver 背离；因一次窗口超差、三次 softnet 压力及控制漂移，整轮保持 `INSUFFICIENT_EVIDENCE`。原有效性与预算门禁保留，完整证据与剩余边界见[采样修正记录](temporary-htb-sampling-2026-09-28.md)。以下各段保留对应历史提交的证据，不代表当前汇总。

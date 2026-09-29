@@ -20,6 +20,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--platform', choices=['debian12', 'debian13', 'ubuntu2404'], required=True)
     parser.add_argument('--arch', choices=['amd64', 'arm64'], required=True)
+    parser.add_argument('--resource-profile', choices=['adaptive', 'legacy'], default='adaptive')
     args = parser.parse_args()
     work = ROOT / '.tmp/platform-vm'
     work.mkdir(parents=True, exist_ok=False)
@@ -61,12 +62,15 @@ def main():
     # KVM 覆盖 4C4G；TCG 的 ARM 客体用 2C1.5G 降低软件模拟内存初始化开销。
     # 两者都超出旧组合表；更大 RAM 的封顶另有架构无关的边界回归。
     vcpus, ram_mib = (4, 4096) if kvm else (2, 1536)
+    if args.resource_profile == 'legacy':
+        vcpus, ram_mib = 1, 1024
     qemu += ['-smp', str(vcpus), '-m', str(ram_mib), '-nographic',
              '-drive', f'file={work / "disk.qcow2"},if=virtio,format=qcow2',
              '-drive', f'file={work / "seed.img"},if=virtio,format=raw',
              '-nic', 'user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:2222-:22']
     (evidence / 'hypervisor.json').write_text(json.dumps({'arch': args.arch, 'acceleration': 'kvm' if kvm else 'tcg',
-                                                       'vcpus': vcpus, 'ram_mib': ram_mib}))
+                                                       'vcpus': vcpus, 'ram_mib': ram_mib,
+                                                       'resource_profile': args.resource_profile}))
     serial = (evidence / 'serial.log').open('wb')
     vm = subprocess.Popen(qemu, stdout=serial, stderr=subprocess.STDOUT)
 
