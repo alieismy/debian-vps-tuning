@@ -1,10 +1,138 @@
 # 项目阶段备忘
 
 文档性质：资料性状态与延期事项记录
-当前阶段：rc.19 已作为独立 Pre-release 发布，19 项公开资产通过反向完整性核验；目标机 rc.19 生命周期及代理业务验收仍待完成（rc.18 及更早资产保持不可变）
-更新日期：2026-09-27（Asia/Singapore）
+当前阶段：0.2.0-rc.1 三阶段实现与七组平台生命周期验收完成，进入合并与发布收尾；存量测试主机因历史 TCP 原值缺失未升级
+更新日期：2026-09-29（Asia/Singapore）
 
 本文件是 `AGENTS.md` 指定的唯一项目阶段备忘入口，用于记录每轮对话工作的闭环状态，以及当前阶段不主动展开的后续候选事项。它不构成需求批准、生产变更授权、发布授权或下一阶段启动决定；控制规则以 [项目级 AGENTS.md](../AGENTS.md) 为准，具体验证事实以 [验证矩阵](validation.md) 和对应发布说明为准。
+
+## 本轮记录：2026-09-29（Ubuntu ARM64 模拟开销诊断与最终验收）
+
+- 延续用户对整条交付链的授权。接续 `1b1ee5b` 平台 run 36537094221；六组成功归档的大小、GitHub digest 与既有独立检查记录已复核。Ubuntu ARM64 在依赖准备通过后完成安装、首次 apply、同值幂等，在重配置期间触及 600 秒测试期限；取证也超过 30 秒，归档中的 guest tar 为空。因此本轮不能证明回滚或两次重启，整个 run 仍为 failure。
+- 客体启动约 22 分钟，串口确认默认 QEMU `max` CPU 启用了 QARMA5。QEMU v8.2.2 官方文档说明该算法软件模拟慢，支持更快的实现定义算法。固定 `5b53adc` 只对 Ubuntu ARM64 TCG 客体启用 `max,pauth-impdef=on`，在归档中记录 CPU 模型；产品文件、镜像、资源、期限和全部断言不变。使用原完整生命周期复验，不用微型替代测试证明两次重启或系统恢复。
+- `5b53adc` 的主 CI 36540841878/36540847005 通过；下载日志核对 89 项 Python 无跳过、九份生成 profile、root 安装/预算/迁移、真实隔离 tc/iperf3 及 ShellCheck。平台 run 36540841895 七组全部通过；七份归档大小/GitHub digest、双重启、17 项 sysctl、qdisc、三类 HTB 恢复及 legacy swap 均独立复核。Ubuntu ARM64 准备约 5.5 分钟、首次应用阶段约 7 分钟，在原期限内完成全部断言。26 项发布文件仍逐字节等于固定运行实现 `9ea12a6`。
+- 保留并纳入前轮两份 README 的未提交修订；同步测量/临时 HTB 使用说明，区分公网测量、平台生命周期和业务收益。当前检查通过 100 个本地链接、94 个 Bash 代码块、24 项资产摘要、installer/controller 固定值、生成一致性、增量隐私和 diff 空白。
+- 未完成门禁：最终文档提交的 PR CI、合并、tag、Pre-release 和公开资产反向核验。存量 VPS 的历史原值仍缺失，不能自动升级；本轮未新增公网测速、清空预算、启用持久 HTB 或修改其配置。无新增范围外延期事项。三阶段源码、主 CI 与七组平台功能验收已闭合；第一/二阶段的有限公网证据仍绑定原固定提交，不提升为可靠 policer、更多平台的公网测量或业务性能验收。发布结果另行记录。
+
+## 本轮记录：2026-09-29（平台证据复核与发布文档收尾）
+
+- 后续矩阵结果：Debian 12/13 ARM64 也通过且归档已复核。Ubuntu 24.04 ARM64 在 cloud-init/APT 索引处理中达到 25 分钟准备期限，未进入任何产品安装或配置阶段，因此整个 run 36534049122 为 failure。仅修正测试依赖准备：在同架构同版本 Ubuntu runner 下载三项 jq 官方 deb、记录摘要并由客体离线安装；新增阶段开始/完成日志，保留镜像、准备期限、重启与全部产品断言。运行资产仍与 `9ea12a6` 完全一致，不把测试准备失败写成产品失败或通过；发布继续等待后继矩阵。
+- 文档提交 `c289fe8` 的 push/PR CI 36536058774/36536063901 已通过；审查 thread 按“说明恢复路径”选项处理完成。
+- 接续用户对整条后续工作链的授权，现场复核 `9ea12a6`、PR #25 和 CI；没有重置公网预算、启用持久 HTB 或购买资源。两套主 CI 36534049141/36534055685 通过，下载日志确认 89 项 Python 无跳过。
+- 平台 run 36534049122 的四组 x86_64 job 全部通过，下载归档逐项核验官方镜像摘要、真实系统/架构、两次 boot ID 变化、17 项 sysctl 原值恢复、qdisc 参数、fq 0: 正常/SIGKILL/期限看护恢复和 legacy swap 创建/清理。三组 ARM64 仍在运行，未计为通过，也未取消本次矩阵。
+- CodeRabbit 对 `9ea12a6` 完成实质审查，提出一条 Minor：完整性检查应下移，或说明操作恢复路径。源码复核后保留 fail-closed 的完整性检查，因为缺字段时无法证明原值恢复；已在平台文档说明停止条件与恢复证据要求，没有采纳放宽检查的建议。
+- 只读核对用户指定测试 VPS：rc.19 总控配 rc.16 VERIFIED 状态，`tcp_rmem/tcp_wmem` 原快照各只有 1 字段，状态摘要前后不变。没有运行流量、配置写入或重启。新迁移器将拒绝该来源；没有原始备份不能自动重建丢失值，不把授权充分误写成恢复证据充分。
+- 同步中英文 README 的当前平台/参数契约、九份 profile 及 swap 默认；安装和重启验证统一同版 URL 与摘要，保留历史迁移命令并新增历史快照缺失的停止条件。更新第一阶段设计进度与本版发布说明，修正“新脚本可直接核验/卸载旧状态”的过时描述。运行资产没有因此变化。
+- 当前文档门禁检查本地链接、全部适用 Bash 代码块、24 项运行摘要及 installer/controller 文档固定值；初次临时检查器未识别缩进代码围栏，修正解析后通过，未把检查器误报写成文档语法缺陷。
+- 未完成门禁：ARM64 真实生命周期与归档、最终文档状态、合并/tag/Pre-release/公开资产反向校验。成熟度为源码与主 CI 通过、x86_64 客体功能验收通过；不能声明七组平台或存量 VPS 升级全部完成。无新增范围外延期事项；旧状态缺失原值是实际恢复阻塞，继续保留为独立处置事项。
+
+## 本轮记录：2026-09-29（第三阶段跨平台持久配置实施）
+
+- 用户明确授权按推荐方案继续全部后续任务。保留上一轮状态核对改动，在现有工作分支推进；不重置公网流量窗口、不新购测试资源、不默认启用持久 HTB。
+- 新增 Debian 12/13、Ubuntu 24.04 LTS 的自适应 profile，控制器与底层支持 x86_64/aarch64；旧六份 profile ID 和默认资源策略保留。持久带宽输入扩展至 1–10000 Mbps；新 profile 按 RAM/32 与 16–256 MiB 边界约束 socket buffer，默认不创建 swap。schema 4 增加真实 OS 描述字段，不把 Ubuntu 标为 Debian。具体契约见[平台支持](platform-support.md)。
+- 本地已有 86 项 Python 回归中的 85 通过、Windows 原生 flock 一项跳过，控制器与九份 profile 静态门禁通过。新增固定官方镜像摘要的 QEMU 生命周期，拟在 Debian 12/13、Ubuntu 24.04 的两种架构分别运行安装、应用、幂等、带宽重配置、两次真实重启和回滚；目前尚未取得这些运行结果。
+- 首轮 `d38ec3f` 的 Linux 主 CI 已通过；三个 x86_64 VM 已执行应用、幂等、重配置和首次重启，但在回滚后独立对照发现旧快照截断 TCP buffer 三元组的真实缺陷。修正保存全部制表符字段、回滚前完整性拒绝及恢复后读回；迁移准备也阻断原值缺失的来源状态，保留现场，不推测历史原值。新增回归已通过，修正后的原生生命周期待重跑。
+- 修正后 `8e318c4` 的三个 x86_64 平台已完整通过安装、幂等、1→10000→1 Mbps 重配置、两次真实重启、17 项 sysctl/文件恢复及 root-zero/SIGKILL/期限接管；ARM64 仍运行。核对发现 VM 的严格字节比较误拒绝既有契约允许的 fq_codel 1 微秒换算差，测试按原语义比较修正，其他字段保持一致要求。初期归档 UID 和 ARM TCG 启动等待问题只修改测试入口，未放宽产品所有权门禁。
+- 固定日期镜像 URL 与本轮六个镜像摘要逐项相同，避免 latest 别名更新破坏复现；补一组旧 1C1G 默认 swap 生命周期。共享生成器新增 adaptive 后，旧离线校准器必须明确拒绝未定义的动态资源预算，已增加完整证据链回归，不把 256 MiB 静态封顶当成实际主机上限。
+- 未完成门禁：原生平台生命周期、临时 HTB 必要恢复补验、最终源码审查/CI及发布闭合。延期事项无新增；已把原第三阶段待办推进为实现中，业务收益和持久 HTB仍单独评估。当前成熟度为未发布的跨平台实现候选，不把旧版本 CI 或历史目标机结果升级为本轮验收。
+
+## 本轮记录：2026-09-28（三阶段方案完成度核对）
+
+- 用户询问原三阶段方案是否实施完毕。本轮按当前控制器、使用说明、固定版本运行记录及 GitHub PR 状态核对，结论为“尚未全部完成”；此前采集修正工作包的完成不等同于三阶段整体交付。
+- 第一阶段已实现公共端点自动选择、无需 apply 的独立测量、预算与证据采集，并有单台 Debian 13/x86_64 的有限运行验收。第二阶段已实现低速控制、粗细扫、首尾 reference、资源门禁和临时 qdisc 恢复；最近完整 CLI 的 15 个正式样本中 11 个有效，正常完成并恢复，整轮仍为 `INSUFFICIENT_EVIDENCE`。事实及限制分别以[第一阶段记录](automatic-measurement-acceptance-2026-09-28.md)和[采样修正记录](temporary-htb-sampling-2026-09-28.md)为准，不把未找到可靠拐点写成缺少扫描实现。
+- 第三阶段尚未实施。当前持久 profile 选择仍限 Debian 12/13、x86_64 及原 CPU/内存组合，受管带宽参数仍为 100–1000 Mbps；测量入口取消这些档位拒绝不代表持久配置已扩展。Ubuntu、ARM64、大资源策略及各平台安装/应用/幂等/重启/回滚验收仍缺，持久 HTB 仍未启用。
+- 现场复核[草稿 PR #25](https://github.com/alieismy/debian-vps-tuning/pull/25)为 OPEN/Draft、未合并，head 为 `0e033c3074c6408c1e8ae65b59edee6a3ac68868`；其 [push CI](https://github.com/alieismy/debian-vps-tuning/actions/runs/36408614028) 与 [PR CI](https://github.com/alieismy/debian-vps-tuning/actions/runs/36408622328)均成功。CI 通过不等同于发布或目标平台生命周期验收。
+- 本轮仅更正[第一阶段契约](automatic-measurement-design.md)末尾过时的“第二阶段尚未实现”状态，并同步本备忘；固定历史验收记录保持原效力。两份文档的 44 个本地链接和 `git diff --check` 通过，源码未改。未启动新的 VPS 测试、第三阶段实现或发布操作。用户既有整体授权保持，剩余实施与证据缺口不能表述为尚未授权。
+- 未完成门禁沿用前轮：更广平台/IPv6/高速区间、原 root-zero 自动恢复、目标机 SIGKILL/期限接管、可靠拐点及业务效果、持久平台生命周期和发布审查。延期事项无新增；第三阶段是原方案未完成工作。成熟度仍为未发布候选。
+
+## 本轮记录：2026-09-28（低速短窗口采样修正与完整 CLI 复验）
+
+- 用户整体授权后续实施、工作分支提交/推送、CI 与原边界内目标复验，不再逐步确认。本轮先离线重放原始证据，18 个正式样本均再次触发 receiver 背离；原始 JSON 已有发送/接收字节及窗口差异，不能通过改写旧报告或放宽门禁消除。
+- 固定 `335c53e` 的隔离 Linux 对照 CI `36405504325` 已通过，BBR 下默认 2 Mbps HTB/5 Mbps offered 样本出现约 1.61 MB 未发送积压；单独小块、显式 socket buffer、长窗口和逐档 offered rate 的对照及源码机制见[采样修正记录](temporary-htb-sampling-2026-09-28.md)。早先 `d1c5b26` 诊断运行在取得对照输出后取消，用后继提交扩充有界对照；不记为完整 CI 通过。
+- 首个修正 `844d5b5` 的 CI `36406521129` 被真实 1 Mbps 窗口门禁拒绝：110% offered rate 虽使收发字节一致，receiver 仍延长到 5.567 秒。后继修正采用与当前 HTB rate 相等的 payload offered rate，保留最多 50 ms/128 KiB write block；不改变 socket buffer、sysctl、HTB 参数或任何有效性阈值。调用路径回归先失败后通过，原 cap 的预算预留保持。目标预检时确认配置、原 23 笔账本及 42070336 bytes 余额未变化；之后完成的 CI 与目标复验见下。
+- 后继修正 `cc821a8` 的 Linux CI `36406911845` 全部成功：80 项 Python 无跳过，1/2/4 Mbps BBR 原生回归 6/6 样本有效、正 overlimits/窗口/账本/恢复通过；完整 CLI 24/24 样本有效，但 netns 的 default_qdisc 不可观察仍正确阻止建议。Windows 同套 Python 为 79 通过、1 个真实 flock 跳过，主静态和旧 HTB fixture、21 资产摘要、installer/文档绑定、72 个本地链接、生成一致性、六份 profile 零差异及生成 runtime ShellCheck 通过。未展开的模板直接 ShellCheck 产生占位符未使用提示，未把它当作生成运行资产失败。
+- 同一 `cc821a8` bundle 完成公共节点自动选择及 1/2 Mbps、3 Mbps cap、5 秒/三重复的 15 个正式样本，CLI 返回 0、报告 `COMPLETED`、事务 `RESTORED`。无 receiver 背离，11/15 样本有效；一个控制样本 receiver 时长 5.269354 秒超容差，另三个样本有 softnet 压力，控制重传漂移使整轮保持 `INSUFFICIENT_EVIDENCE`，未输出候选。原 `fq 8001:`/14 项参数、17 项 sysctl、state/旧第一阶段账本、boot/接口/入口及其他 qdisc/class 与本轮前快照完全一致；无进程、watchdog、活动登记或预留残留。
+- 原 23 笔账本和旧两份归档摘要不变，新增加 16 笔成功结算，共消费 15792860 bytes（约 15.06 MiB）；共享窗口累计 107940252/134217728 bytes，余额 26277476 bytes（约 25.06 MiB），预留为零。新归档 288 项文件摘要及报告内部链、采集资产与原始参数/指标均独立通过，详情见采样修正记录。没有另开/重置窗口，没有为取得有效结论再次测速；私有材料保留为证据与恢复路径，不进入 Git。
+- 收尾同步中英文 README、使用/候选/验证说明和本备忘；把逐次日志明确写为 offered rate 与 budget cap，避免将 cap 误读成实际发送目标。该日志措辞修订不改变采集参数；目标机事实仍绑定 `cc821a8`，最终分支提交另跑 CI。21 资产、installer/文档摘要链、76 个本地链接、隐私扫描、六份 profile 零差异与 diff 空白均复核通过。
+- 已形成[草稿 PR #25](https://github.com/alieismy/debian-vps-tuning/pull/25)，供新版本候选审查。准备时发现默认分支新并入 PR #24 的混合版本迁移说明；通过普通 merge 保留其 README 与备忘内容，解决同一备忘插入位置的冲突，未覆盖另一任务的修改。最终 PR head 的 CI 状态以其检查页为准；本记录不把 Draft 或机器人跳过审查当作审查批准。
+- 未完成门禁：可靠拐点/业务收益、更多平台/IPv6/高速区间、原 root-zero 自动恢复、目标机 SIGKILL/期限接管、安装迁移/重启和发布审查。无新增范围外延期事项；本轮闭合采集修正与正常 CLI/恢复功能验证，整轮证据不足保持原判据，成熟度仍为未发布候选。本轮没有更改 AGENTS、个人 Memory、默认分支或已有 tag/Release。
+
+## 本轮记录：2026-09-28（正常事务与公共路径信号复验通过）
+
+- 用户在上一轮修复、CI 及具体后续建议基础上要求“请执行下一步”。本轮固定 `f08fd8c09c09ee28018810bb69bb803eaff5eab7`，先复核同一目标、上轮最终配置和原预算，再从独立 root 私有目录验证恢复；21 项资产摘要通过，未安装、迁移、改写源码/持久配置或变更旧入口。
+- 无 iperf3 的正常事务完成真实 HTB 2/3/4 Mbps 变速及自动恢复，原 `fq 8001:` 与 14 项参数完全一致，账本未变。随后两次产品 CLI 分别自动选取公共 IPv4 节点，仅进入首个正式采集窗口；确认自有 socket 已建立、HTB overlimits 分别增长 7/9 后发送 SIGINT/SIGTERM，分别退出 130/143，均 `RESTORED`。
+- 三次后 17 项 sysctl、managed state/旧第一阶段账本摘要、boot ID、接口身份、dvt 链接和其他 qdisc/class 与基线一致，无采集/看护/活动登记残留。中断仍保留 `INCOMPLETE`、无 `COMPLETED`，离线报告拒绝；没有补做完整扫描或把中断当有效速率样本。
+- 原 128 MiB 共享窗口新增两笔成功协议短测和两笔保守失败结算，本轮 38407872 bytes，累计 92147392 bytes（约 87.88 MiB），余额约 40.12 MiB、预留为零；原 19 笔记录逐项保留，首轮失败归档摘要不变。新归档 112 项摘要逐项通过，冻结恢复源码和 CLI 运行资产与固定候选一致。详见[脱敏复验记录](temporary-htb-retest-2026-09-28.md)。
+- 本轮仅同步运行证据、README 中英文、使用/验证/候选说明和历史记录指针；运行源码与安装摘要链不变。本地复核通过：21 资产及 installer/文档摘要绑定、69 个使用文档链接和两份验收记录的 3 个本地链接、隐私标识检查、六份 profile 零差异及 `git diff --check`。代码沿用固定 `f08fd8c` 的全部 CI 证据；本轮文档提交 CI 由对应工作流另行记录，不把 CI 升级为额外目标机运行证据。
+- 未完成门禁：修复版本完整 sweep 的正常 CLI 完成报告、有效样本/拐点/性能、原 `fq 0:` 自动恢复分支、目标机 SIGKILL/期限接管、IPv6、其他平台、安装迁移/重启和真实业务。本轮没有合并、tag 或 Release。
+- 延期事项：无新增范围外延期事项。成熟度推进为“单机正常事务及公共路径信号恢复有限验收通过”的未发布候选，不把上一轮无效测量改写为通过，不因剩余额度继续测试。
+
+## 本轮记录：2026-09-28（真实 HTB 验收失败、恢复与解析修复）
+
+- 用户对已展示的 2/3/4 Mbps、5 Mbps application cap、共享 128 MiB 及正常后 SIGINT/SIGTERM 计划明确回复“确认，请执行”。严格 SSH 校验和现场预检后，固定 `b172efc` 的 21 资产完整 bundle 在独立 root 私有目录执行；未安装候选、迁移 state、修改持久配置或旧入口。
+- 自动选点及 18 次真实 HTB 采集完成，18 次 root overlimits 均增长，但全部 receiver 背离，另有两次窗口无效和一次 softnet 压力。自动 fq 恢复因目标 iproute2 6.15 的 weights parser 多跳一个 token 失败，退出 2、保留 `INCOMPLETE`/`RECOVERY_REQUIRED`；立即停止后续测试，SIGINT/SIGTERM 均未执行。
+- 通过无真实接口的最小复现及固定版本 `q_fq.c` 确认根因；在核对 owner 已退出、接口身份/原摘要/当前自有 HTB 参数后，按原快照全部参数补救恢复，再由原冻结程序闭合为 `RESTORED`。原 root `0:` 成为内核分配的 `8001:`；14 项 fq 参数独立比较一致，17 项 sysctl、state/旧账本摘要、boot ID、dvt 链接及其他 qdisc/class 未变，无测试进程和活动登记残留。
+- 本轮账本 19 笔已结算，累计 53739520 bytes（51.25 MiB），预留归零；未扩容、重置或另开窗口。私有归档及 341 项文件摘要核验通过，完整边界见[脱敏验收记录](temporary-htb-acceptance-2026-09-28.md)。失败记录与 checkpoint 保留，报告仍正确拒绝。
+- 代码增加无 `dev` 的完整恢复语法预检、实际 parser 验证后才采用的 weights 兼容表示、checkpoint 参数重放及原快照绑定。目标实际 parser 已完成无写入验证；六项新回归及原生预检不写入断言已加入，资产/installer 摘要链同步。本地完整 Python 79 项中 78 通过、Windows flock 跳过 1 项，主静态和旧 HTB 套件均通过；21 资产摘要、installer 绑定、64 个使用文档链接及新验收文档的 1 个本地链接、六份 profile 零差异及 `git diff --check` 通过。
+- 修复 `1986dea4a6cd8f30c3e2213be1577f389e265e7e` 已推送工作分支；[CI 36397718732](https://github.com/alieismy/debian-vps-tuning/actions/runs/36397718732) 全部成功，79 项 Python 无跳过，原生正常/失败/看护/SIGINT/SIGTERM、安装/预算/迁移生命周期及 ShellCheck 均通过。原生 24 样本中 23 有效，但隔离 netns 配置可观测性缺口仍阻止候选建议。固定 SHA 元数据与完整日志保存在 `.tmp/local/htb-weights-ci-36397718732.*`；该 CI 不覆盖真实 VPS 修复后的完整自动流程。
+- 未完成门禁：修复候选的目标自动事务、SIGINT/SIGTERM、业务效果、IPv6、重启与发布。后续优先无公网测速流量的真实 tc 恢复验证，重新形成版本/预算计划；不能把手工补救恢复或无写入 parser 检查当作完整自动恢复通过。
+- 延期事项：无新增范围外延期事项；本次恢复复验是当前阻断门禁。成熟度仍为未发布实现候选，首轮目标验收失败已解释并安全闭环，但尚不能宣称真实 VPS HTB 验收完成。没有合并默认分支、tag 或 Release。
+
+## 本轮记录：2026-09-28（第二阶段临时 HTB 实现与恢复验证）
+
+- 用户在第一阶段完成后要求“请执行下一步”。本轮实施可研 §7.2 的临时 HTB 入口、验证和配套文档，沿用工作分支提交/推送/CI 授权；真实 VPS 整形影响整个接口及 SSH，需在恢复 CI 通过、具体参数和预算形成后单独确认。未连接或修改真实 VPS，未合并默认分支、tag 或 Release。
+- 新增 `htb-sweep`，复用第一阶段目录、出口固定、采集和预算，显式接口/上下界/application cap，最多五档粗扫与三档二分精扫，保留首尾低档控制并新增上界 reference。预算/时间/无效样本不生成候选，恢复失败不生成 `COMPLETED`。发现共享选点循环会吞掉 `MeasurementInvalid` 后继续候选，已修正为速率/路径违反立即停止，并新增回归。
+- 新增 `dvt_htb_transaction.py`，只接受无 class/filter 的单一根 fq，按 iproute2 JSON 的实际单位恢复完整参数；root-zero 句柄只在目标 fq 语义内规范化。冻结恢复程序、boot/netns/ifindex、PID/starttime、接口锁与独立看护；正常/中断恢复，owner 消失或期限到达由看护接手；外部参数漂移重复恢复仍拒绝覆盖。旧 HTB 协议、六份生成 profile、17 项 sysctl、BDP 和持久配置范围未变。
+- 本地门禁：全部 Python 70 项中 69 通过，真实 flock 因 Windows 缺少命令跳过 1 项；主静态/状态化 fixture、旧 HTB 静态、生成一致性、变更脚本 ShellCheck 0.11.0 通过。新增原生 CI 入口在两个专有 netns/veth 中运行真实 tc/iperf3，验证完整恢复、部分写入失败、外部漂移、看护期限及 SIGINT/SIGTERM，结果待运行后补充。21 项资产摘要及 installer 绑定已同步。
+- 配套[临时 HTB 契约与使用说明](temporary-htb.md)、README 中英文、CHANGELOG、验证与候选说明已同步。第一阶段真实低流量证据仍绑定 `d650709`，不提升为本轮 HTB 验收。无新增范围外延期事项；Ubuntu/ARM64/大资源持久配置、持久 HTB、高流量性能 campaign、真实 VPS 恢复/业务门禁与 AGENTS 阶段漂移保持原边界。
+- 首轮实现 `1820efc` 的 [CI 36391464786](https://github.com/alieismy/debian-vps-tuning/actions/runs/36391464786) 通过静态和安装生命周期，但原生预检发现 runner 的 iproute2 对空 class 列表成功返回空文本。已在确认命令成功后兼容空列表，并新增故障返回仍拒绝的回归；核对 Linux v6.11 `sch_htb.c`，补充 class 创建时内核自动 `pfifo 0:` 叶子的有限恢复识别。其余原生门禁尚待继续执行。
+- 当前成熟度为第二阶段本地实现候选，Linux 原生恢复 CI 尚待闭合；不得把 unit fixture 当真实内核/目标机通过。临时验证日志与私有运行准备材料留在忽略目录 `.tmp/local/`，用于复核，不进入公开安装资产。
+- 后续证据：Ubuntu 24.04 自带 iproute2 6.1 不实现 class JSON，已核对其 `tc_class.c/q_htb.c` 并加入严格文本解析、rate/ceil 单位换算和完整原行漂移比较。[CI 36391994207](https://github.com/alieismy/debian-vps-tuning/actions/runs/36391994207) 已通过定制 fq/变速/锁/down、root/class/leaf 部分失败、外部参数漂移重复拒绝、owner SIGKILL 与忽略 TERM 后期限恢复。后续完整测量在选点阶段因 CPU 压力停止；[诊断 CI 36392388743](https://github.com/alieismy/debian-vps-tuning/actions/runs/36392388743) 记录 sender CPU 100.728%、remote 0.014%、steal 0，与 ESnet 3.18 修复的限速 CPU 问题一致。仅在临时 CI runner 构建官方 SHA-256 固定的 iperf3 3.18 后继续，不放宽产品门禁、不升级 VPS。新增离线回归后本地总计 72 项，71 通过、Windows flock 跳过 1 项。
+- 使用 iperf3 3.18 的 [CI 36392709179](https://github.com/alieismy/debian-vps-tuning/actions/runs/36392709179) 已完成 24 个真实 HTB 样本，全部 overlimits 增长、23 个有效、1 个 receiver 背离拒绝，恢复与账本归零通过；失败来自测试错误要求隔离 netns 暴露 `net.core.default_qdisc`。产品正确保留 `CONFIGURATION_UNAVAILABLE`，测试改为仅接受该不可观测字段，同时要求其他字段不变、fq 完整恢复和无候选建议。另修正未找到端点时不能把计划中的整形意图写成实际配置变更，并加入离线回归；信号/全 CI 闭环继续等待。
+- 最终实现 `6fd5030ce37c4c85abf851bdfa2238f09f7aa59d` 的 [CI 36393226085](https://github.com/alieismy/debian-vps-tuning/actions/runs/36393226085) 全部成功：73 项 Python、0 跳过，原生全部恢复/完整 CLI/信号用例、旧静态和 root 生命周期、ShellCheck 通过。该轮 24 个正式样本均暴露于 HTB，21 个有效、3 个 receiver 背离；隔离 netns 的 default_qdisc 不可观测仍导致 `INSUFFICIENT_EVIDENCE`，没有候选建议。SIGINT/TERM 分别验证退出 130/143、无预留/采集进程残留、fq 恢复和不完整报告保留。完整日志和固定 head 元数据在 `.tmp/local/htb-stage2-ci-36393226085.*`，本地最终 Python 72 通过/1 跳过、21 资产摘要及 58 文档链接复核通过。
+- 当前成熟度更新为“第二阶段源码、离线回归、原生 Linux 调度/恢复与 CI 门禁通过的未发布候选”。已经形成指定 VPS 的私有可审阅计划：HTB 2/3/4 Mbps、application cap 5 Mbps，18 个正式样本，每档 3 次×5 秒、每次调度期限 240 秒，再分别中断验证；共用 128 MiB payload 窗口，保留既有账本历史。它影响整个接口的 IPv4/IPv6/SSH，尚未取得此项 qdisc 写入授权，未执行。无新增范围外延期事项；真实 root-zero/新 fq 参数恢复、业务与平台持久配置仍为后续门禁。工作分支已推送，未合并、tag 或 Release。
+
+## 本轮记录：2026-09-28（指定目标的低流量功能验收完成）
+
+- 用户提供目标地址和登录公钥，要求在该 VPS 测试。现场核对发现其地址、root 用户和密钥路径与已选 SSH 别名一致；本地私钥与所提供公钥匹配，当前 `known_hosts` 已有与握手指纹一致的 ED25519 记录，因此继续使用严格主机校验连接，没有绕过检查或公开密钥材料。预检确认 Debian 13/x86_64、1 vCPU、约 2 GiB、iperf3 3.18，依赖齐全，原 rc.16/schema 4 状态为 `VERIFIED`，无现有 iperf3 进程。
+- 固定 `d650709db9f385938c8ec03f903ab4f977ff718c` 的 21 文件 bundle 进入独立私有目录，20 项资产摘要通过；首次因 Git tar 的 group-write 位被安全拒绝，尚无账本/流量。修正该独立目录权限并保留失败记录后，按既定 64 MiB 窗口运行，未安装或修改受管配置。
+- 自动选择 `clouvider-la`，1 次预检加 9 个正式 IPv4 样本完整完成；1/2 Mbps 目标速率、首尾控制均有效，退出 0，结果 `NO_RISE_IN_TESTED_RANGE`，无候选区间或整形建议。完整公网测量按 sender bytes 结算 8519680 bytes（8.125 MiB）。后续公共节点 busy 的尝试保守结算，没有把该次当作中断通过。
+- 信号验收改用仅监听 loopback 的自有临时 iperf3，沿用同一账本。SIGINT/SIGTERM 在真实客户端启动后执行，分别返回 130/143，保留 `INCOMPLETE`，自有子进程全部回收；最终无 iperf3 进程或临时监听，账本 13 笔、累计保守记账 22165408 bytes、`reserved_bytes=0`。17 项受管 sysctl、qdisc/class、原 state 摘要、boot ID 与 `dvt` 指向前后观察一致。
+- 私有证据下载后 251 个验收清单条目及 169 个完整测量清单条目逐项复核通过；正式 `report` 通过、不完整中断报告正确拒绝。新增[脱敏运行记录](automatic-measurement-acceptance-2026-09-28.md)，同步使用/验证/候选说明；原始网络证据与测试驱动仅留在私有目录和本地 `.tmp/local/`，不进入公开仓库。运行代码、安装资产和摘要链未变。
+- 成熟度提升为 Linux CI 加单机低流量功能验收通过；不证明全目录、IPv6、Ubuntu/ARM64、高带宽拐点、公共路径信号中断、受管升级/重启或业务性能。无新增范围外延期事项；第二阶段临时 HTB、第三阶段扩展持久配置、合并与发布仍未执行。
+
+## 本轮记录：2026-09-28（受控低流量端到端验收准备）
+
+- 用户要求执行下一步，并明确选择现有 SSH 目标进行 Linux 端到端验收。本轮范围为固定候选 `d650709db9f385938c8ec03f903ab4f977ff718c` 的只读环境预检、独立目录运行、公共端点自动选择、有限速率阶梯、信号中断/账本结算和前后配置观察；不应用受管配置或开展高带宽性能测试。
+- 已离线生成低流量计划：1、2 Mbps 两档，每档 3 次 × 5 秒，首尾低速控制，最多 2 次公共端点尝试，流量调度期限 150 秒；完整测量与后续中断检查共用 64 MiB payload 窗口，完整测量最坏预留为 60534336 bytes。协议及重传开销不属于 payload 额度。已从固定 Git 提交导出 21 文件的完整 bundle，材料保留于忽略目录 `.tmp/local/measurement-acceptance-*`。
+- 首次严格 SSH 预检返回 `Host key verification failed`；目标 ED25519 主机密钥尚未在本机登记。只读握手已取得指纹并要求用户通过可信控制台核对；没有使用 `StrictHostKeyChecking=no` 绕过身份检查，没有登记未确认密钥，没有执行远端命令或公共测速。当前待用户完成主机指纹核对后继续，不将 SSH 别名存在视为目标身份已验证。
+- 当前成熟度仍为本地与 Linux CI 通过的实现候选；真实公共端点、新测量信号/结算、配置前后观察和目标机运行证据均未取得。无新增范围外延期事项；第二、三阶段仍依赖前序运行证据。
+
+## 本轮记录：2026-09-28（工作分支提交、推送与 Linux CI）
+
+- 用户针对上一轮提出的提交、推送 `codex/automatic-path-measurement` 并运行现有 GitHub Actions 方案，明确答复“允许执行你的方案”。本轮授权覆盖这些操作及范围内 CI 失败修复；不包含默认分支合并、tag、Release、真实 VPS 或公网测速。
+- 预检确认分支基线为 `efacf1941d8b6dd7504ca7fda76b4045b2fe46f2`，42 项候选变更与上一轮记录一致；GitHub 认证有效，远端没有同名分支。暂存后重新核验 20 项资产摘要、installer/README 摘要链、六份 profile 仅版本变化、上一轮验证对应的源码摘要、敏感内容及空白。实现提交 [`8a59688664883cf55f734bbb5b595220471f5309`](https://github.com/alieismy/debian-vps-tuning/commit/8a59688664883cf55f734bbb5b595220471f5309) 已推送到该工作分支，未包含 `.tmp` 研究原件或测试日志。
+- 对应 [GitHub Actions run 36374065438](https://github.com/alieismy/debian-vps-tuning/actions/runs/36374065438) 的 `validate` 全部通过：Ubuntu 24.04 runner 上 Python 56 项通过、0 跳过；主静态与 HTB 套件、root 安装与不可变资产拒绝、预算预留/结算、rc.16/17/18/19 → 0.2.0-rc.1 迁移 fixture、共享 benchmark 子进程组超时回收、ShellCheck 0.11.0 均通过。迁移的 boot ID 和 profile 动作为 fixture；进程测试使用本机假 iperf3 及真实进程组，没有网络流量。日志及 run 元数据保存于忽略目录 `.tmp/local/measurement-ci-36374065438.*`。
+- 本轮达到源码、离线回归及 Linux CI 门禁通过的实现候选成熟度；公共节点可用性、新测量端到端信号/结算、真实自动选点/重传采集、目标 VPS 生命周期及业务验收仍未验证。同步当前使用说明、验证矩阵与候选说明的证据状态。无新增延期事项；第二、三阶段范围和既有待验证事项保持原记录。CI 的 checkout Node.js 运行时提示不阻断本次门禁，未为此改变工作流依赖。
+
+## 本轮记录：2026-09-28（按推荐路线实施独立诊断与自动测量）
+
+- 用户明确要求“请按照你的推荐方案实施”。控制性交付物从研究切换为第一阶段本地实现候选；依据上一轮可研 §7.1，先闭合不改 qdisc/sysctl 的独立诊断与 application pacing 测量，再以运行证据进入 §7.2 的临时 HTB 和扩展持久配置。补充[需求/实现契约](automatic-measurement-design.md)、[使用说明](automatic-measurement.md)及 [0.2.0-rc.1 发布候选说明](releases/v0.2.0-rc.1.md)。没有修改 `AGENTS.md`；其中 rc.18 阶段描述漂移仍是既有事项，本轮范围以当前用户授权为准。
+- 在原工作树创建 `codex/automatic-path-measurement` 分支，基线仍为 `efacf1941d8b6dd7504ca7fda76b4045b2fe46f2`，保留原有研究报告与备忘未提交内容。总控将 `diagnose/measure/report` 提前分发，不要求已 apply、Debian 版本、架构或 CPU/RAM 档位；`diagnose --managed` 保留原增量/代理诊断。主动测量继续使用 root 所有的共享账本；配置应用仍保留旧支持范围与 17 项 sysctl/BDP/BBR+fq 策略。
+- 从 profile 模板提取共享计数器、有效窗口解析与单阶段采集，生成器同时嵌入六份旧 profile 和新 runtime；六份 profile 与原基线比较仅版本号变化。新增 Python 标准库调度器及独立 `dvt.path-measurement/1` schema。目录包含 15 个 Leaseweb、4 个 Clouvider 公开节点，本轮只读核对运营方地址/端口出处，不测可达性。协议预检、失败回退和所有阶梯/首尾控制样本均受同一预算约束；实际 IP、端口、地址族及包含源端口的 TCP 路由被核对，测量中不拼接不同路径。
+- 速率 cap 接受 1–10000 Mbps，固定出向单流、无 omit、不替换 qdisc。每档至少三次、重复重传上升需至少两次命中；窗口无效、负载不足、receiver 背离、CPU/softnet/队列异常、首尾控制或配置观察失效均阻止区间建议。报告不声称识别服务商 policer，也不产生持久整形参数。前后配置观察只覆盖所采集字段，不冒充整机或业务验收。
+- 预算预留覆盖正常窗口、phase 超时、supervisor 等待和 TERM/KILL 清理时间；成功按 sender bytes 结算，失败保守计账。新 runtime 自身也要求匹配的 RESERVED 记录，不能直接跳过父层预算启动流量；账本错误保留占用并停止。候选继续读取 rc.19 schema 1 窗口，不重置旧额度；新迁移目标为 0.2.0-rc.1，来源白名单扩至 rc.19，保留两个重启门禁。旧校准器 0.1.2 候选单独接受同格式新版受管 probe，不接收独立 measure 伪装的 VERIFIED 数据。
+- 本地验证：Python 共 56 项，55 通过、真实 flock 因 Windows 缺少命令跳过 1 项；其中新增独立测量专项 23 项。主 Shell 静态/状态化 fixture、HTB 静态/fixture、生成一致性、ShellCheck 0.11.0、20 项资产摘要、文档链接及 `git diff --check` 均已检查。故障注入覆盖 ICMP/DNS、mapped IPv6、busy、预算不足/结算失败、Ctrl-C 所有权、实际 socket 路由漂移、cap 超出、首尾控制和证据篡改。曾检出并修复新版本格式门禁、旧操作文档摘要、失败结算异常变量遮蔽及清理时间未纳入预留；失败记录与最终结果保留在 `.tmp/local/measurement-*.log`。这里的进程、网络和系统证据仍是 fixture，不是 Linux 原生结果。
+- `tests/installer-check.sh` 在宿主返回 `installer check requires root`；`tests/rc18-check.sh` 被预算工具的 root 前置检查拒绝。没有伪造 root 来把它们算成通过。当前缺口为 Linux CI/原生安装与迁移、真实信号回收与账本、受控公共端点短测、实际无配置变化观察、目标机和业务验收；未连接 VPS、未执行公网测速、未 commit/push/tag/Release。第一阶段仅达到本地候选成熟度，尚不满足可研定义的实际自动选点运行验收。
+- 无新增范围外延期事项。第二阶段通用临时 HTB、第三阶段 Ubuntu/ARM64/大资源持久策略仍按原路线等待前序运行证据；持久 HTB 不随本候选开启。忽略目录保留研究原件、验证日志及经官方 release digest 校验的临时 ShellCheck 工具，供复核使用，不进入安装资产或 Git。没有清理这些证据，也没有修改个人 Memory。
+
+## 本轮记录：2026-09-28（tcpfit 自动选点、Policer sweep 与新版本重构评估）
+
+- 用户重新要求研究 tcpfit 全部 fix/feat，重点评估自动寻找近端 iperf3、Policer sweep，以及放宽操作系统、内存/CPU 档位和带宽限制。本轮交付独立的[源码与重构可行性报告](tcpfit-policer-refactor-feasibility-2026-09-28.md)。本项目基线为 `efacf1941d8b6dd7504ca7fda76b4045b2fe46f2`（rc.19 后续文档提交）；现场远端引用确认 tcpfit main/v0.5.8 仍为 `76331588af487a973d3445a1bf8bba7037d566ca`，全历史 24 提交、13 fix/8 feat。报告逐项区分 rc.18/rc.19 已覆盖能力与新候选，不把旧源码当作新版本增量。
+- 核对 tcpfit 的 18 节点静态池、RTT 排序、多端口和真实 3 秒测试、临时 HTB 粗细扫、重传阈值及完整向导持久化路径；交叉读取 Leaseweb/Clouvider 官方测速说明、ESnet iperf3 和 Linux/tc 文档。自动选点可以降低用户准备端点的负担，但低 RTT、一次成功和多次重传跳变均不能独立证明服务商 policer；其 Loss% 为固定 MSS/请求时长估算，默认 cap 不限制前置不限速测试。官方文档证明服务用途与公布端口，不证明本轮可达性或容量。
+- 本地验证固定源码的 Bash 语法与 Python AST；隔离执行 4 组 scan_range 合成样本、恢复失败包装、tcp_mem 页大小算术和 5 组本项目支持门禁。确认一次异常后两次干净能被过滤，也确认低负载样本可被记为 LAST_OK、底层恢复失败可被包装成成功，以及固定 4 KiB 页计算的跨页大小问题。首轮研究 fixture 的 Windows CRLF 已修正为 LF，最终断言通过；均非真实 tc、VPS 或网络性能证据。`python tools/render_profiles.py --check` 通过；文档完成后核对链接、固定来源锚点和 diff 空白。固定源码、完整提交补丁、官方材料和本地检查脚本保留在忽略目录 `.tmp/local/tcpfit-research-20260928/`，用于复核，不进入 Release。
+- 采用判断变化：此前排除的公共端点自动选择，现建议在新版本以受维护目录、运营方公布用途/端口、一次计划确认和覆盖选点/重试的预算机制有条件纳入；diagnose/probe 与受管 profile 解耦列为优先候选。建议渐进形成独立测量、通用临时拐点实验、扩展平台应用三阶段，具体版本与需求尚未批准。既有预算/完整性/恢复约束不放宽，也不将近端 RTT 自动作为业务 BDP 输入。
+- 延期事项变化：自动选点、按能力开放诊断和通用临时 sweep 从历史排除/狭窄实验边界转为本轮有条件重构候选；Ubuntu/ARM64/大资源应用支持继续待立项及目标验证，持久 HTB 不作为首阶段默认能力。无新增其他延期事项；`AGENTS.md` 阶段描述漂移继续沿用既有独立治理待办。本轮只新增报告并更新备忘，没有改运行代码、版本、摘要链、指令文件或 Git/Release 状态，没有连接 VPS 或启动公网测速。成熟度保持 rc.19 公开 Pre-release；本轮达到源码研究与可行性决策输入，不代表重构完成、目标平台已支持或业务收益已验收。
 
 ## 本轮记录：2026-09-27（rc.19 总控与 rc.16 状态并存的升级阻塞）
 

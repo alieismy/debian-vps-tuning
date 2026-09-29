@@ -1,0 +1,60 @@
+# 低速 HTB 短窗口采样修正
+
+日期：2026-09-28。状态：修正已通过完整 Linux CI；同机公共路径完整 CLI 正常结束并恢复，15 个样本中 11 个有效、无 receiver 背离，整轮因窗口/资源与控制漂移仍为 `INSUFFICIENT_EVIDENCE`。范围仅为未发布 `0.2.0-rc.1` 的独立 `htb-sweep`。
+
+## 问题与证据
+
+[首轮 VPS 记录](temporary-htb-acceptance-2026-09-28.md)中的 18 个正式样本全部触发 `RECEIVER_DIVERGENCE`，两个还触发窗口不一致。离线重放仍得到同一结果；全部 36 份 sender/receiver 指标与原始 JSON 字节、时长和速率算术一致。解析器没有把数据读错，历史无效样本不能重分类为有效。
+
+iperf3 3.18 的 [`iperf_tcp_send`](https://github.com/esnet/iperf/blob/2a2984488d6de8f7a2d1f5938e03ca7be57e227c/src/iperf_tcp.c#L83)把 `Nwrite` 返回量累计为 `bytes_sent`；这是写入 socket 的数据量。客户端结束时停止 sender thread 并发送 `TEST_END`，服务端在该状态收集统计、关闭数据 socket，见[客户端源码](https://github.com/esnet/iperf/blob/2a2984488d6de8f7a2d1f5938e03ca7be57e227c/src/iperf_client_api.c#L745)和[服务端源码](https://github.com/esnet/iperf/blob/2a2984488d6de8f7a2d1f5938e03ca7be57e227c/src/iperf_server_api.c#L263)。因此短时间内的 sender bytes 不能直接等同于已经交付的数据，更不能把差值认作网络丢包。
+
+固定 `335c53e` 的 [Linux 对照 CI](https://github.com/alieismy/debian-vps-tuning/actions/runs/36405504325)在两个专有 netns/veth 内使用 iperf3 3.18、BBR、2 Mbps HTB 和默认 5 Mbps application cap；所有数据流量留在 runner 内。改变一个因素得到以下单次观测（仅说明机制，不代表性能基准）：
+
+| 对照 | sender Mbps | receiver Mbps | 最大 socket notsent bytes | 解释 |
+|---|---:|---:|---:|---|
+| 默认，5 秒 | 5.032 | 1.831 | 1605048 | 复现大量未发送积压 |
+| 仅改为 16 KiB write | 4.849 | 1.954 | 1765448 | 小块本身不能消除持续过量入队 |
+| 仅设 64 KiB socket buffer | 2.097 | 1.840 | 114392 | 积压减少，但会改变 TCP 窗口约束 |
+| 仅延长到 30 秒 | 2.447 | 1.891 | 2421056 | 仍触发 20% 背离阈值 |
+| 仅把 offered rate 改为 2.2 Mbps | 2.306 | 1.848 | 196984 | 减少积压，默认大块仍造成明显量化误差 |
+
+这与 VPS 症状及源码机制一致，支持“持续按远高于当前整形速率的 cap 写入 socket，短窗口统计包含未交付积压”的成因。CI 没有重建公网路径的全部条件，不能由此解释历史的每一次重传、时长异常或 softnet 压力。
+
+## 实施选择
+
+第一轮候选采用 110% offered rate；固定 `844d5b5` 的 [CI](https://github.com/alieismy/debian-vps-tuning/actions/runs/36406521129)在真实 1 Mbps 采集路径失败：收发均为 693750 bytes，但 receiver 时长 5.567 秒，超过原 0.25 秒容差。该候选未部署 VPS，失败证据保留，未放宽窗口门禁。
+
+后继修正把正式 HTB 样本的 payload offered rate 设为当前 HTB rate；write block 为 `min(131072, current HTB Mbps × 6250)` bytes，即最多对应当前档位 50 ms 的数据。协议开销使 payload 目标与 qdisc 速率的口径不同，是否实际受到整形仍必须观察正 overlimits。普通 `measure` 和 discovery 使用原发送目标及 128 KiB block。每个事件与样本记录实际 offered rate 和 block，计划公开采集政策。
+
+最主要的反对理由是较小发送余量可能无法充分暴露整形，尤其用户 cap 接近上界或路径吞吐受限时。因此保留每样本正 HTB overlimits、sender/receiver 均至少达到 HTB rate 的 90%、20% receiver 背离、原窗口、资源和首尾 reference 门禁；不满足即保留无效，不增加重试或把阈值放宽。
+
+不采用固定小 socket buffer，因为它可能在高 RTT 路径引入新的吞吐限制。不自动延长测试，因为时长本身不能保证解决问题，并会增加流量。上述选择不修改系统 sysctl、TCP buffer、HTB burst/cburst/quantum、恢复与预算政策。
+
+预留仍按用户的完整 application cap 和原超时余量计算，成功仍按 sender bytes 结算。内部执行器独立拒绝 offered rate 超出 cap 或非法 block；新的参数不会绕过账本。
+
+## 验证边界
+
+调用路径回归在修正前观察到原固定 cap 参数而失败；修正后通过，并检查账本预留没有降低。固定修正 `cc821a88e4ece1f5a7c4ee83aa850f94e7b5f4fc` 的 [Linux CI 36406911845](https://github.com/alieismy/debian-vps-tuning/actions/runs/36406911845)全部通过：80 项 Python 无跳过、生成和安装生命周期、原生 tc/恢复/信号/预算以及 ShellCheck 0.11.0。
+
+实际 `HTBMeasurementRun.take → runtime → iperf3` 在 BBR 下采集的 1/2/4 Mbps 各两次全部有效；原始参数符合计划，正 overlimits 为 33–150，receiver 时长为 5.061–5.188 秒，账本与原 fq 恢复通过。另一个完整 CLI 的 24/24 样本有效。隔离 netns 的 `net.core.default_qdisc` 仍不可观察，所以该完整 CLI 最终如实报告 `INSUFFICIENT_EVIDENCE`，不能把有效采样等同于该环境已生成可采用的拐点建议。
+
+## 同机公共路径复验
+
+固定同一 `cc821a8` bundle，核对 21 项资产、原配置、原 23 笔账本和无活动进程后，在 root 私有目录运行完整产品 CLI；未安装候选或迁移旧版。沿用用户指定 VPS 与原 128 MiB 共享窗口，自动选取一个公共 IPv4 节点，执行 1/2 Mbps、3 Mbps cap、每样本 5 秒/三次重复、首尾低档控制和上界 reference。该范围用于低流量功能复验，不用于定位套餐带宽上限。
+
+一次 discovery 与 15 次正式采集全部成功结算；15 次 HTB overlimits 均增长。CLI 返回 0，生成 `COMPLETED` 和可验证的完整报告，事务为 `RESTORED`。下表按本轮全部样本聚合，包含被排除样本，仅描述本轮观察：
+
+| HTB rate | 样本数 | 有效数 | sender Mbps 中位数 | receiver Mbps 中位数 | sender 重传合计 |
+|---|---:|---:|---:|---:|---:|
+| 1 Mbps | 6 | 4 | 1.010 | 0.965 | 3 |
+| 2 Mbps | 9 | 7 | 2.020 | 1.917 | 5 |
+
+`RECEIVER_DIVERGENCE` 从首轮 18/18 降为本轮 0/15；两轮档位与时间不同，不把它当成随机化性能比较。一个 1 Mbps 首部控制 receiver 时长为 5.269354 秒，超过 5 秒加 0.25 秒容差，保持窗口无效；另有三个样本触发 host-wide `SOFTNET_PRESSURE`。首尾控制的重传变化触发 `CONTROL_DRIFT`，整轮为 `INSUFFICIENT_EVIDENCE`，`candidate_interval=null`、`policer_identified=false`。这些观察不能归因为服务商 policer，也不能证明性能或业务收益。
+
+恢复后原 `fq 8001:` 与全部 14 项 options 完全一致；17 项 sysctl、managed-state/旧第一阶段账本摘要、boot ID、接口身份、旧 dvt 入口、其他 qdisc/class 与本轮前快照逐项相等。没有采集进程、watchdog、活动登记或预算预留残留；旧两份归档摘要保持一致。本轮没有重做 SIGINT/SIGTERM，已有信号证据仍以其固定旧修复版本为限。
+
+本轮按 sender bytes 新增 15792860 bytes（约 15.06 MiB），共享窗口累计 107940252/134217728 bytes，余额 26277476 bytes（约 25.06 MiB），预留为零；原 23 笔记录未变，共 39 笔。该账本不包含协议、重传与其他业务开销，不等同于账单流量。未扩容、重置或另开窗口，也未为追求有效结果继续测速。
+
+私有归档 SHA-256：`2663ea30383da39ff2e82063171a44f072ca44fab75204b04763735e18267ab6`。下载后独立核验 288 项文件摘要、完整报告的内部摘要链、采集资产绑定、每个样本的原始 offered rate/block 和收发指标、旧账本前缀及完整配置前后相等。原始 socket、路由、主机标识和恢复材料仅保留在私有证据目录。
+
+已闭合的是本轮采集修正、完整 CLI 正常结束/恢复及拒绝不充分证据的行为。可靠拐点、实际套餐速率、高速/IPv6/更多平台、原 `fq 0:` 自动恢复分支、目标机 SIGKILL/期限接管、安装迁移/重启和业务性能仍未验收；版本保持未发布候选。

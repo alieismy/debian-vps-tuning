@@ -1,17 +1,26 @@
 # Debian VPS Tuning
 
-Debian VPS Tuning 用于配置 Debian 12/13 小型云 VPS 的主机网络。主要验证场景是在原生 systemd 环境中运行 3X-UI、Xray-core 和 VLESS + REALITY + TCP。当前目标机基线为 3X-UI v3.4.2 和 Xray-core v26.6.27；其他版本需单独验证。脚本还可只读识别 S-UI、sing-box 和独立 Xray 服务。
+`v0.2.0-rc.1` 预发行版包含三项能力：无需先 apply 的[公共 iperf3 自动选点与独立测量](docs/automatic-measurement.md)、可完整恢复的[临时 HTB 拐点扫描](docs/temporary-htb.md)，以及 Debian 12/13、Ubuntu 24.04 LTS 的 x86_64/ARM64 [持久配置支持](docs/platform-support.md)。原 Debian 档位外采用自适应资源策略，配置带宽接受 1–10000 Mbps。安装使用下方固定版本入口与摘要。
+
+```bash
+# 仅查看计划，无网络流量或配置写入
+bash debian-vps-tuning.sh measure --rate-cap 20 --plan-only
+```
+
+[验证说明](docs/validation.md)分别记录 Linux CI、原生客体生命周期与有限 VPS 证据。自动 IPv4 测量、正常及中断后的临时 HTB 恢复已在一台 VPS 验证；完整低速扫描的 15 个样本中 11 个有效，整轮仍为 `INSUFFICIENT_EVIDENCE`，尚未证明可靠 policer 拐点或代理业务性能收益。临时 HTB 只接受可完整恢复的单根 fq。下文历史迁移示例继续保留原版本。
+
+Debian VPS Tuning 用于配置 Debian 12/13 和 Ubuntu 24.04 LTS 云 VPS 的主机网络。主要验证场景是在原生 systemd 环境中运行 3X-UI、Xray-core 和 VLESS + REALITY + TCP。当前目标机基线为 3X-UI v3.4.2 和 Xray-core v26.6.27；其他版本需单独验证。脚本还可只读识别 S-UI、sing-box 和独立 Xray 服务。
 
 脚本管理 BBR + fq、TCP 缓冲上限、常规队列参数、应急 swap 和 journald 空间上限，并提供 `preflight`、`apply`、`reconfigure`、`verify` 和 `rollback` 生命周期。它不配置代理业务、路由或防火墙。吞吐、延迟和丢包还取决于线路、虚拟化平台及实际负载，不能由这些主机参数单独保证。
 
 > 系统选择（信息日期：2026-08-04）：新建的 1C1G、1C2G 和 2C2G VPS 默认使用 Debian 13 minimal。Debian 13 是当前 stable；Debian 12 已转入 LTS，适用于保留既有稳定节点或满足明确兼容约束的场景。系统版本不能单独证明 BBR 可用、性能更高或空载内存更低，仍需检查虚拟化类型、运行内核和目标机资源。
 
-> 当前预发行版本为 `v0.1.0-rc.19`；下方首个安装入口固定到此版本，后续迁移示例仍保留不可变的 rc.17 历史路径。正式 `v0.1.0` 仍以 [目标 VPS 运行验收](docs/validation.md) 为发布条件；rc.19 Pre-release 不代表已完成目标机、全带宽或性能验收。
+> 本版属于 Pre-release。平台生命周期覆盖和剩余目标机门禁见[支持矩阵](docs/platform-support.md)，不据此承诺线路或业务性能。
 
-rc.19 `install.sh` 的固定 SHA-256 为
-`3bef587d479f5771da9af8d193baa63b7a7f8480016adf5514dfc944429a8ed3`。安装前仍须按此摘要校验下载文件。
+`v0.2.0-rc.1` 的 `install.sh` 的固定 SHA-256 为
+`a039922793710a90b281a10ba5076761f6a8efd43c96c916328e0fe7c5f70d06`。安装前仍须按此摘要校验下载文件。
 
-rc.19 提供仓库源码中的离线实测校准工具：参见 [使用说明与结果边界](docs/measured-calibration.md)。该工具不属于 Shell 安装资产，复用已有 probe 证据，不自动测速或应用参数。
+仓库保留固定资源 profile 的离线实测校准工具；adaptive profile 暂不接受离线校准：参见 [使用说明与结果边界](docs/measured-calibration.md)。该工具不属于 Shell 安装资产，复用已有 probe 证据，不自动测速或应用参数。
 
 ## 联网安装与验证
 
@@ -19,13 +28,15 @@ rc.19 提供仓库源码中的离线实测校准工具：参见 [使用说明与
 
 ### 1. 联网安装
 
-rc.19 Pre-release 使用下面的固定版本安装入口。它保留“先完整下载、再核对固定 SHA-256、最后执行”三个门禁，不会从 `main`/`master`/`latest` 下载，也不会在安装过程中自动执行调优或产生测试流量：
+已有受管状态时，先核对[旧状态与迁移条件](docs/platform-support.md#旧状态与迁移)。安装新入口不等于迁移状态，不能用新版 apply 覆盖旧状态。
+
+使用下面的固定版本安装入口。它保留“先完整下载、再核对固定 SHA-256、最后执行”三个门禁，不会从 `main`/`master`/`latest` 下载，也不会在安装过程中自动执行调优或产生测试流量：
 
 ```bash
-(set -Eeuo pipefail; dvt_i="$(mktemp)"; trap 'rm -f -- "$dvt_i"' EXIT; curl --fail --show-error --silent --location --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 120 -o "$dvt_i" https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.19/install.sh; printf '%s  %s\n' '3bef587d479f5771da9af8d193baa63b7a7f8480016adf5514dfc944429a8ed3' "$dvt_i" | sha256sum -c -; bash "$dvt_i")
+(set -Eeuo pipefail; dvt_i="$(mktemp)"; trap 'rm -f -- "$dvt_i"' EXIT; curl --fail --show-error --silent --location --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 120 -o "$dvt_i" https://github.com/alieismy/debian-vps-tuning/releases/download/v0.2.0-rc.1/install.sh; printf '%s  %s\n' 'a039922793710a90b281a10ba5076761f6a8efd43c96c916328e0fe7c5f70d06' "$dvt_i" | sha256sum -c -; bash "$dvt_i")
 ```
 
-安装器先核对内置固定的 `SHA256SUMS` 摘要，再逐一核对总控、六份 profile、预算账本、迁移编排、证据工具和 HTB 实验工具；通过后安装到 `/usr/local/lib/debian-vps-tuning/0.1.0-rc.19`，原子更新 `/usr/local/lib/debian-vps-tuning/current`，并创建 `/usr/local/bin/dvt`。已有同版本目录只有在全部文件重新校验通过时才复用，内容不一致时拒绝覆盖。交互终端随后打开菜单；也可加 `--no-launch` 只安装。
+安装器先核对内置固定的 `SHA256SUMS` 摘要，再逐一核对总控、九份 profile、预算账本、迁移编排、证据工具和 HTB 实验工具；通过后安装到 `/usr/local/lib/debian-vps-tuning/0.2.0-rc.1`，原子更新 `/usr/local/lib/debian-vps-tuning/current`，并创建 `/usr/local/bin/dvt`。已有同版本目录只有在全部文件重新校验通过时才复用，内容不一致时拒绝覆盖。交互终端随后打开菜单；也可加 `--no-launch` 只安装。
 
 安装后常用命令：
 
@@ -70,10 +81,10 @@ reboot
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.17/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.2.0-rc.1/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    '2530f70a5a675c4733d5bc0109ccbcc35daee23a9e460d920a4b346a3216bfc7' \
+    'c547a88c519f27d2996eaaf6fe34716dffc391492687251a801387af20429dc2' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   bash "$dvt_tmp/debian-vps-tuning.sh" verify
@@ -101,10 +112,10 @@ printf 'verify_after_reboot_exit=%s\n' "$?"
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.17/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.2.0-rc.1/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    '2530f70a5a675c4733d5bc0109ccbcc35daee23a9e460d920a4b346a3216bfc7' \
+    'c547a88c519f27d2996eaaf6fe34716dffc391492687251a801387af20429dc2' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   env \
@@ -120,7 +131,9 @@ printf 'strict_verify_after_3xui_exit=%s\n' "$?"
 
 ### 4. 从早期 rc 版本执行只读升级检查（历史 rc.17 示例）
 
-**rc.16 直接升级到当前 rc.19 的完整步骤见[下文专节](#从-rc16-升级到-rc19)。** 下列固定 rc.17 的命令保留为历史只读检查示例，不是 rc.16→rc.19 的迁移入口。
+2026-09-29 补充：旧版本可能保存了不完整的 TCP 缓冲原值。历史命令仅供追踪，执行任何旧版 rollback 前必须先满足[原值完整性与恢复条件](docs/platform-support.md#旧状态与迁移)；旧版自身报告 verify 成功不能证明原始三元组完整。
+
+**历史 rc.16 直接升级到 rc.19 的完整步骤见[下文专节](#从-rc16-升级到-rc19)。** 下列固定 rc.17 的命令保留为历史只读检查示例，不是 rc.16→rc.19 的迁移入口。
 
 由 rc.9–rc.16 管理的 VPS，在 rc.17 发布后可下载 rc.17 总控并执行 `update`。该操作读取状态中的资源档和端口带宽，校验当前 profile、目标 `SHA256SUMS` 和目标总控脚本，然后依次运行当前版本的 `verify` 与目标版本的只读 `update-preflight`。输出包括维护窗口所需的固定 URL、SHA-256 和迁移顺序。`update` 不执行 `rollback`、purge、`apply`、`reconfigure` 或重启，也不替换已发布的旧 Release 资产。
 
@@ -162,9 +175,9 @@ printf 'strict_verify_after_3xui_exit=%s\n' "$?"
 
 ### 5. 联网执行注意事项
 
-- 仅支持厂商最小化 Debian 12/13、`x86_64/amd64` 和本文列出的四个 CPU/内存资源档；其他组合会被拒绝；
-- 端口带宽填写服务商套餐上限，不要填写虚拟网卡显示的链路速率；默认 200 Mbps，允许 100–1000 Mbps；
-- 上一节历史只读检查入口固定到 `v0.1.0-rc.17`；本页首个联网安装入口和下文 rc.16→rc.19 升级入口固定到 `v0.1.0-rc.19`，都不会回退到 `master`、`main`、`latest`、HTTP 或第三方镜像；
+- 持久配置支持 Debian 12/13、Ubuntu 24.04 LTS 和 `x86_64`/`aarch64`；资源选择及能力条件见[平台契约](docs/platform-support.md)；
+- 端口带宽填写服务商套餐上限，不要填写虚拟网卡显示的链路速率；默认 200 Mbps，允许 1–10000 Mbps；
+- 上一节历史只读检查入口固定到 `v0.1.0-rc.17`；本页安装及重启验证入口固定到 `v0.2.0-rc.1`，历史 rc.16→rc.19 升级入口仍固定到 `v0.1.0-rc.19`，都不会回退到 `master`、`main`、`latest`、HTTP 或第三方镜像；
 - 历史 rc.17 只读示例在执行总控前核对该版总控固定 SHA-256；下文 rc.16→rc.19 示例则核对 rc.19 总控固定 SHA-256；总控随后下载其固定 Release 的 `SHA256SUMS` 和对应 profile，并再次校验；
 - 总控、`SHA256SUMS` 和 profile 必须来自同一 Release；不同版本使用不同目录，不要把 rc.16 与 rc.17/rc.19 资产混放在 `/root` 或同一工作目录；
 - 发布后不应移动 tag 或替换同名资产，发现缺陷时应发布新版本；
@@ -236,7 +249,7 @@ buffer、swap、journald、NOFILE、状态验证和回滚时，才应接管所�
 
 ## 本地使用与命令行模式
 
-`debian-vps-tuning.sh` 是总控入口。它读取 Debian 主版本、amd64 架构、可用逻辑 CPU 数和实际内存，从六份系统/内存 profile 中选择匹配项。总控不包含独立的调优逻辑，只负责选择、SHA-256 校验和调用 profile。
+`debian-vps-tuning.sh` 是总控入口。它读取系统及版本、x86_64/aarch64 架构、逻辑 CPU 和实际内存，从九份 profile 中选择匹配项；原 Debian 档位保留 ID，其他受支持组合采用 adaptive。总控不包含独立的调优逻辑，只负责选择、SHA-256 校验和调用 profile。
 
 从完整项目目录运行：
 
@@ -256,7 +269,8 @@ bash ./debian-vps-tuning.sh diagnose
 # benchmark 还需要 BENCHMARK_HOST，见下文
 bash ./debian-vps-tuning.sh benchmark
 bash ./debian-vps-tuning.sh update
-bash ./debian-vps-tuning.sh update --target v0.1.0-rc.16
+# 仅在仍有旧版本管理状态时，检查新目标版本
+bash ./debian-vps-tuning.sh update --target v0.2.0-rc.1
 bash ./debian-vps-tuning.sh rollback
 ```
 
@@ -273,12 +287,12 @@ bash <(curl ...)
 
 ## 适用场景
 
-- VPS 厂商预装的 Debian 12 或 Debian 13 最小化系统；
-- `x86_64/amd64`；支持 1C512MB、1C1GB、1C2GB 和 2C2GB 四个资源档；
-- 实测内存边界为 384–767 MiB、768–1535 MiB 或 1536–3072 MiB；
+- 原生 systemd 的 Debian 12/13 或 Ubuntu 24.04 LTS 最小化系统；
+- `x86_64/amd64` 或 `aarch64/arm64`；至少 1 个逻辑 CPU；
+- 至少 384 MiB 可识别物理内存；原 Debian 档位保留策略，其他组合采用内存自适应策略；
 - 10 GB、15 GB 或更大 SSD，且有足够剩余空间；
 - IPv4 或 IPv4 + IPv6 双栈的常规默认路由；
-- 服务商端口上限 100–1000 Mbps，默认按 200 Mbps 设计；
+- 服务商端口上限 1–10000 Mbps，默认按 200 Mbps 设计；
 - 以 TCP 为主、连接规模经过目标机实测的小型代理服务器；项目不按“用户数”承诺容量；
 - 内核实际提供 BBR 和 fq。
 
@@ -289,7 +303,7 @@ bash <(curl ...)
 | Debian 12 (bookworm) | Linux 6.1 系列 | 1C512MB、1C1GB、1C2GB、2C2GB |
 | Debian 13 (trixie) | Linux 6.12 系列 | 1C512MB、1C1GB、1C2GB、2C2GB |
 
-这些版本是已知验证基线，不是内核补丁版本白名单。脚本严格检查 Debian 主版本和 amd64 架构；内核小版本变化后，仍以目标机实际提供的 BBR/fq 能力为准。
+这些版本是已知验证基线，不是内核补丁版本白名单。当前系统/架构范围和客体生命周期结果见[平台矩阵](docs/platform-support.md)；每台主机仍须通过实际 BBR/fq 能力检查。
 
 ## Debian 12/13 选型
 
@@ -349,7 +363,7 @@ sysctl -n net.core.default_qdisc
 tc -s -d qdisc show
 ```
 
-六份脚本分别校验操作系统、CPU、内存、运行内核能力和 qdisc 拓扑。系统选型不能替代目标机 `preflight`。
+生成 profile 分别校验操作系统、CPU、内存、运行内核能力和 qdisc 拓扑。系统选型不能替代目标机 `preflight`。
 
 ## 脚本选择
 
@@ -361,10 +375,13 @@ tc -s -d qdisc show
 | `debian13-1c512m-vps-tuning.sh` | Debian 13 | 1 vCPU | 384–767 MiB | 1024/2048 MiB |
 | `debian13-1c1g-vps-tuning.sh` | Debian 13 | 1 vCPU | 768–1535 MiB | 1024/2048 MiB |
 | `debian13-1c2g-vps-tuning.sh` | Debian 13 | 1–2 vCPU | 1536–3072 MiB | 1024/4096 MiB |
+| `debian12-adaptive-vps-tuning.sh` | Debian 12 | ≥1 vCPU | ≥384 MiB | 默认关闭 / 4096 MiB |
+| `debian13-adaptive-vps-tuning.sh` | Debian 13 | ≥1 vCPU | ≥384 MiB | 默认关闭 / 4096 MiB |
+| `ubuntu2404-adaptive-vps-tuning.sh` | Ubuntu 24.04 | ≥1 vCPU | ≥384 MiB | 默认关闭 / 4096 MiB |
 
-文件名和状态 ID 中的 `1c2g` 是兼容名称。同一 2G profile 同时支持 1C2GB 和 2C2GB，不另建重复的 2C2G 文件；已有 `debian12-1c2g`/`debian13-1c2g` 状态无需迁移。各资源脚本仍独立校验系统、架构、CPU 和内存，总控选择不能绕过底层预检。2C512MB、2C1GB、3 vCPU 以上及边界外内存均会被拒绝。
+文件名和状态 ID 中的 `1c2g` 是兼容名称。同一 2G profile 同时支持 1C2GB 和 2C2GB，不另建重复的 2C2G 文件；profile ID 保持不变，版本升级仍须通过状态迁移检查。各资源脚本独立校验系统、架构、CPU 和内存，总控选择不能绕过底层预检。其他 Debian CPU/内存组合选择对应 adaptive；Ubuntu 24.04 使用独立 adaptive，仍检查系统、架构和实际能力。
 
-默认端口上限为 200 Mbps，也可显式设置为 100–1000 Mbps。该值应填写 VPS 套餐或服务商规定的上限，不能使用虚拟网卡显示的链路速率。
+默认端口上限为 200 Mbps，也可显式设置为 1–10000 Mbps。该值应填写 VPS 套餐或服务商规定的上限，不能使用虚拟网卡显示的链路速率。
 
 ## 脚本会修改什么
 
@@ -828,7 +845,7 @@ watchdog。1C2G 见独立 [A/B/A SOP](docs/experiments/vmiss-1c2g-200mbps-htb-ab
 [VMISS Basic HTB A/B/A 文档](docs/experiments/vmiss-basic-200mbps-htb-aba.md)只保留
 1C1G/v0.2.1 历史证据，不得作为当前入口。
 
-## 100–1000 Mbps
+## 1–10000 Mbps 配置输入
 
 100 Mbps：
 
@@ -851,7 +868,7 @@ env PORT_SPEED_MBPS=1000 \
   bash ./debian13-1c2g-vps-tuning.sh apply
 ```
 
-可使用 100–1000 范围内的任意整数；总控菜单也提供 500 Mbps。rc.16 沿用 rc.15/rc.14/rc.13/rc.12/rc.11/rc.10 的网络参数：默认目标 RTT 为 200 ms；512M、1G 和 2G 资源档分别采用 1×、1.25× 和 1.5× BDP，再向上选择 16/32/64 MiB，并受各 profile 的 16/32/64 MiB 上限约束：
+可配置 1–10000 范围内的任意整数；参数接受范围不等于吞吐验收。adaptive 缓冲封顶见[平台契约](docs/platform-support.md)。原固定 profile 的策略保持：默认目标 RTT 为 200 ms；512M、1G 和 2G 资源档分别采用 1×、1.25× 和 1.5× BDP，再向上选择 16/32/64 MiB，并受各 profile 的 16/32/64 MiB 上限约束：
 
 | 资源档 | BDP 系数 | 100 Mbps | 200 Mbps | 500 Mbps | 1000 Mbps |
 |---|---:|---:|---:|---:|---:|
@@ -859,7 +876,7 @@ env PORT_SPEED_MBPS=1000 \
 | 1G | 1.25× | 16 MiB | 16 MiB | 16 MiB | 32 MiB |
 | 2G | 1.5× | 16 MiB | 16 MiB | 32 MiB | 64 MiB |
 
-在 200 Mbps 下，所有资源档的上限均为 16 MiB。512M 档优先限制内存压力；1G 和 2G 档逐级增加高 BDP 余量。只有 512M、1000 Mbps、200 ms 的组合会触发资源截断警告。
+在 200 Mbps 下，所有资源档的上限均为 16 MiB。512M 档优先限制内存压力；1G 和 2G 档逐级增加高 BDP 余量。在此表范围内，仅 512M、1000 Mbps、200 ms 的组合触发资源截断警告；更高带宽输入也可能达到各 profile 封顶。
 
 表中数值是自动调优允许的最大 socket 缓冲，不表示每条连接会立即占满。Linux TCP 接收缓冲仍按连接需求自动增长；应用显式调用 `setsockopt(SO_RCVBUF)` 时可能改变该行为。资源截断用于限制内存风险，不表示带宽参数无效。没有持续监控和高 BDP 证据时，不应手工设置 `BUF_MAX`。
 
@@ -867,11 +884,11 @@ env PORT_SPEED_MBPS=1000 \
 
 | 变量 | 默认值 | 范围/说明 |
 |---|---:|---|
-| `PORT_SPEED_MBPS` | `200` | `100–1000` |
+| `PORT_SPEED_MBPS` | `200` | `1–10000` |
 | `BUFFER_TARGET_RTT_MS` | `200` | `20–500` |
-| `BUF_MAX` | `auto` | 512M/1G/2G profile 上限分别为 16/32/64 MiB |
-| `ENABLE_SWAP` | `1` | `0` 或 `1` |
-| `SWAP_MB` | `1024` | 512M/1G 脚本最高 2048，2G 脚本最高 4096 |
+| `BUF_MAX` | `auto` | 固定 profile 为 16/32/64 MiB；adaptive 按 RAM 封顶于 16–256 MiB |
+| `ENABLE_SWAP` | 固定档 `1`；adaptive `0` | `0` 或 `1` |
+| `SWAP_MB` | `1024` | 512M/1G 脚本最高 2048，2G/adaptive 最高 4096 |
 | `PURGE_CREATED_SWAP` | `0` | 回滚时是否清理脚本创建的 swap |
 | `PROXY_SERVICE_UNITS` | 自动识别 | 空格分隔的 systemd service |
 | `REQUIRE_PROXY_SERVICE` | `0` | 为 `1` 时没有目标代理服务即验证失败 |
@@ -905,11 +922,13 @@ env PORT_SPEED_MBPS=1000 \
 
 状态更新先由 `jq` 写入同目录临时文件。只有命令退出码、非空检查、单一 JSON 对象和完整结构校验全部通过后，才原子替换 `state.json`。空文件、空白文件、多个 JSON 文档或更新失败均不能覆盖上一个有效状态。
 
-服务商扩容或降配端口后，使用 `dvt reconfigure --port <MBPS>`。开发候选只接受同一 rc.18 版本和 profile 的 `VERIFIED` 状态，先执行完整 `verify`，再保留现有 RTT；自动 buffer 按新带宽重算，显式 buffer 保持原值。同值请求只验证不写入。普通 `apply` 的参数不一致门禁没有放宽，不得手工编辑 `state.json` 代替重配置。
+服务商扩容或降配端口后，使用 `dvt reconfigure --port <MBPS>`。重配置只接受与当前脚本版本和 profile 一致的 `VERIFIED` 状态，先执行完整 `verify`，再保留现有 RTT；自动 buffer 按新带宽重算，显式 buffer 保持原值。同值请求只验证不写入。普通 `apply` 的参数不一致门禁没有放宽，不得手工编辑 `state.json` 代替重配置。
 
 重配置把旧 state 和 sysctl 管理文件保存为 root-only 固定备份，先提交 `RECONFIGURING`，再更新候选文件、必要的运行时 buffer、管理哈希并执行完整候选验证。任何失败会尝试恢复旧 sysctl 和旧 `VERIFIED` 状态；恢复失败时状态保留为 `DEGRADED`，`status` 显示事务和失败证据，普通 `verify`/`rollback`/`apply` 均拒绝越过，必须先执行 `dvt recover`。
 
 ### 从 rc.16 升级到 rc.19
+
+历史流程补充限制（2026-09-29）：若 `original_sysctls` 中的 `net.ipv4.tcp_rmem` 或 `net.ipv4.tcp_wmem` 只有一个字段，停止在只读检查，不执行下列 rollback/reboot。旧版恢复代码不能补回缺失原值；处理边界见[旧状态与迁移](docs/platform-support.md#旧状态与迁移)。
 
 **可以直接迁移，不必先经过 rc.17/rc.18。** 以下编号流程适用于主机仍由原版 rc.16 管理、`dvt --version` 显示 rc.16、现有 profile 的 `status`/`verify` 通过且状态为 `VERIFIED` 的情况；目标系统、资源档及 100–1000 Mbps 端口带宽也须仍落在 rc.19 支持范围内。若 `dvt` 总控已提前切到 rc.19、但状态仍记录 rc.16，请改用[下文的混合版本入口](#总控已是-rc19但状态仍是-rc16)，不要用 rc.19 的 `dvt status`/`verify` 代替旧 profile 核验。其他版本、状态或原版核验不符时，停在只读盘点，不运行 `recover`、`apply`、`rollback` 或覆盖状态文件。rc.19 的发布只验证了 Linux fixture 与资产完整性，不能代替这台 VPS 的迁移验收。
 
@@ -1175,7 +1194,7 @@ env PURGE_CREATED_SWAP=1 \
 
 - 本地 `bash -n`、ShellCheck、生成一致性、禁用键和编码检查不能替代目标 VPS 运行验证。
 - BBR、fq、swap、重启持久性、UFW、3X-UI 和实际客户端连通性必须在 VPS 上验证。
-- 当前预发布版本仅支持 amd64。
+- 平台支持与客体生命周期结果见[矩阵](docs/platform-support.md)；不能替代特定服务商或代理业务验收。
 - 策略路由、TProxy、网关、Docker 防火墙和复杂 qdisc 不在支持范围内。
 - 性能结果受 CPU、虚拟化超售、线路、跨境路由、客户端和加密开销影响。
 - 性能验收应分别覆盖 1、3、5、10 并发；脚本不自动生成代理流量。

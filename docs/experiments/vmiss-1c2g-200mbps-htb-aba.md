@@ -59,8 +59,8 @@ install -o root -g root -m 0755 \
   /root/htb-aggregate-experiment.sh \
   /usr/local/sbin/htb-aggregate-experiment
 
-# 绑定 rc.19 未发布工作树执行器；不是已发布资产或启动实验的授权。
-EXPECTED_HTB_SHA256='69b85771d37708e8bd5018474061d08484d9318c42862317ab69a6c3db800e6d'
+# 绑定 0.2.0-rc.1 未发布工作树执行器；不是已发布资产或启动实验的授权。
+EXPECTED_HTB_SHA256='2ef4ac88b245b741169893503ac45af17a9b77a6c548973d1ef1c6a6bfd474a4'
 printf '%s  %s\n' "$EXPECTED_HTB_SHA256" \
   /usr/local/sbin/htb-aggregate-experiment | sha256sum -c -
 

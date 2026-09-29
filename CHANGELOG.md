@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.0-rc.1] - 2026-09-29
+
+- 新增第三阶段 Debian 12/13、Ubuntu 24.04 LTS 的 x86_64/ARM64 持久配置与自适应资源 profile；受管带宽接受 1–10000 Mbps，按内存封顶 socket buffer，新 profile 默认不创建 swap。七组独立 VM 生命周期全部通过并复核归档，见 `docs/platform-support.md`。
+- 修复原始 `tcp_rmem/tcp_wmem` 快照截断制表符三元组的问题；回滚前拒绝不完整原值，恢复后读回核对，迁移准备不接受缺失原值的来源状态。历史丢失字段不自动重建。
+
+- 修复真实单机验收发现的 iproute2 6.15 fq weights 恢复解析问题：整形前验证完整恢复语法，按实际解析能力选择限定兼容参数，冻结并校验恢复参数。首轮失败后已恢复原 fq；后续正常事务与公共路径 SIGINT/SIGTERM 复验通过，完整扫描与性能效果未验收，详见 `docs/temporary-htb-retest-2026-09-28.md`。
+
+- 新增按实际 Linux 能力运行的 `diagnose` 和独立 `measure`，无需先 apply 或匹配 Debian/CPU/RAM/架构档位；`diagnose --managed` 保留原 profile 诊断。
+- 加入带官方出处的 Leaseweb/Clouvider 固定公共目录、有限 RTT 排序和有预算协议尝试、自有端点入口及 1–10000 Mbps 显式测试 cap。
+- 新测量在同一 IP/端口/出口上执行单流 application pacing、重复速率阶梯及首尾低速控制；记录有效窗口、receiver goodput、sender 重传/GiB、RTT 和资源状态。报告仅给路径观察，不识别服务商 policer、不自动整形。
+- 共享采集与解析从 profile 模板提取，提取阶段保留旧 profile 采集语义；本候选后续另增加跨架构支持与上述恢复修复。新证据使用独立 schema；离线校准器 0.1.2 另行接受同格式的 0.2.0-rc.1 受管 probe。
+- 新版账本继续读取 schema 1 的 rc.19 窗口，不重置额度；迁移器接受 rc.1–rc.19 来源至新候选。测量本身不需要迁移受管状态。
+- 新增第二阶段 `htb-sweep`：复用自动选点和预算，显式接口/整形上下界/application cap，首尾低档与上界 reference、粗扫及最多三档精扫。仅允许可完整恢复的单根 fq，使用冻结 checkpoint、独立恢复看护和所有权门禁；恢复失败不生成完成报告。
+- 新增离线 HTB 回归和两个隔离网络命名空间内的真实 tc/iperf3 CI，验证定制 fq 恢复、部分失败、外部漂移、看护及信号；验证结果见 `docs/validation.md`。第一阶段固定提交的真实低流量证据不代表第二阶段已在 VPS 验收；跨平台持久配置的实现与运行证据另见平台支持矩阵。
+
 ## [0.1.0-rc.19] - 2026-09-27
 
 ### Added

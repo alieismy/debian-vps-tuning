@@ -8,7 +8,7 @@ IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 
 RUNNER_VERSION='0.5.0'
-EXPECTED_TUNING_VERSION='0.1.0-rc.19'
+EXPECTED_TUNING_VERSION='0.2.0-rc.1'
 MANAGED_STATE_FILE='/var/lib/proxy-vps-tuning/state.json'
 RUNTIME_STATE_DIR='/run/htb-aggregate-experiment'
 RUNTIME_STATE_FILE="${RUNTIME_STATE_DIR}/active.json"

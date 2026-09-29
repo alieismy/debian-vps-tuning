@@ -1,0 +1,47 @@
+name: platform-lifecycle
+
+on:
+  push:
+    branches: ['master', 'codex/**']
+    paths:
+      - '*-vps-tuning.sh'
+      - 'debian-vps-tuning.sh'
+      - 'install.sh'
+      - 'tools/profile-template.sh.in'
+      - 'tests/platform-*'
+      - '.github/workflows/platform-lifecycle.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guest:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [debian12, debian13, ubuntu2404]
+        # 独立原生 ARM runner，不把 x86 上的架构字符串 fixture 当 ARM 运行证据。
+        arch: [amd64, arm64]
+        resource: [adaptive]
+        include:
+          - platform: debian13
+            arch: amd64
+            resource: legacy
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install guest runner dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y qemu-system-x86 qemu-system-arm qemu-efi-aarch64 qemu-utils cloud-image-utils
+          if test -e /dev/kvm; then sudo chmod a+rw /dev/kvm; fi
+      - name: Verify install, apply, reboot and rollback
+        run: python3 tests/platform-vm.py --platform '${{ matrix.platform }}' --arch '${{ matrix.arch }}' --resource-profile '${{ matrix.resource }}'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lifecycle-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.resource }}
+          path: .tmp/platform-vm/evidence/
+          retention-days: 14

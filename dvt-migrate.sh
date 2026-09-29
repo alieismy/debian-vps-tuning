@@ -6,7 +6,7 @@ IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 
-TOOL_VERSION='0.1.0-rc.19'
+TOOL_VERSION='0.2.0-rc.1'
 STATE_FILE="${DVT_STATE_FILE:-/var/lib/proxy-vps-tuning/state.json}"
 
 action=''
@@ -100,14 +100,18 @@ prepare() {
   [ -n "$checkpoint" ] && [[ "$checkpoint" = /* ]] || die 'prepare 必须指定绝对 --checkpoint。'
   [ ! -e "$checkpoint" ] && [ ! -L "$checkpoint" ] || die 'checkpoint 已存在，拒绝覆盖。'
   validate_file source-profile "$source_profile"; validate_file target-profile "$target_profile"
-  [[ "$source_version" =~ ^0\.1\.0-rc\.[0-9]+$ ]] && [[ "$target_version" =~ ^0\.1\.0-rc\.[0-9]+$ ]] || die 'source/target version 格式无效。'
-  if [ "$target_version" != '0.1.0-rc.19' ] || ! [[ "$source_version" =~ ^0\.1\.0-rc\.([1-9]|1[0-8])$ ]]; then
-    die '本版迁移器只接受 rc.1–rc.18 来源并迁移到 0.1.0-rc.19。'
+  [[ "$source_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]] &&
+    [[ "$target_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]] || die 'source/target version 格式无效。'
+  if [ "$target_version" != '0.2.0-rc.1' ] || ! [[ "$source_version" =~ ^0\.1\.0-rc\.([1-9]|1[0-9])$ ]]; then
+    die '本版迁移器只接受 rc.1–rc.19 来源并迁移到 0.2.0-rc.1。'
   fi
   [[ "$profile_id" =~ ^debian1[23]-[A-Za-z0-9-]+$ ]] || die 'profile-id 格式无效。'
   [[ "$port_mbps" =~ ^[0-9]+$ ]] && [ "$((10#$port_mbps))" -ge 100 ] && [ "$((10#$port_mbps))" -le 1000 ] || die 'port 必须是 100..1000。'
   [[ "$state_sha256" =~ ^[0-9a-f]{64}$ ]] || die 'state-sha256 格式无效。'
   [ -f "$STATE_FILE" ] && [ "$(sha256sum "$STATE_FILE" | awk '{print $1}')" = "$state_sha256" ] || die '当前 managed state 与准备输入不一致。'
+  jq -e '.original_sysctls | all(."net.ipv4.tcp_rmem", ."net.ipv4.tcp_wmem";
+    type == "string" and test("^[0-9]+[\\t ]+[0-9]+[\\t ]+[0-9]+$"))' "$STATE_FILE" >/dev/null ||
+    die '来源状态缺少完整 TCP buffer 三元组；无法证明旧版回滚可恢复原值，拒绝创建迁移 checkpoint。'
   grep -Fq "SCRIPT_VERSION='${source_version}'" "$source_profile" || die 'source profile 版本契约不匹配。'
   grep -Fq "SCRIPT_VERSION='${target_version}'" "$target_profile" || die 'target profile 版本契约不匹配。'
   if ! grep -Fq "PROFILE_ID='${profile_id}'" "$source_profile" ||

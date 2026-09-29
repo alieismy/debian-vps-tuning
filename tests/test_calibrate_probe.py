@@ -134,7 +134,7 @@ class CalibrationTest(unittest.TestCase):
         self.assertEqual(before, {p: p.read_bytes() for p in self.root.rglob("*") if p.is_file()})
 
     def test_supported_source_versions_preserve_report_and_evidence(self):
-        for version in ("0.1.0-rc.17", "0.1.0-rc.18", "0.1.0-rc.19"):
+        for version in ("0.1.0-rc.17", "0.1.0-rc.18", "0.1.0-rc.19", "0.2.0-rc.1"):
             with self.subTest(version=version), tempfile.TemporaryDirectory() as folder:
                 root = Path(folder)
                 fixture(root, profile="debian13-1c1g", port=200, direction="upload",
@@ -234,6 +234,11 @@ class CalibrationTest(unittest.TestCase):
         up = self.result()["directions"][0]
         self.assertEqual(up["decision"], "RESOURCE_LIMITED")
         self.assertEqual(up["candidate_buffer_max_bytes"], 16777216)
+
+    def test_adaptive_profile_does_not_inherit_static_calibration_budget(self):
+        fixture(self.root, profile="ubuntu2404-adaptive")
+        with self.assertRaisesRegex(EvidenceError, "实际内存上限"):
+            self.result()
 
     def test_missing_reverse_rtt_does_not_borrow_upload_rtt(self):
         def mutate(data, *_):

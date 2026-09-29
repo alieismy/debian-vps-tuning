@@ -7,14 +7,16 @@ IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 
-SCRIPT_VERSION='0.1.0-rc.19'
+SCRIPT_VERSION='0.2.0-rc.1'
 STATE_SCHEMA_VERSION=4
 LEGACY_STATE_SCHEMA_VERSION=3
 NAMESPACE='proxy-vps'
 MANAGED_MARKER='# Managed by debian-vps-tuning; namespace=proxy-vps'
 
 TARGET_DEBIAN_VERSION='12'
-TARGET_DEBIAN_CODENAME='bookworm'
+TARGET_OS_ID='debian'
+TARGET_OS_VERSION='12'
+PROFILE_RESOURCE_POLICY='fixed'
 PROFILE_ID='debian12-1c1g'
 PROFILE_LABEL='Debian 12 / 1 vCPU / 1 GiB'
 PROFILE_CPU_MIN=1
@@ -182,15 +184,16 @@ acquire_lock() {
 is_bool() { [ "$1" = '0' ] || [ "$1" = '1' ]; }
 
 validate_inputs() {
+  if [ "${PROFILE_RESOURCE_POLICY:-fixed}" = adaptive ]; then configure_resource_policy; fi
   BUFFER_CLAMPED=0
   PORT_SPEED_MBPS="${PORT_SPEED_MBPS_INPUT:-$DEFAULT_PORT_SPEED_MBPS}"
   BUFFER_TARGET_RTT_MS="${BUFFER_TARGET_RTT_MS_INPUT:-$DEFAULT_BUFFER_TARGET_RTT_MS}"
 
-  [[ "$PORT_SPEED_MBPS" =~ ^[0-9]{3,4}$ ]] ||
-    die "$EXIT_USAGE" 'PORT_SPEED_MBPS 必须是 100–1000 的整数。'
+  [[ "$PORT_SPEED_MBPS" =~ ^[0-9]{1,5}$ ]] ||
+    die "$EXIT_USAGE" 'PORT_SPEED_MBPS 必须是 1–10000 的整数。'
   PORT_SPEED_MBPS=$((10#$PORT_SPEED_MBPS))
-  if [ "$PORT_SPEED_MBPS" -lt 100 ] || [ "$PORT_SPEED_MBPS" -gt 1000 ]; then
-    die "$EXIT_USAGE" 'PORT_SPEED_MBPS 必须在 100–1000 之间。'
+  if [ "$PORT_SPEED_MBPS" -lt 1 ] || [ "$PORT_SPEED_MBPS" -gt 10000 ]; then
+    die "$EXIT_USAGE" 'PORT_SPEED_MBPS 必须在 1–10000 之间。'
   fi
 
   [[ "$BUFFER_TARGET_RTT_MS" =~ ^[0-9]{2,3}$ ]] ||
@@ -204,7 +207,12 @@ validate_inputs() {
   BUFFER_TARGET_BYTES=$(((BUFFER_BDP_BYTES * BUFFER_TARGET_NUMERATOR + BUFFER_TARGET_DENOMINATOR - 1) / BUFFER_TARGET_DENOMINATOR))
   if [ "$BUF_MAX_INPUT" = 'auto' ]; then
     BUF_MAX_MODE='auto'
-    if [ "$BUFFER_TARGET_BYTES" -le 16777216 ]; then
+    if [ "${PROFILE_RESOURCE_POLICY:-fixed}" = adaptive ]; then
+      BUF_MAX=16777216
+      while [ "$BUF_MAX" -lt "$BUFFER_TARGET_BYTES" ] && [ "$BUF_MAX" -lt 268435456 ]; do
+        BUF_MAX=$((BUF_MAX * 2))
+      done
+    elif [ "$BUFFER_TARGET_BYTES" -le 16777216 ]; then
       BUF_MAX=16777216
     elif [ "$BUFFER_TARGET_BYTES" -le 33554432 ]; then
       BUF_MAX=33554432
@@ -216,8 +224,12 @@ validate_inputs() {
       BUF_MAX_MODE='auto-clamped'
       BUFFER_CLAMPED=1
     fi
+    if [ "$BUF_MAX" -lt "$BUFFER_TARGET_BYTES" ]; then
+      BUF_MAX_MODE='auto-clamped'
+      BUFFER_CLAMPED=1
+    fi
   else
-    [[ "$BUF_MAX_INPUT" =~ ^[0-9]{6,8}$ ]] ||
+    [[ "$BUF_MAX_INPUT" =~ ^[0-9]{6,9}$ ]] ||
       die "$EXIT_USAGE" 'BUF_MAX 必须为 auto 或允许范围内的整数字节数。'
     BUF_MAX=$((10#$BUF_MAX_INPUT))
     BUF_MAX_MODE='explicit'
@@ -264,35 +276,46 @@ check_supported_os() {
   [ -r /etc/os-release ] || die "$EXIT_UNSUPPORTED" '/etc/os-release 不可读。'
   # shellcheck disable=SC1091
   . /etc/os-release
-  if [ "${ID:-}" != 'debian' ] || [ "${VERSION_ID:-}" != "$TARGET_DEBIAN_VERSION" ]; then
-    die "$EXIT_UNSUPPORTED" "本脚本仅支持 Debian ${TARGET_DEBIAN_VERSION} (${TARGET_DEBIAN_CODENAME})。"
+  if [ "${ID:-}" != "$TARGET_OS_ID" ] || [ "${VERSION_ID:-}" != "$TARGET_OS_VERSION" ]; then
+    die "$EXIT_UNSUPPORTED" "本脚本仅支持 ${TARGET_OS_ID} ${TARGET_OS_VERSION}。"
   fi
   case "$(uname -m)" in
-    x86_64 | amd64) ;;
-    *) die "$EXIT_UNSUPPORTED" '首个公开版本仅支持 x86_64/amd64。' ;;
+    x86_64 | aarch64) ;;
+    *) die "$EXIT_UNSUPPORTED" '本版本支持 x86_64/amd64 和 aarch64/ARM64。' ;;
   esac
 
   local kernel
   kernel="$(uname -r)"
-  case "$TARGET_DEBIAN_VERSION:$kernel" in
-    12:6.1.*) ;;
-    13:6.12.*) ;;
+  case "$TARGET_OS_ID:$TARGET_OS_VERSION:$kernel" in
+    debian:12:6.1.* | debian:13:6.12.* | ubuntu:24.04:6.8.*) ;;
     *) warn "内核 ${kernel} 不属于当前验证基线；将继续按实际 BBR/fq 能力判断。" ;;
   esac
 }
 
 memory_mib() { awk '/^MemTotal:/ {print int($2 / 1024); exit}' /proc/meminfo; }
 
+configure_resource_policy() {
+  local mem
+  mem="$(memory_mib)"
+  [[ "$mem" =~ ^[0-9]{1,12}$ ]] && [ "$mem" -ge 384 ] ||
+    die "$EXIT_UNSUPPORTED" '自适应配置需要至少 384 MiB 可识别物理内存。'
+  # socket 上限按字节计算，不修改按页计量的 tcp_mem，也不随核数线性放大。
+  if [ "$mem" -ge 8192 ]; then MAX_BUF_MAX=268435456
+  else MAX_BUF_MAX=$((mem * 1048576 / 32)); fi
+  [ "$MAX_BUF_MAX" -ge 16777216 ] || MAX_BUF_MAX=16777216
+}
+
 check_resource_profile() {
   local mem cpus
   cpus="$(nproc 2>/dev/null || true)"
   mem="$(memory_mib)"
   [[ "$cpus" =~ ^[1-9][0-9]*$ ]] || die "$EXIT_UNSUPPORTED" '无法读取可用逻辑 CPU 数。'
-  [ -n "$mem" ] || die "$EXIT_UNSUPPORTED" '无法读取物理内存。'
-  if [ "$cpus" -lt "$PROFILE_CPU_MIN" ] || [ "$cpus" -gt "$PROFILE_CPU_MAX" ]; then
+  [[ "$mem" =~ ^[0-9]+$ ]] || die "$EXIT_UNSUPPORTED" '无法读取物理内存。'
+  if [ "${PROFILE_RESOURCE_POLICY:-fixed}" = adaptive ]; then configure_resource_policy; fi
+  if [ "$cpus" -lt "$PROFILE_CPU_MIN" ] || { [ "$PROFILE_CPU_MAX" -gt 0 ] && [ "$cpus" -gt "$PROFILE_CPU_MAX" ]; }; then
     die "$EXIT_UNSUPPORTED" "检测到 ${cpus} vCPU，不符合 ${PROFILE_LABEL} 的 ${PROFILE_CPU_MIN}–${PROFILE_CPU_MAX} vCPU 范围。"
   fi
-  if [ "$mem" -lt "$PROFILE_RAM_MIN_MIB" ] || [ "$mem" -gt "$PROFILE_RAM_MAX_MIB" ]; then
+  if [ "$mem" -lt "$PROFILE_RAM_MIN_MIB" ] || { [ "$PROFILE_RAM_MAX_MIB" -gt 0 ] && [ "$mem" -gt "$PROFILE_RAM_MAX_MIB" ]; }; then
     die "$EXIT_UNSUPPORTED" "检测到 ${mem} MiB RAM，不符合 ${PROFILE_LABEL} 的 ${PROFILE_RAM_MIN_MIB}–${PROFILE_RAM_MAX_MIB} MiB 范围。"
   fi
 }
@@ -920,9 +943,9 @@ write_qdisc_snapshot() {
 original_sysctls_json() {
   local key value
   for key in "${PROFILE_SYSCTL_KEYS[@]}"; do
-    value="$(sysctl -n "$key" 2>/dev/null || true)"
+    value="$(sysctl -n "$key")" || return 1
     printf '%s\t%s\n' "$key" "$value"
-  done | jq -Rn '[inputs | split("\t") | {(.[0]): .[1]}] | add'
+  done | jq -Rn '[inputs | split("\t") | {(.[0]): (.[1:] | join("\t"))}] | add'
 }
 
 write_initial_state() {
@@ -961,6 +984,7 @@ write_initial_state() {
     --argjson schema "$STATE_SCHEMA_VERSION" --arg version "$SCRIPT_VERSION" \
     --arg profile "$PROFILE_ID" --arg profile_label "$PROFILE_LABEL" \
     --arg debian "$TARGET_DEBIAN_VERSION" --arg arch "$(uname -m)" \
+    --arg os_id "$TARGET_OS_ID" --arg os_version "$TARGET_OS_VERSION" \
     --arg kernel "$(uname -r)" --argjson mem "$(memory_mib)" \
     --argjson port "$PORT_SPEED_MBPS" --argjson rtt "$BUFFER_TARGET_RTT_MS" \
     --argjson buf "$BUF_MAX" --arg mode "$BUF_MAX_MODE" \
@@ -973,7 +997,7 @@ write_initial_state() {
     --argjson provider_gid "$provider_gid" --arg provider_mode "$provider_mode" \
     --arg provider_state "$provider_state" --argjson provider_keys "$provider_keys" \
     '{schema_version:$schema,script_version:$version,state:"PREPARED",
-      profile:{id:$profile,label:$profile_label,debian_version:$debian,architecture:$arch,kernel_release:$kernel,memory_mib:$mem},
+      profile:{id:$profile,label:$profile_label,os_id:$os_id,os_version:$os_version,debian_version:(if $os_id=="debian" then $debian else null end),architecture:$arch,kernel_release:$kernel,memory_mib:$mem},
        network:{port_speed_mbps:$port,target_rtt_ms:$rtt,buffer_target_numerator:$target_numerator,buffer_target_denominator:$target_denominator,buffer_max_bytes:$buf,buffer_mode:$mode},
        original_sysctls:$original,qdisc:{file:$qfile,sha256:$qhash},
        swap:{created_by_script:false,path:"/swapfile-proxy",size_mib:0,device:0,inode:0,active:false},
@@ -1636,7 +1660,7 @@ reconfigure_source_state_is_valid() {
     .state == "VERIFIED" and
     ((.reconfigure? // null) == null) and
     (.network | type == "object") and
-    (.network.port_speed_mbps | valid_integer(100; 1000)) and
+    (.network.port_speed_mbps | valid_integer(1; 10000)) and
     (.network.target_rtt_ms | valid_integer(20; 500)) and
     (.network.buffer_target_numerator == $numerator) and
     (.network.buffer_target_denominator == $denominator) and
@@ -1666,7 +1690,7 @@ reconfigure_metadata_file_is_valid() {
       type == "number" and . == floor and . >= $minimum and . <= $maximum;
     def valid_network:
       type == "object" and
-      (.port_speed_mbps | valid_integer(100; 1000)) and
+      (.port_speed_mbps | valid_integer(1; 10000)) and
       (.target_rtt_ms | valid_integer(20; 500)) and
       (.buffer_target_numerator == $numerator) and
       (.buffer_target_denominator == $denominator) and
@@ -2090,6 +2114,15 @@ provider_sysctl_key_was_transferred() {
   ' "$STATE_FILE" >/dev/null 2>&1
 }
 
+original_sysctl_vectors_are_complete() {
+  # 旧快照可能只保存三元组首项；写入单值会被内核接受但不能恢复后两项。
+  jq -e '.original_sysctls | all(."net.ipv4.tcp_rmem", ."net.ipv4.tcp_wmem";
+    type == "string" and test("^[0-9]+[\\t ]+[0-9]+[\\t ]+[0-9]+$"))' "$STATE_FILE" >/dev/null || {
+    error '原始 TCP buffer 三元组不完整；保留状态并停止回滚，不能猜测缺失的原始值。'
+    return 1
+  }
+}
+
 restore_original_sysctls() {
   local key value failures=0
   for key in "${PROFILE_SYSCTL_KEYS[@]}"; do
@@ -2343,6 +2376,7 @@ rollback_internal() {
     fi
     return 0
   fi
+  original_sysctl_vectors_are_complete || return 1
   case "$phase" in
     PREPARED | ROLLBACK_PENDING | DEGRADED)
       if rollback_already_restored; then
@@ -2402,6 +2436,10 @@ rollback_internal() {
     failures=$((failures + 1))
   fi
   restore_original_sysctls || failures=$((failures + 1))
+  if ! original_sysctls_match_current; then
+    error '回滚步骤失败：sysctl 读回值与原始快照不一致。'
+    failures=$((failures + 1))
+  fi
   systemctl try-restart systemd-journald.service >/dev/null 2>&1 || true
   if [ "$force_purge" = '1' ] || [ "$PURGE_CREATED_SWAP" = '1' ]; then
     if ! purge_owned_swap; then
@@ -2446,11 +2484,11 @@ reconfigure_port_settings() {
     die "$EXIT_USAGE" 'reconfigure 只允许改变服务商端口带宽，不接受 BUF_MAX；显式 buffer 将从现有状态保留。'
   [ "$UPDATE_PREFLIGHT" = '0' ] ||
     die "$EXIT_USAGE" 'reconfigure 不接受 UPDATE_PREFLIGHT=1；升级只读检查与带宽重配置是两个独立操作。'
-  [[ "$PORT_SPEED_MBPS_INPUT" =~ ^[0-9]{3,4}$ ]] ||
-    die "$EXIT_USAGE" 'PORT_SPEED_MBPS 必须是 100–1000 的整数。'
+  [[ "$PORT_SPEED_MBPS_INPUT" =~ ^[0-9]{1,5}$ ]] ||
+    die "$EXIT_USAGE" 'PORT_SPEED_MBPS 必须是 1–10000 的整数。'
   requested_port=$((10#$PORT_SPEED_MBPS_INPUT))
-  if [ "$requested_port" -lt 100 ] || [ "$requested_port" -gt 1000 ]; then
-    die "$EXIT_USAGE" 'PORT_SPEED_MBPS 必须在 100–1000 之间。'
+  if [ "$requested_port" -lt 1 ] || [ "$requested_port" -gt 10000 ]; then
+    die "$EXIT_USAGE" 'PORT_SPEED_MBPS 必须在 1–10000 之间。'
   fi
 
   ensure_required_tools
@@ -3658,7 +3696,7 @@ usage() {
 Usage: $0 {preflight|apply|reconfigure|verify|status|diagnose|benchmark|rollback|recover}
 
 Environment:
-  PORT_SPEED_MBPS=100..1000       default 200; reconfigure requires an explicit value
+  PORT_SPEED_MBPS=1..10000       default 200; reconfigure requires an explicit value
   BUFFER_TARGET_RTT_MS=20..500    default 200
   BUF_MAX=auto|262144..${MAX_BUF_MAX}   default auto; profile memory cap
   ENABLE_SWAP=0|1                 default 1

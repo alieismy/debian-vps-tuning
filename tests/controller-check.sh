@@ -57,7 +57,7 @@ fi
 
 unsupported_os="$test_root/os-unsupported"
 supported_mem="$test_root/mem-supported"
-write_os_release "$unsupported_os" ubuntu 24.04
+write_os_release "$unsupported_os" ubuntu 22.04
 write_meminfo "$supported_mem" 1024
 set +e
 detect_profile_from "$unsupported_os" "$supported_mem" x86_64 1 >/dev/null 2>&1
@@ -68,20 +68,20 @@ set -e
 supported_os="$test_root/os-supported"
 write_os_release "$supported_os" debian 12
 set +e
-detect_profile_from "$supported_os" "$supported_mem" aarch64 1 >/dev/null 2>&1
+detect_profile_from "$supported_os" "$supported_mem" riscv64 1 >/dev/null 2>&1
 rc=$?
 set -e
 [ "$rc" -eq 2 ] || fail "unsupported architecture returned ${rc}, expected 2"
 
 unsupported_mem="$test_root/mem-unsupported"
-write_meminfo "$unsupported_mem" 4096
+write_meminfo "$unsupported_mem" 383
 set +e
 detect_profile_from "$supported_os" "$unsupported_mem" x86_64 1 >/dev/null 2>&1
 rc=$?
 set -e
 [ "$rc" -eq 3 ] || fail "unsupported memory returned ${rc}, expected 3"
 
-for unsupported_resource in '1 383' '2 512' '2 1024' '3 2048'; do
+for unsupported_resource in '1 383' '2 383' '3 128'; do
   IFS=' ' read -r test_cpus test_mem <<<"$unsupported_resource"
   test_mem_file="$test_root/mem-unsupported-${test_cpus}-${test_mem}"
   write_meminfo "$test_mem_file" "$test_mem"
@@ -98,10 +98,10 @@ rc=$?
 set -e
 [ "$rc" -eq 1 ] || fail "invalid CPU count returned ${rc}, expected 1"
 
-for valid_port in 100 200 500 1000 0200; do
+for valid_port in 1 99 100 200 500 1000 1001 10000 0200; do
   validate_port_speed "$valid_port" || fail "valid port rejected: ${valid_port}"
 done
-for invalid_port in 99 1001 20000 abc 20.0 ''; do
+for invalid_port in 0 10001 20000 abc 20.0 ''; do
   if validate_port_speed "$invalid_port"; then
     fail "invalid port accepted: ${invalid_port:-empty}"
   fi

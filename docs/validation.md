@@ -1,5 +1,52 @@
 # 验证说明
 
+## 0.2.0-rc.1 第三阶段跨平台候选（2026-09-29）
+
+生成 profile 扩为九份，纳入 ARM64、Ubuntu 24.04 LTS、内存自适应策略与 1–10000 Mbps 配置参数，契约和逐平台状态见[平台支持矩阵](platform-support.md)。固定 `d38ec3f` 的主 Linux CI [36531809720](https://github.com/alieismy/debian-vps-tuning/actions/runs/36531809720) 已通过；同版本真实 VM 在回滚读回中暴露 TCP buffer 原始向量截断，不能记为平台生命周期通过。
+
+修正由完整向量回归、来源状态拒绝和回滚读回检查约束。`tests/platform-vm.py` 使用官方固定摘要镜像、原生客体 OS/架构、真实 boot ID 变化及系统状态对照；`tests/platform-htb-native.py` 补充 kernel-created fq 0: 与看护恢复。下列较早提交的通过证据均保留固定版本边界，不替代第三阶段最终提交的结果。
+
+固定 `9ea12a6fcc191129cf09645c5c377e2e28cb3a94` 的 [Linux CI 36534049141](https://github.com/alieismy/debian-vps-tuning/actions/runs/36534049141) 和 PR CI 36534055685 全部通过，日志确认 89 项 Python 无跳过，另覆盖 root 安装/预算/迁移、原生 tc/iperf3 和固定 ShellCheck。平台 [36534049122](https://github.com/alieismy/debian-vps-tuning/actions/runs/36534049122) 的四组 x86_64 已通过且下载归档逐项核验：官方镜像摘要、实际 OS/arch、两次 boot ID 变化、17 项 sysctl 原值恢复、qdisc 参数、三类 fq 0: 恢复和 legacy swap。Debian 12/13 ARM64 随后通过并完成归档复核；Ubuntu ARM64 在 cloud-init/APT 索引处理阶段超时，尚未进入项目安装或 apply。整个 run 为 failure，测试准备修正和后继结果见平台支持矩阵。
+
+经既有授权只读核对一台测试 VPS，确认它的 rc.16 来源状态中两项 TCP 原值各只有一个字段；rc.19 总控与旧状态并存，状态摘要前后未变。本轮未对该主机写入、测速或重启，新版迁移须继续阻断此类不完整来源。此事实不影响全新主机的生命周期实现，但阻止宣称该存量主机已经完成升级。
+
+后继 `1b1ee5b` 的六组生命周期也通过并完成归档复核；Ubuntu ARM64 已通过依赖准备、安装、首次 apply 和同值幂等，但在重配置过程中触及 600 秒测试期限。`5b53adc` 仅调整该客体的 QEMU 指针认证模拟算法，全部期限与产品断言保持，详见[平台支持](platform-support.md)。该提交的 [push CI 36540841878](https://github.com/alieismy/debian-vps-tuning/actions/runs/36540841878) 与 [PR CI 36540847005](https://github.com/alieismy/debian-vps-tuning/actions/runs/36540847005) 均通过，日志核验 89 项 Python 无跳过、九份 profile、安装/迁移、原生 tc/iperf3 与 ShellCheck。
+
+最终 [平台复验 36540841895](https://github.com/alieismy/debian-vps-tuning/actions/runs/36540841895) 的七组全部成功；七份归档的大小/GitHub digest、实际 OS/架构、两次 boot ID 变化、17 项原值、qdisc、三类 HTB 恢复和 legacy swap 均独立复核。Ubuntu ARM64 的准备约 5.5 分钟、首次应用阶段约 7 分钟，未放宽原期限或断言。26 项发布文件与 `5b53adc` 及固定运行实现 `9ea12a6` 逐字节一致；后继文档同步沿用这一明确绑定的功能证据，不扩大到公网高速、IPv6、特定云厂商硬件或代理业务收益。
+
+
+## 0.2.0-rc.1 第二阶段临时 HTB 候选（2026-09-28）
+
+低速短窗口采集修正 `cc821a8` 已通过 [Linux CI 36406911845](https://github.com/alieismy/debian-vps-tuning/actions/runs/36406911845)：80 项 Python 无跳过、6/6 低速 BBR 样本和完整 CLI 24/24 样本有效、原生恢复/信号/预算及安装生命周期通过。随后同机公共路径完整 CLI 正常退出并恢复，15 个正式样本中 11 个有效、无 receiver 背离；因一次窗口超差、三次 softnet 压力及控制漂移，整轮保持 `INSUFFICIENT_EVIDENCE`。原有效性与预算门禁保留，完整证据与剩余边界见[采样修正记录](temporary-htb-sampling-2026-09-28.md)。以下各段保留对应历史提交的证据，不代表当前汇总。
+
+新增 [`htb-sweep`](temporary-htb.md)，此处与下节第一阶段固定提交的证据分开。当前已实现单根 fq 完整恢复事务、独立 watchdog、自动选点/预算复用、粗细扫描及 reference 门禁。离线检查覆盖 fq 单位与未知选项拒绝、所有权/路由、精扫、预算停止、恢复失败及报告门禁；原生入口 `tests/temporary-htb-check.sh` 在两个专有 netns/veth 上验证真实 tc 与 iperf3，不经过公网或 runner 主出口。
+
+实现提交 `6fd5030ce37c4c85abf851bdfa2238f09f7aa59d` 的 [Linux CI 36393226085](https://github.com/alieismy/debian-vps-tuning/actions/runs/36393226085) 全部通过：73 项 Python、0 跳过，主静态/旧 HTB fixture、生成与安装资产一致性、root 安装/预算/迁移生命周期、固定 ShellCheck 0.11.0，以及新增真实 tc/iperf3 原生门禁。Windows 本地同一套 Python 为 72 通过、真实 flock 跳过 1 项；21 项清单资产及 installer 绑定、58 个本地文档链接和六份 profile 零差异已核验。
+
+原生环境为 Ubuntu 24.04 runner，iproute2 6.1.0 与经官方 SHA-256 校验并在 runner 构建的 iperf3 3.18，流量只经过两个专有 netns/veth。完整验证了定制 fq 参数/显式 handle 恢复、变速、并发拒绝、接口 down 后恢复，root/class/leaf 写入失败，外部参数漂移及重复恢复拒绝，owner SIGKILL、忽略 TERM 后的看护期限恢复，以及完整 CLI 和 SIGINT/SIGTERM 后的 fq 恢复、清除活动登记、账本预留归零和无采集进程残留。中断分别要求退出 130/143、保留 `INCOMPLETE` 且没有 `COMPLETED`。
+
+完整 CLI 的 24 个正式样本均观察到 HTB overlimits 增长；21 个有效，3 个因 `RECEIVER_DIVERGENCE` 被排除。隔离 netns 不暴露 `net.core.default_qdisc`，因此前后观察如实保留 `UNAVAILABLE`，其他已观察字段无变化，最终 `INSUFFICIENT_EVIDENCE`、无候选区间。CI 证明调度、真实整形、恢复和拒绝路径，不证明该环境产生了有效拐点建议。先前 iperf3 3.16 的 CPU 压力拒绝及 iproute2 旧文本兼容修正见[项目备忘](project-memo.md)。
+
+2026-09-28，固定 `b172efc` 的[真实单机 HTB 验收](temporary-htb-acceptance-2026-09-28.md)已执行但未通过：完成公共端点选点和 18 次实际 HTB 采集，全部因 receiver 背离被排除；目标 iproute2 6.15.0 的 weights 解析问题导致自动恢复失败。已核对所有权后补救恢复原 fq 全部 14 项参数，受管状态及 17 项 sysctl 等观察一致，预留/进程/活动登记归零，保留不完整报告。账本共计 51.25 MiB；SIGINT/SIGTERM 按停止条件未执行。
+
+修复增加完整恢复参数的无写入语法预检、受影响 weights 解析器的限定兼容、checkpoint 参数重放与校验。目标实际解析器已通过无 `dev` 的完整命令检查，qdisc 前后不变；本地新增六项回归，完整 Python 79 项中 78 通过、Windows flock 跳过 1 项。修复提交 `1986dea4a6cd8f30c3e2213be1577f389e265e7e` 的 [Linux CI 36397718732](https://github.com/alieismy/debian-vps-tuning/actions/runs/36397718732) 全部通过：79 项 Python 无跳过、主静态与旧 HTB 套件、root 安装/预算/迁移生命周期、真实 tc 正常/部分失败/看护/信号恢复及 ShellCheck。该轮原生 24 个样本中 23 个有效；隔离 netns 的配置观察缺口仍使结果为 `INSUFFICIENT_EVIDENCE`，不产生候选建议。
+
+用户再次授权后，固定 `f08fd8c` 的[恢复复验](temporary-htb-retest-2026-09-28.md)通过：不启动 iperf3 的真实 tc 2/3/4 Mbps 正常事务自动恢复，以及公共 IPv4 首个采集窗口内的 SIGINT/SIGTERM，分别退出 130/143。三次均 `RESTORED`、原 `fq 8001:` 及 14 项参数一致，无进程/活动登记/预算预留残留；中断报告正确拒绝。共享窗口累计保守计账约 87.88/128 MiB，前 19 笔记录不变；112 项新证据摘要通过，三份冻结恢复源码与候选一致。
+
+后续采样修正已补齐完整 sweep 的正常 CLI 完成报告和自动恢复，部分样本有效；整轮可靠拐点仍未验收。原 root `0:` 自动恢复分支（复验起点为 `8001:`）、目标机 SIGKILL/期限接管、更多内核/iproute2 组合、IPv6、安装迁移/重启及业务性能仍未验收。不同轮次、事务模块、产品 CLI、CI 和业务证据分别报告；持久 HTB 与平台 apply 范围未扩展。
+
+## 0.2.0-rc.1 自动测量候选（2026-09-28）
+
+本节覆盖未发布的第一阶段候选；以下 rc.19 及更早记录保留历史效力。实现与验收映射见[独立测量契约](automatic-measurement-design.md)。新测量不要求 profile，旧配置策略和生命周期保持原范围。
+
+新增离线检查覆盖固定公共目录/公布端口、ICMP 失败与 mapped IPv6、端点路由、预算启动顺序/不足/失败结算、仅回收自有子进程、重复重传与低负载/首尾控制门禁、证据摘要和总控提前分发。复用原有有效窗口解析、profile 生成及受管生命周期 fixture。
+
+实现提交 `8a59688664883cf55f734bbb5b595220471f5309` 的 [Linux CI](https://github.com/alieismy/debian-vps-tuning/actions/runs/36374065438) 已通过：Python 56 项通过、0 跳过，主静态与 HTB 套件、生成/资产一致性、root 安装生命周期、共享预算及 rc.16/17/18/19 → 0.2.0-rc.1 迁移 fixture、共享 benchmark 进程组超时回收、ShellCheck 0.11.0。安装使用 runner 的临时目录；迁移的 profile/boot ID 为合成值，进程用例使用假 iperf3 与真实 Linux 子进程，不访问公共服务。
+
+2026-09-28，经授权在一台 Debian 13/x86_64 主机完成[单机低流量功能验收](automatic-measurement-acceptance-2026-09-28.md)：自动选择公共 IPv4 端点，1/2 Mbps 的 9 个样本完整有效；报告和预算结算通过；另用 loopback 真实 iperf3 完成 SIGINT/SIGTERM 清理，最终无预留/进程/监听残留，17 项受管 sysctl、qdisc/class 与原状态等观察一致。该运行证据独立于 CI fixture。
+
+更多节点/平台、IPv6、高速区间、公共路径信号中断、真实安装/迁移/重启生命周期和业务效果仍未验收。完整结果与剩余边界记录在[项目备忘](project-memo.md)。发布和后续通用临时 HTB 不因本次有限验收通过而自动启动。
+
 ## rc.19 增量验证范围（2026-09-22）
 
 rc.18 于 2026-09-15 发布，tag 指向 `79fc9957fcd9898a39f47f3ca3a348d1727b6b47`；rc.19 是独立 Pre-release。下表原有 rc.18 测试记录保留其历史证据效力，不能证明 rc.19 的目标机运行或业务验收。当前执行器、安装器与受管版本检查使用 rc.19；离线校准器 0.1.1 允许 rc.17/rc.18/rc.19 的同一严格证据契约，HTB 离线分析仍维持 rc.18/rc.19 边界。

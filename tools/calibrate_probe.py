@@ -16,7 +16,7 @@ import sys
 
 from render_profiles import PROFILES
 
-VERSION = "0.1.1"
+VERSION = "0.1.2"
 
 
 class EvidenceError(ValueError):
@@ -220,6 +220,8 @@ def analyze(root, path_label, representative=False, max_age_hours=24, now=None):
             probe.get("status") in ("REVIEW_REQUIRED", "REVIEW_BLOCKED"), "不支持的 probe 结果")
     profile = PROFILES.get(probe.get("profile", "") + "-vps-tuning.sh")
     require(profile is not None, "未知资源 profile")
+    require(profile["RESOURCE_POLICY"] == "fixed",
+            "自适应 profile 尚无此离线校准的资源预算契约；不能用静态封顶代替实际内存上限")
     control = probe["traffic_control"]
     require(control.get("enforced") is True and control.get("method") == "iperf3-bitrate" and
             integer(control.get("rate_cap_mbps"), 100, 1000), "probe 缺少受限测量契约")
@@ -270,7 +272,7 @@ def analyze(root, path_label, representative=False, max_age_hours=24, now=None):
     require(len(set(measurement_contexts)) == 1, "重复样本的测量参数不一致")
     require(all(item == network for item in contexts) and isinstance(network, dict), "资源/网络上下文发生变化")
     require(len(set(bindings)) == 1 and bindings[0][0] == "VERIFIED" and
-            bindings[0][1] in ("0.1.0-rc.17", "0.1.0-rc.18", "0.1.0-rc.19") and isinstance(bindings[0][2], str) and
+            bindings[0][1] in ("0.1.0-rc.17", "0.1.0-rc.18", "0.1.0-rc.19", "0.2.0-rc.1") and isinstance(bindings[0][2], str) and
             re.fullmatch(r"[0-9a-f]{64}", bindings[0][2]) is not None and bindings[0][3],
             "需要同一 VERIFIED 版本、脚本与启动周期的证据")
     port, current = network.get("port_speed_mbps"), network.get("buffer_max_bytes")

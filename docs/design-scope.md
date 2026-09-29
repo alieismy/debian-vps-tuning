@@ -1,5 +1,7 @@
 # 设计范围
 
+> 版本边界：本文件下述固定资源档为已发布 rc.19 的兼容设计。0.2.0-rc.1 的新增平台/自适应策略与验收状态由[跨平台支持](platform-support.md)补充；原事务、所有权和恢复不变量仍适用。
+
 ## 目标
 
 为 Debian 12/13 amd64 小型 VPS 提供性能优先、稳定性受约束且可验证、可回滚的主机网络配置。资源范围严格限定为 1C512MB、1C1GB、1C2GB 和 2C2GB。主要验收负载是原生 systemd 部署的 3X-UI v3.4.2、Xray-core v26.6.27、VLESS + REALITY + TCP，默认 200 Mbps、目标 RTT 200 ms、通常 3–5 人且最多 10 人并发。
@@ -42,7 +44,7 @@ sysctl 配置归属按规范路径去重：项目自己的 `/etc/sysctl.d/90-pro
 
 总控脚本不直接写 sysctl、systemd、qdisc、swap、journald 或状态文件，不捕获后伪造底层成功，不改变底层退出码。`update` 也是只读检查：校验当前 profile 和目标 Release 后，只调用当前 profile 的 `verify` 以及目标总控的 `UPDATE_PREFLIGHT=1 preflight`，复用状态中的端口带宽并输出人工迁移材料；它不得调用 rollback、purge、apply 或 reboot。跨版本“清旧装新”必须由旧版固定 Release 根据旧状态执行受管 rollback/purge，完成恢复检查和重启后再运行最新版；新版不得作为旧状态的通用卸载器。状态不可恢复而 VPS 可重建时，可在已验证业务备份和控制台后选择干净重装。目标 profile 的 update-preflight 只允许完整且归属校验通过的 `VERIFIED/APPLIED` 状态，未完成或保留 swap 的状态继续阻断。自动发现只在同一 `major.minor` 发布线内选择；rc 通道允许更高 rc 或稳定版，稳定通道排除 prerelease，跨线或主动选择 prerelease 必须显式 `--target`。SHA-256 证明下载内容与同一发布清单一致，不单独证明发布者身份；Release tag、资产不可变性、GitHub API 返回和发布来源仍属于用户信任边界。
 
-重复 `apply` 的无写入幂等只适用于状态 `script_version` 与当前脚本一致且端口、RTT、缓冲完全相同的 `VERIFIED` 状态。旧版本状态仍可由新脚本 `verify` 或 `rollback`，但不得把旧配置验证通过等同于新版本已安装；跨版本 apply 必须先 rollback。
+重复 `apply` 的无写入幂等只适用于状态 `script_version` 与当前脚本一致且端口、RTT、缓冲完全相同的 `VERIFIED` 状态。旧版本状态必须由对应版本的 profile 核验和恢复，新脚本不是通用旧状态卸载器；跨版本 apply 必须先通过来源恢复与迁移门禁。历史 TCP 原值缺失的停止条件见[旧状态与迁移](platform-support.md#旧状态与迁移)。
 
 ## CPU 调优边界
 

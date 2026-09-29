@@ -6,15 +6,15 @@ IFS=$'\n\t'
 PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 export PATH
 
-CONTROLLER_VERSION='0.1.0-rc.19'
-RELEASE_TAG='v0.1.0-rc.19'
+CONTROLLER_VERSION='0.2.0-rc.1'
+RELEASE_TAG='v0.2.0-rc.1'
 REPOSITORY='alieismy/debian-vps-tuning'
 RELEASE_BASE_URL="https://github.com/${REPOSITORY}/releases/download/${RELEASE_TAG}"
 
 STATE_FILE='/var/lib/proxy-vps-tuning/state.json'
 DEFAULT_PORT_SPEED_MBPS=200
-MIN_PORT_SPEED_MBPS=100
-MAX_PORT_SPEED_MBPS=1000
+MIN_PORT_SPEED_MBPS=1
+MAX_PORT_SPEED_MBPS=10000
 
 EXIT_USAGE=2
 EXIT_UNSUPPORTED=3
@@ -54,6 +54,7 @@ HTB_WRAPPER_PATH=''
 HTB_BUNDLE_DIR=''
 TRAFFIC_BUDGET_PATH=''
 MIGRATION_PATH=''
+MEASUREMENT_PATH=''
 
 info() { printf '[+] %s\n' "$*"; }
 warn() { printf '[!] %s\n' "$*" >&2; }
@@ -73,18 +74,26 @@ usage() {
   cat <<'EOF_USAGE'
 Usage:
   debian-vps-tuning.sh
-  debian-vps-tuning.sh {guided|preflight|apply|reconfigure|verify|status|diagnose|probe|benchmark|htb|update|migrate|rollback|recover} [options]
+  debian-vps-tuning.sh {guided|preflight|apply|reconfigure|verify|status|diagnose|measure|htb-sweep|report|probe|benchmark|htb|update|migrate|rollback|recover} [options]
 
 Options:
   --port MBPS    provider port cap for guided/preflight/apply; default 200;
                  required explicitly by CLI reconfigure
-  --target TAG    update target, for example v0.1.0-rc.19; default is the
+  --target TAG    update target, for example v0.2.0-rc.1; default is the
                   highest non-draft Release in the installed major.minor line;
                   stable installations ignore prereleases automatically
   -h, --help     show this help
   --version      show controller and pinned release versions
 
 Behavior:
+  - diagnose uses Linux capabilities without a managed profile; use
+    diagnose --managed for the legacy profile-specific incremental diagnostics.
+  - measure automatically selects a public iperf3 endpoint; requires an explicit
+    test rate cap and a shared traffic budget. It does not change sysctl/qdisc.
+    Use "measure --rate-cap 20 --plan-only" for a network-free preview.
+  - report --input-dir PATH verifies and displays independent measurement evidence.
+  - htb-sweep temporarily shapes all egress traffic on an explicitly selected
+    interface; requires a recoverable root fq and restores it before completion.
   - With a terminal and no action, shows an interactive menu.
   - Without a terminal, an explicit action is required.
   - guided runs preflight first and asks before apply.
@@ -104,9 +113,9 @@ Behavior:
   - recover restores an interrupted reconfigure transaction, or performs the
     advanced rc.2 empty-state recovery when explicitly acknowledged.
 
-The controller selects Debian 12/13 and supported CPU/RAM combinations
-automatically. It never changes the tuning configuration itself; it invokes
-one verified profile script.
+The controller supports Debian 12/13 and Ubuntu 24.04 LTS on x86_64/aarch64.
+It preserves existing Debian profiles and selects adaptive profiles for new
+resource combinations (at least 384 MiB RAM). It invokes one verified script.
 EOF_USAGE
 }
 
@@ -122,13 +131,16 @@ need_command() {
 
 validate_port_speed() {
   local value="$1"
-  [[ "$value" =~ ^[0-9]{3,4}$ ]] || return 1
+  [[ "$value" =~ ^[0-9]{1,5}$ ]] || return 1
   value=$((10#$value))
   [ "$value" -ge "$MIN_PORT_SPEED_MBPS" ] && [ "$value" -le "$MAX_PORT_SPEED_MBPS" ]
 }
 
 profile_metadata() {
   case "$1" in
+    debian12-adaptive) printf '%s\t%s\n' 'debian12-adaptive-vps-tuning.sh' 'Debian 12 / adaptive' ;;
+    debian13-adaptive) printf '%s\t%s\n' 'debian13-adaptive-vps-tuning.sh' 'Debian 13 / adaptive' ;;
+    ubuntu2404-adaptive) printf '%s\t%s\n' 'ubuntu2404-adaptive-vps-tuning.sh' 'Ubuntu 24.04 LTS / adaptive' ;;
     debian12-1c512m)
       printf '%s\t%s\n' 'debian12-1c512m-vps-tuning.sh' 'Debian 12 / 1 vCPU / 512 MiB'
       ;;
@@ -162,15 +174,18 @@ detect_profile_from() {
   # shellcheck disable=SC1090
   os_values="$(set +u; . "$os_release_file"; printf '%s\t%s\t%s' "${ID:-}" "${VERSION_ID:-}" "${PRETTY_NAME:-unknown}")"
   IFS=$'\t' read -r os_id version_id pretty_name <<<"$os_values"
-  [ "$os_id" = 'debian' ] || return 2
-  case "$version_id" in 12 | 13) ;; *) return 2 ;; esac
-  [ "$arch" = 'x86_64' ] || return 2
+  case "$os_id:$version_id" in debian:12 | debian:13 | ubuntu:24.04) ;; *) return 2 ;; esac
+  case "$arch" in x86_64 | aarch64) ;; *) return 2 ;; esac
   [[ "$cpus" =~ ^[1-9][0-9]*$ ]] || return 1
 
   mem_mib="$(awk '/^MemTotal:/ {printf "%d", $2 / 1024; found=1} END {if (!found) exit 1}' "$meminfo_file")" || return 1
   [[ "$mem_mib" =~ ^[0-9]+$ ]] || return 1
 
-  if [ "$cpus" -eq 1 ] && [ "$mem_mib" -ge 384 ] && [ "$mem_mib" -le 767 ]; then
+  [ "$mem_mib" -ge 384 ] || return 3
+  if [ "$os_id" = ubuntu ]; then
+    profile='ubuntu2404-adaptive'
+    resource_class='adaptive'
+  elif [ "$cpus" -eq 1 ] && [ "$mem_mib" -ge 384 ] && [ "$mem_mib" -le 767 ]; then
     profile="debian${version_id}-1c512m"
     resource_class='1C512MB'
   elif [ "$cpus" -eq 1 ] && [ "$mem_mib" -ge 768 ] && [ "$mem_mib" -le 1535 ]; then
@@ -183,7 +198,8 @@ detect_profile_from() {
     profile="debian${version_id}-1c2g"
     resource_class='2C2GB'
   else
-    return 3
+    profile="debian${version_id}-adaptive"
+    resource_class='adaptive'
   fi
 
   metadata="$(profile_metadata "$profile")" || return 1
@@ -203,8 +219,8 @@ detect_environment() {
   case "$rc" in
     0) ;;
     1) die "$EXIT_UNSUPPORTED" '无法读取或解析 /etc/os-release、/proc/meminfo 或可用逻辑 CPU 数。' ;;
-    2) die "$EXIT_UNSUPPORTED" "只支持 Debian 12/13、amd64；检测到架构 ${DETECTED_ARCH}。" ;;
-    3) die "$EXIT_UNSUPPORTED" "只支持四个资源档：1C512MB (384–767 MiB)、1C1GB (768–1535 MiB)、1C2GB 或 2C2GB (1536–3072 MiB)；检测到 ${DETECTED_CPUS} vCPU、${DETECTED_MEMORY_MIB} MiB RAM。" ;;
+    2) die "$EXIT_UNSUPPORTED" "支持 Debian 12/13、Ubuntu 24.04 LTS 和 x86_64/aarch64；检测到架构 ${DETECTED_ARCH}。" ;;
+    3) die "$EXIT_UNSUPPORTED" "需要至少 384 MiB RAM；检测到 ${DETECTED_CPUS} vCPU、${DETECTED_MEMORY_MIB} MiB RAM。" ;;
     *) die "$EXIT_UNSUPPORTED" '环境检测发生未知错误。' ;;
   esac
   IFS=$'\t' read -r DETECTED_PROFILE DETECTED_LABEL DETECTED_PRETTY_NAME DETECTED_MEMORY_MIB DETECTED_RESOURCE_CLASS <<<"$detected"
@@ -232,11 +248,11 @@ state_profile_matches_detected() { [ "$1" = "$2" ]; }
 parse_arguments() {
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      guided | preflight | apply | reconfigure | verify | status | diagnose | benchmark | update | rollback | recover)
+      guided | preflight | apply | reconfigure | verify | status | benchmark | update | rollback | recover)
         [ -z "$ACTION" ] || die "$EXIT_USAGE" '只能指定一个 action。'
         ACTION="$1"
         ;;
-      probe | htb | migrate)
+      probe | htb | migrate | diagnose | measure | htb-sweep | report)
         [ -z "$ACTION" ] || die "$EXIT_USAGE" '只能指定一个 action。'
         ACTION="$1"
         shift
@@ -277,7 +293,7 @@ choose_action_interactively() {
   3) 执行 apply
   4) verify
   5) status
-  6) diagnose（5 秒只读增量诊断）
+  6) diagnose（按实际 Linux 能力只读诊断，无需 profile）
   7) probe（重复、限速、advisory-only；需已授权 iperf3）
   8) benchmark（高级单次证据入口；需 BENCHMARK_HOST）
   9) HTB 实验（仅 Debian 13 / 200 Mbps / 非持久化）
@@ -317,7 +333,7 @@ choose_port_interactively() {
   2) 200 Mbps（默认）
   3) 500 Mbps
   4) 1000 Mbps
-  5) 自定义 100–1000 Mbps
+  5) 自定义 1–10000 Mbps
 EOF_PORT
   printf '\n请选择 [默认 2]：'
   IFS= read -r choice
@@ -327,9 +343,9 @@ EOF_PORT
     3) PORT_SPEED_MBPS_SELECTED=500 ;;
     4) PORT_SPEED_MBPS_SELECTED=1000 ;;
     5)
-      printf '请输入 100–1000 的整数：'
+      printf '请输入 1–10000 的整数：'
       IFS= read -r custom
-      validate_port_speed "$custom" || die "$EXIT_USAGE" '带宽必须是 100–1000 的整数。'
+      validate_port_speed "$custom" || die "$EXIT_USAGE" '带宽必须是 1–10000 的整数。'
       PORT_SPEED_MBPS_SELECTED=$((10#$custom))
       ;;
     *) die "$EXIT_USAGE" '无效带宽选择。' ;;
@@ -354,17 +370,17 @@ select_port_speed() {
     else
       [ -n "$CLI_PORT_SPEED_MBPS" ] ||
         die "$EXIT_USAGE" 'reconfigure 必须显式使用 --port <MBPS>；不会采用默认值或 PORT_SPEED_MBPS 环境变量。'
-      validate_port_speed "$CLI_PORT_SPEED_MBPS" || die "$EXIT_USAGE" '带宽必须是 100–1000 的整数。'
+      validate_port_speed "$CLI_PORT_SPEED_MBPS" || die "$EXIT_USAGE" '带宽必须是 1–10000 的整数。'
       PORT_SPEED_MBPS_SELECTED=$((10#$CLI_PORT_SPEED_MBPS))
     fi
     return 0
   fi
 
   if [ -n "$CLI_PORT_SPEED_MBPS" ]; then
-    validate_port_speed "$CLI_PORT_SPEED_MBPS" || die "$EXIT_USAGE" '带宽必须是 100–1000 的整数。'
+    validate_port_speed "$CLI_PORT_SPEED_MBPS" || die "$EXIT_USAGE" '带宽必须是 1–10000 的整数。'
     PORT_SPEED_MBPS_SELECTED=$((10#$CLI_PORT_SPEED_MBPS))
   elif [ -n "${PORT_SPEED_MBPS:-}" ]; then
-    validate_port_speed "$PORT_SPEED_MBPS" || die "$EXIT_USAGE" 'PORT_SPEED_MBPS 必须是 100–1000 的整数。'
+    validate_port_speed "$PORT_SPEED_MBPS" || die "$EXIT_USAGE" 'PORT_SPEED_MBPS 必须是 1–10000 的整数。'
     PORT_SPEED_MBPS_SELECTED=$((10#$PORT_SPEED_MBPS))
   elif [ "$ACTION" = 'apply' ] && [ -n "$STATE_PROFILE" ]; then
     validate_port_speed "$STATE_PORT_SPEED_MBPS" ||
@@ -610,6 +626,9 @@ resolve_profile_script() {
 resolve_companion_assets() {
   local local_dir local_manifest controller_source manifest logical source target remote_name
   local -a required=(dvt-traffic-budget.sh)
+  case "$ACTION" in
+    diagnose | measure | htb-sweep | report) required=(dvt-measure.py dvt-measure-runtime.sh dvt_htb_transaction.py measurement-endpoints.json dvt-traffic-budget.sh) ;;
+  esac
   [ "$ACTION" != probe ] || required=(dvt-traffic-budget.sh dvt-probe.sh)
   [ "$ACTION" != migrate ] || required=(dvt-migrate.sh)
   [ "$ACTION" != htb ] || required=(
@@ -625,6 +644,11 @@ resolve_companion_assets() {
   local_manifest="${local_dir}/SHA256SUMS"
   controller_source="${BASH_SOURCE[0]}"
   if [[ "$controller_source" != /* ]]; then controller_source="${PWD}/${controller_source}"; fi
+  case "$ACTION" in
+    diagnose | measure | htb-sweep | report)
+      [ -f "$local_manifest" ] || die "$EXIT_INTEGRITY" '独立诊断/测量需要完整的同版本本地 bundle；此入口不会下载缺失资产。'
+      ;;
+  esac
   if [ -f "$local_manifest" ]; then
     verify_manifest_entry "$local_manifest" "$controller_source" debian-vps-tuning.sh ||
       die "$EXIT_INTEGRITY" '同目录 companion 资产存在，但总控不属于该 SHA256SUMS。'
@@ -639,6 +663,7 @@ resolve_companion_assets() {
     HTB_WRAPPER_PATH="${local_dir}/dvt-htb.sh"
     HTB_BUNDLE_DIR="${local_dir}/experiments/htb-aggregate"
     MIGRATION_PATH="${local_dir}/dvt-migrate.sh"
+    MEASUREMENT_PATH="${local_dir}/dvt-measure.py"
     return 0
   fi
 
@@ -664,6 +689,7 @@ resolve_companion_assets() {
   HTB_WRAPPER_PATH="${TEMP_DIR}/dvt-htb.sh"
   HTB_BUNDLE_DIR="${TEMP_DIR}/experiments/htb-aggregate"
   MIGRATION_PATH="${TEMP_DIR}/dvt-migrate.sh"
+  MEASUREMENT_PATH="${TEMP_DIR}/dvt-measure.py"
 }
 
 print_environment_summary() {
@@ -854,15 +880,28 @@ main() {
   [ "$RELEASE_TAG" = "v${CONTROLLER_VERSION}" ] ||
     die "$EXIT_INTEGRITY" '总控版本与固定 Release tag 不一致。'
   parse_arguments "$@"
-  need_root
-  detect_environment
-  read_existing_state
-  print_environment_summary
-
   if [ -z "$ACTION" ]; then
     is_interactive_terminal || die "$EXIT_USAGE" '非交互环境必须明确指定 action。'
     choose_action_interactively
   fi
+  case "$ACTION" in
+    diagnose | measure | htb-sweep | report)
+      if [ "$ACTION" = diagnose ] && [ "${ACTION_ARGS[0]:-}" = --managed ]; then
+        [ "${#ACTION_ARGS[@]}" -eq 1 ] || die "$EXIT_USAGE" 'diagnose --managed 不接受其他参数。'
+        ACTION_ARGS=()
+      else
+        [ -z "$CLI_PORT_SPEED_MBPS$CLI_UPDATE_TAG" ] || die "$EXIT_USAGE" '独立测量不接受受管 --port/--target。'
+        need_command python3
+        resolve_companion_assets
+        python3 "$MEASUREMENT_PATH" "$ACTION" "${ACTION_ARGS[@]}"
+        return
+      fi
+      ;;
+  esac
+  need_root
+  detect_environment
+  read_existing_state
+  print_environment_summary
   select_port_speed
   if [ "$ACTION" != 'update' ]; then
     resolve_profile_script

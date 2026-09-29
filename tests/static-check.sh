@@ -11,6 +11,9 @@ scripts=(
   debian13-1c512m-vps-tuning.sh
   debian13-1c1g-vps-tuning.sh
   debian13-1c2g-vps-tuning.sh
+  debian12-adaptive-vps-tuning.sh
+  debian13-adaptive-vps-tuning.sh
+  ubuntu2404-adaptive-vps-tuning.sh
 )
 controller='debian-vps-tuning.sh'
 tcpquality_tool='tcpquality-evidence.sh'
@@ -41,7 +44,9 @@ fi
 "$python_cmd" -m unittest discover -s tests -p 'test_*.py'
 bash -n "${scripts[@]}" "$controller" "$tcpquality_tool" "$installer" "$probe_tool" "$htb_wrapper" \
   "$traffic_budget_tool" "$migration_tool" tools/profile-template.sh.in \
-  tests/static-check.sh tests/controller-check.sh tests/installer-check.sh tests/rc18-check.sh
+  dvt-measure-runtime.sh \
+  tests/static-check.sh tests/controller-check.sh tests/installer-check.sh tests/rc18-check.sh \
+  tests/temporary-htb-check.sh
 
 bash tests/controller-check.sh
 
@@ -99,7 +104,7 @@ if [ "$(od -An -tx1 -N3 "$tcpquality_tool" | tr -d ' \n')" = 'efbbbf' ]; then
   printf 'UTF-8 BOM detected: %s\n' "$tcpquality_tool" >&2
   exit 1
 fi
-grep -Fq "TOOL_VERSION='0.1.0-rc.19'" "$tcpquality_tool"
+grep -Fq "TOOL_VERSION='0.2.0-rc.1'" "$tcpquality_tool"
 grep -Fq "SUPPORTED_RELEASE_TAG='v1.00013'" "$tcpquality_tool"
 grep -Fq "SUPPORTED_COMMIT='73606e2460bde21bb2e253842971f8ca8c9eb51c'" "$tcpquality_tool"
 grep -Fq "SUPPORTED_ROOTFS_MANIFEST_SHA256='555a53df40cbdd2778771c089d1bc2c2e1c0a52b5565ad15d2e01d52b90dd0f6'" "$tcpquality_tool"
@@ -141,7 +146,7 @@ expected_keys=17
 for script in "${scripts[@]}"; do
   actual="$(awk '/^PROFILE_SYSCTL_KEYS=\(/,/^\)/ {if ($1 ~ /^(net\.|vm\.)/) count++} END {print count+0}' "$script")"
   [ "$actual" -eq "$expected_keys" ] || { printf 'unexpected managed-key count: %s (%s)\n' "$script" "$actual" >&2; exit 1; }
-  grep -Fq "SCRIPT_VERSION='0.1.0-rc.19'" "$script"
+  grep -Fq "SCRIPT_VERSION='0.2.0-rc.1'" "$script"
   grep -Eq '^STATE_SCHEMA_VERSION=4$' "$script"
   grep -Eq '^LEGACY_STATE_SCHEMA_VERSION=3$' "$script"
   grep -Fq 'PROFILE_CPU_MIN=' "$script"
@@ -328,14 +333,14 @@ for script in "${scripts[@]}"; do
   }
 done
 
-grep -Fq "CONTROLLER_VERSION='0.1.0-rc.19'" "$controller"
-grep -Fq "RELEASE_TAG='v0.1.0-rc.19'" "$controller"
+grep -Fq "CONTROLLER_VERSION='0.2.0-rc.1'" "$controller"
+grep -Fq "RELEASE_TAG='v0.2.0-rc.1'" "$controller"
 grep -Fq "DEFAULT_PORT_SPEED_MBPS=200" "$controller"
 grep -Fq 'verify_profile_contract' "$controller"
 grep -Fq 'debian12-1c512m-vps-tuning.sh' "$controller"
 grep -Fq 'debian13-1c512m-vps-tuning.sh' "$controller"
 grep -Fq "resource_class='2C2GB'" "$controller"
-grep -Fq 'diagnose（5 秒只读增量诊断）' "$controller"
+grep -Fq 'diagnose（按实际 Linux 能力只读诊断，无需 profile）' "$controller"
 grep -Fq 'probe（重复、限速、advisory-only；需已授权 iperf3）' "$controller"
 grep -Fq 'benchmark（高级单次证据入口；需 BENCHMARK_HOST）' "$controller"
 grep -Fq 'HTB 实验（仅 Debian 13 / 200 Mbps / 非持久化）' "$controller"
@@ -357,7 +362,7 @@ if grep -Eq 'raw\.githubusercontent\.com|/master/|/main/|releases/latest|http://
   exit 1
 fi
 
-grep -Fq "RELEASE_TAG='v0.1.0-rc.19'" "$installer"
+grep -Fq "RELEASE_TAG='v0.2.0-rc.1'" "$installer"
 grep -Eq "EXPECTED_MANIFEST_SHA256='[0-9a-f]{64}'" "$installer"
 if grep -Fq "EXPECTED_MANIFEST_SHA256='0000000000000000000000000000000000000000000000000000000000000000'" "$installer"; then
   printf 'installer manifest digest placeholder was not finalized\n' >&2
@@ -370,7 +375,7 @@ manifest_hash="$(sha256sum SHA256SUMS | awk '{print $1}')"
 grep -Fq "EXPECTED_MANIFEST_SHA256='${manifest_hash}'" "$installer"
 installer_hash="$(sha256sum "$installer" | awk '{print $1}')"
 grep -Fq "$installer_hash" README.md
-grep -Fq "$manifest_hash" docs/releases/v0.1.0-rc.19.md
+grep -Fq "$manifest_hash" docs/releases/v0.2.0-rc.1.md
 if grep -Eq 'raw\.githubusercontent\.com|/master/|/main/|releases/latest|http://' "$installer"; then
   printf 'mutable or insecure installer download source detected\n' >&2
   exit 1
@@ -1395,7 +1400,7 @@ EXIT_USAGE=2
 EXIT_UNSUPPORTED=3
 EXIT_CONFLICT=4
 EXIT_VERIFY=5
-SCRIPT_VERSION='0.1.0-rc.19'
+SCRIPT_VERSION='0.2.0-rc.1'
 PROFILE_ID='debian13-1c1g'
 STATE_FILE="$test_root/no-state.json"
 ensure_required_tools() { :; }
@@ -1599,7 +1604,7 @@ PACKET_SIZE=0
 PARALLEL=16
 ROOTFS_SHA256='c624b5cc611b7177c42608110024764e59dfd0a88150257137ae4e6d7f9f9d18'
 GET_NODES_URL='https://nodes.example.test/getNodes'
-TOOL_VERSION='0.1.0-rc.19'
+TOOL_VERSION='0.2.0-rc.1'
 MODE='local-evidence'
 mkdir "$EVIDENCE_DIR" "$PIN_DIR"
 : >"$PIN_DIR/SHA256SUMS"
@@ -1622,7 +1627,7 @@ cross_version_apply_test="$tmp_dir/cross-version-apply-test.sh"
   awk '/^apply_settings\(\)/,/^}/' "${scripts[0]}"
   cat <<'EOF_CROSS_VERSION_APPLY_TEST'
 EXIT_CONFLICT=4
-SCRIPT_VERSION='0.1.0-rc.19'
+SCRIPT_VERSION='0.2.0-rc.1'
 PORT_SPEED_MBPS=200
 BUFFER_TARGET_RTT_MS=200
 BUF_MAX=16777216
@@ -1653,7 +1658,7 @@ parameter_mismatch_apply_test="$tmp_dir/parameter-mismatch-apply-test.sh"
   awk '/^apply_settings\(\)/,/^}/' "${scripts[0]}"
   cat <<'EOF_PARAMETER_MISMATCH_APPLY_TEST'
 EXIT_CONFLICT=4
-SCRIPT_VERSION='0.1.0-rc.19'
+SCRIPT_VERSION='0.2.0-rc.1'
 PORT_SPEED_MBPS=100
 BUFFER_TARGET_RTT_MS=200
 BUF_MAX=16777216
@@ -2406,7 +2411,7 @@ PY
     jq -n \
       --argjson schema 4 --arg version 'test' \
       --arg profile 'test-profile' --arg profile_label 'Test Profile' \
-      --arg debian '12' --arg arch 'x86_64' --arg kernel 'test-kernel' \
+      --arg debian '12' --arg os_id 'debian' --arg os_version '12' --arg arch 'x86_64' --arg kernel 'test-kernel' \
       --argjson mem 960 --argjson port 1000 --argjson rtt 200 \
       --argjson buf 33554432 --arg mode 'auto' \
       --argjson target_numerator 5 --argjson target_denominator 4 \
@@ -2560,7 +2565,7 @@ STATE_DIR='/var/lib/proxy-vps-tuning'
 SYSCTL_SCAN_ROOT='/etc'
 STATE_SCHEMA_VERSION=4
 LEGACY_STATE_SCHEMA_VERSION=3
-SCRIPT_VERSION='0.1.0-rc.19'
+SCRIPT_VERSION='0.2.0-rc.1'
 PROFILE_ID='debian12-1c1g'
 UPDATE_PREFLIGHT=0
 stat() { printf '%s\n' '0'; }
@@ -2579,7 +2584,7 @@ for fixture in empty whitespace null object multiple; do
   fi
 done
 
-printf '%s\n' '{"schema_version":4,"script_version":"0.1.0-rc.19","profile":{"id":"debian12-1c1g"},"state":"PREPARED","network":{},"original_sysctls":{},"qdisc":{"file":"/tmp/qdisc","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"swap":{},"provider_sysctl_transfer":{"required":false,"source_path":"/etc/sysctl.conf","backup_path":"/var/lib/proxy-vps-tuning/provider-sysctl.conf.original","original_sha256":null,"backup_sha256":null,"transferred_sha256":null,"original_uid":null,"original_gid":null,"original_mode":null,"keys":[],"state":"NOT_REQUIRED"},"managed_files":[],"timestamps":{}}' >"$STATE_FILE"
+printf '%s\n' '{"schema_version":4,"script_version":"0.2.0-rc.1","profile":{"id":"debian12-1c1g"},"state":"PREPARED","network":{},"original_sysctls":{},"qdisc":{"file":"/tmp/qdisc","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"swap":{},"provider_sysctl_transfer":{"required":false,"source_path":"/etc/sysctl.conf","backup_path":"/var/lib/proxy-vps-tuning/provider-sysctl.conf.original","original_sha256":null,"backup_sha256":null,"transferred_sha256":null,"original_uid":null,"original_gid":null,"original_mode":null,"keys":[],"state":"NOT_REQUIRED"},"managed_files":[],"timestamps":{}}' >"$STATE_FILE"
 state_file_is_valid
 
 cp -- "$STATE_FILE" "${STATE_FILE}.valid"
@@ -3072,6 +3077,8 @@ qdisc_snapshot_matches_current() { return 1; }
 restore_qdiscs() { return 0; }
 qdisc_snapshot_semantically_matches_current() { QDISC_MATCH_REASON='restored options differ'; return 1; }
 restore_original_sysctls() { return 0; }
+original_sysctl_vectors_are_complete() { return 0; }
+original_sysctls_match_current() { return 0; }
 purge_owned_swap() { return 0; }
 systemctl() { return 0; }
 sysctl() { return 0; }
