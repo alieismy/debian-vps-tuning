@@ -2,7 +2,7 @@
 
 # Debian VPS Tuning
 
-`v0.2.0-rc.1` is the prerelease candidate for three capabilities: [automatic public iperf3 measurement](docs/automatic-measurement.md) without prior apply, [temporary HTB sweeps](docs/temporary-htb.md) with full restoration, and [persistent platform profiles](docs/platform-support.md) for Debian 12/13 and Ubuntu 24.04 LTS on x86_64/ARM64. Resource profiles are adaptive outside the original Debian tiers, and configuration bandwidth accepts 1–10000 Mbps. The download commands below become available when this candidate is published.
+`v0.2.0-rc.1` is a prerelease with three capabilities: [automatic public iperf3 measurement](docs/automatic-measurement.md) without prior apply, [temporary HTB sweeps](docs/temporary-htb.md) with full restoration, and [persistent platform profiles](docs/platform-support.md) for Debian 12/13 and Ubuntu 24.04 LTS on x86_64/ARM64. Resource profiles are adaptive outside the original Debian tiers, and configuration bandwidth accepts 1–10000 Mbps. Installation uses the fixed version and hashes below.
 
 ```bash
 # Plan only: no traffic or configuration writes
@@ -31,7 +31,7 @@ The following commands assume you have entered the VPS root shell (prompt usuall
 
 An existing managed installation must first pass the [migration source checks](docs/platform-support.md#旧状态与迁移). Installing the new entrypoint alone does not migrate state.
 
-The v0.2.0-rc.1 candidate, once published, can be installed through the following immutable entry after verifying the installer before execution. It does not fall back to `main`, `master`, or `latest`, and installation itself does not run tuning or generate test traffic:
+Install v0.2.0-rc.1 through the following immutable entry after verifying the installer before execution. It does not fall back to `main`, `master`, or `latest`, and installation itself does not run tuning or generate test traffic:
 
 ```bash
 (
@@ -254,12 +254,13 @@ bash ./debian-vps-tuning.sh diagnose
 # benchmark also requires BENCHMARK_HOST, see below
 bash ./debian-vps-tuning.sh benchmark
 bash ./debian-vps-tuning.sh update
-bash ./debian-vps-tuning.sh update --target v0.1.0-rc.16
+# Only for an existing older managed state: check the new target
+bash ./debian-vps-tuning.sh update --target v0.2.0-rc.1
 bash ./debian-vps-tuning.sh rollback
 bash ./debian-vps-tuning.sh recover
 ```
 
-In automated environments without an interactive terminal, the action must be explicitly specified; it will not implicitly enter a menu or auto-apply. CLI `reconfigure` requires an explicit `--port`; neither the normal default nor a `PORT_SPEED_MBPS` environment variable can supply the target. `recover` handles an interrupted rc.16 bandwidth-reconfiguration transaction and retains the explicitly acknowledged rc.2 empty-state quarantine branch.
+In automated environments without an interactive terminal, the action must be explicitly specified; it will not implicitly enter a menu or auto-apply. CLI `reconfigure` requires an explicit `--port`; neither the normal default nor a `PORT_SPEED_MBPS` environment variable can supply the target. `recover` handles an interrupted bandwidth-reconfiguration transaction for the current script version and retains the explicitly acknowledged rc.2 empty-state quarantine branch.
 
 This project does not recommend the following forms as entry points:
 
@@ -777,9 +778,9 @@ When repeatedly executing `apply` with the same script version and parameters, t
 
 State updates are first written to a temporary file in the same directory by `jq`, then the command exit code, non-empty, single JSON object, and complete schema are checked; only after all pass is `state.json` atomically replaced. Empty files, blank files, multiple JSON documents, or update failures must not overwrite the previous valid state.
 
-When a provider changes the port limit of an already managed VPS, use `dvt reconfigure --port <MBPS>`. The operation only accepts a `VERIFIED` state owned by the same rc.16 profile, performs a complete pre-change `verify`, keeps the existing target RTT, recalculates automatic buffers for the new bandwidth, and preserves an explicit buffer value. Requesting the currently recorded bandwidth is verification-only and performs no writes. The normal `apply` mismatch gate remains unchanged; do not edit `state.json` manually.
+When a provider changes the port limit of an already managed VPS, use `dvt reconfigure --port <MBPS>`. The operation only accepts a `VERIFIED` state owned by the same script version and profile, performs a complete pre-change `verify`, keeps the existing target RTT, recalculates automatic buffers for the new bandwidth, and preserves an explicit buffer value. Requesting the currently recorded bandwidth is verification-only and performs no writes. The normal `apply` mismatch gate remains unchanged; do not edit `state.json` manually.
 
-For a real change, rc.16 stores root-only fixed backups of the previous state and managed sysctl file, commits a `RECONFIGURING` transaction, writes the candidate file/state, applies the managed sysctl file only when effective buffer values change, and performs complete candidate verification before atomically returning to `VERIFIED`. It does not rebuild qdisc or change swap, journald, or NOFILE. Any failure attempts to restore the old sysctl and old `VERIFIED` state. If recovery is incomplete, the transaction remains `DEGRADED`; ordinary `verify`, `rollback`, `preflight`, and `apply` refuse to cross it, and `dvt recover` must complete recovery first.
+For a real change, the script stores root-only fixed backups of the previous state and managed sysctl file, commits a `RECONFIGURING` transaction, writes the candidate file/state, applies the managed sysctl file only when effective buffer values change, and performs complete candidate verification before atomically returning to `VERIFIED`. It does not rebuild qdisc or change swap, journald, or NOFILE. Any failure attempts to restore the old sysctl and old `VERIFIED` state. If recovery is incomplete, the transaction remains `DEGRADED`; ordinary `verify`, `rollback`, `preflight`, and `apply` refuse to cross it, and `dvt recover` must complete recovery first.
 
 ### Upgrading from rc.15 to rc.16
 

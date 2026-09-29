@@ -1,6 +1,6 @@
 # 跨平台持久配置支持
 
-日期：2026-09-29。适用：未发布 `0.2.0-rc.1` 候选；第三阶段已进入实现，真实平台生命周期结果以本页矩阵和[验证说明](validation.md)为准。旧 rc.19 的公开资产与支持范围不变。
+日期：2026-09-29。适用：`0.2.0-rc.1` 预发行版；第三阶段实现与七组隔离客体生命周期验收完成，范围以本页矩阵和[验证说明](validation.md)为准。旧 rc.19 的公开资产与支持范围不变。
 
 ## 平台与资源选择
 
@@ -41,13 +41,15 @@ schema 4 的 `profile` 增加 `os_id`/`os_version` 描述字段；Debian 保留 
 
 | 平台 | x86_64 | ARM64 |
 |---|---|---|
-| Debian 12 | `9ea12a6` 完整生命周期通过 | `9ea12a6` 完整生命周期通过 |
-| Debian 13 | `9ea12a6` 完整生命周期通过 | `9ea12a6` 完整生命周期通过 |
-| Ubuntu 24.04 LTS | `9ea12a6` 完整生命周期通过 | 首轮准备超时，修正测试准备后待复验 |
+| Debian 12 | `5b53adc` 完整生命周期通过 | `5b53adc` 完整生命周期通过 |
+| Debian 13 | `5b53adc` 完整生命周期通过 | `5b53adc` 完整生命周期通过 |
+| Ubuntu 24.04 LTS | `5b53adc` 完整生命周期通过 | `5b53adc` 完整生命周期通过 |
 
-证据来自 [CI 36534049122](https://github.com/alieismy/debian-vps-tuning/actions/runs/36534049122) 的六个成功 job，六份下载归档均已逐项复核。legacy 的 1024 MiB swap 创建、重启验证和回滚清理通过。整个 run 因 Ubuntu ARM64 失败而未通过，不能把六项成功写成全矩阵通过。
+证据来自固定 `5b53adc72320471225c1b3c55bf741703985d81f` 的 [CI 36540841895](https://github.com/alieismy/debian-vps-tuning/actions/runs/36540841895)，七个 job 全部成功，七份归档的大小、GitHub digest 和客体状态均已逐项复核。表中六组 adaptive 外另有 Debian 13 x86_64 legacy，其 1024 MiB swap 创建、重启验证和回滚清理通过。26 项发布文件与该提交及固定运行实现 `9ea12a6` 逐字节一致，后续发布文档同步不改变这些运行资产。
 
-Ubuntu ARM64 的失败发生在 cloud-init 准备阶段：25 分钟到期时仍在处理 APT 索引，尚未复制项目 bundle 或执行安装/apply。后继测试在同为 Ubuntu 24.04 ARM64 的 runner 上取得官方 jq/libjq1/libonig5 包，记录摘要后交给客体离线安装，避免在 TCG 下处理完整 universe/翻译/DEP-11 索引；内核、OS、两次重启和全部产品断言不变。此准备修正须取得后继运行结果后才能计为通过。
+Ubuntu ARM64 首轮在 cloud-init 处理 APT 索引时达到 25 分钟准备期限，尚未执行项目安装。后继测试由同版本 ARM runner 提供官方 jq 依赖包，准备阶段通过，但仍花费约 22 分钟；安装、首次 apply、同值幂等通过后，在重配置过程中达到 600 秒测试期限。两次失败记录均保留，不计为通过。
+
+第二轮客体启用 QEMU `max` 的 QARMA5 指针认证算法。[QEMU 8.2.2 官方说明](https://github.com/qemu/qemu/blob/v8.2.2/docs/system/arm/cpu-features.rst#tcg-vcpu-features)明确指出 QARMA 软件模拟开销高。`5b53adc` 只对 Ubuntu ARM64 TCG 客体使用 `max,pauth-impdef=on`，保留指针认证能力，记录 CPU 模型；它不提供密码强度或硬件性能证据。镜像、产品代码、资源、期限、两次重启与全部恢复断言不变。后继完整生命周期通过：准备约 5.5 分钟、首次应用阶段约 7 分钟，随后两次重启与全部恢复对照通过；这一测试环境修正不修改 VPS 配置。
 
 `tests/platform-vm.py` 使用固定日期目录和官方镜像摘要、一次性 SSH 凭据、严格主机密钥校验和独立 QEMU 客体；生命周期覆盖校验安装、重复安装、preflight、apply、同值幂等、1→10000→1 Mbps 重配置、真实客体重启、verify、rollback 及再次重启。比较 17 项 sysctl、qdisc 参数、受管文件和状态，保存镜像/架构/内存/页大小/boot ID 及运行输出。客体内不执行公网 iperf3，不接触用户 VPS。
 

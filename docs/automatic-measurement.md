@@ -1,6 +1,6 @@
 # 独立诊断与公共端点速率阶梯测量
 
-适用：未发布的 `0.2.0-rc.1` 完整本地 bundle。实现边界见[第一阶段契约](automatic-measurement-design.md)，研究依据见[可研](tcpfit-policer-refactor-feasibility-2026-09-28.md)。本地适用门禁、[Linux CI](validation.md)及[单机低流量功能验收](automatic-measurement-acceptance-2026-09-28.md)已通过；更广平台、受管生命周期与性能仍未验收。
+适用：`0.2.0-rc.1` 完整且经过摘要核验的 bundle。实现边界见[第一阶段契约](automatic-measurement-design.md)，研究依据见[可研](tcpfit-policer-refactor-feasibility-2026-09-28.md)。本地适用门禁、[Linux CI](validation.md)及[单机低流量功能验收](automatic-measurement-acceptance-2026-09-28.md)已通过；更多平台上的公网测量、IPv6、高速区间与业务收益仍未验收。持久配置的生命周期证据由[平台支持矩阵](platform-support.md)单独记录。
 
 ## 能做什么
 
@@ -20,7 +20,7 @@
 bash debian-vps-tuning.sh measure --rate-cap 20 --plan-only
 ```
 
-安装了新候选时，也可用 `dvt measure`。旧 rc.19 安装不含新入口；本候选尚未发布，不能用不存在的 Release URL 安装。仅本地安装的入口为 `bash install.sh --source-dir "$PWD" --no-launch`，安装会更新 `dvt` 指向，用户应在明确选择版本后执行；已有受管状态的 verify/rollback 继续使用其原版本脚本。
+安装本版本后也可用 `dvt measure`；固定版本联网入口见 [README](../README.md#联网安装与验证)，旧 rc.19 安装不含新入口。完整本地 bundle 的安装入口为 `bash install.sh --source-dir "$PWD" --no-launch`。安装会更新 `dvt` 指向，但不迁移受管状态；已有状态的 verify/rollback 继续使用对应原版本脚本，迁移前须检查[原始快照完整性](platform-support.md#旧状态与迁移)。
 
 确认所在机器可访问目录中的公开服务，并选择一个**新的、私有且父目录已存在的**证据目录。执行资产须由 root 所有且不可被 group/world 写入；安装器会设置这些权限，直接运行源码时也会核验摘要及文件权限。以下是显式启动流量的命令示例，本地开发验证没有执行它：
 

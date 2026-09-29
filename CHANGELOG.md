@@ -1,8 +1,8 @@
 # Changelog
 
-## [0.2.0-rc.1] - Unreleased
+## [0.2.0-rc.1] - 2026-09-29
 
-- 新增第三阶段 Debian 12/13、Ubuntu 24.04 LTS 的 x86_64/ARM64 持久配置候选与自适应资源 profile；受管带宽接受 1–10000 Mbps，按内存封顶 socket buffer，新 profile 默认不创建 swap。平台生命周期按独立 VM 矩阵验证，见 `docs/platform-support.md`。
+- 新增第三阶段 Debian 12/13、Ubuntu 24.04 LTS 的 x86_64/ARM64 持久配置与自适应资源 profile；受管带宽接受 1–10000 Mbps，按内存封顶 socket buffer，新 profile 默认不创建 swap。七组独立 VM 生命周期全部通过并复核归档，见 `docs/platform-support.md`。
 - 修复原始 `tcp_rmem/tcp_wmem` 快照截断制表符三元组的问题；回滚前拒绝不完整原值，恢复后读回核对，迁移准备不接受缺失原值的来源状态。历史丢失字段不自动重建。
 
 - 修复真实单机验收发现的 iproute2 6.15 fq weights 恢复解析问题：整形前验证完整恢复语法，按实际解析能力选择限定兼容参数，冻结并校验恢复参数。首轮失败后已恢复原 fq；后续正常事务与公共路径 SIGINT/SIGTERM 复验通过，完整扫描与性能效果未验收，详见 `docs/temporary-htb-retest-2026-09-28.md`。

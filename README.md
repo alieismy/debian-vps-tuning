@@ -1,6 +1,6 @@
 # Debian VPS Tuning
 
-`v0.2.0-rc.1` 预发行候选包含三项能力：无需先 apply 的[公共 iperf3 自动选点与独立测量](docs/automatic-measurement.md)、可完整恢复的[临时 HTB 拐点扫描](docs/temporary-htb.md)，以及 Debian 12/13、Ubuntu 24.04 LTS 的 x86_64/ARM64 [持久配置支持](docs/platform-support.md)。原 Debian 档位外采用自适应资源策略，配置带宽接受 1–10000 Mbps。下方下载入口在本候选发布后可用。
+`v0.2.0-rc.1` 预发行版包含三项能力：无需先 apply 的[公共 iperf3 自动选点与独立测量](docs/automatic-measurement.md)、可完整恢复的[临时 HTB 拐点扫描](docs/temporary-htb.md)，以及 Debian 12/13、Ubuntu 24.04 LTS 的 x86_64/ARM64 [持久配置支持](docs/platform-support.md)。原 Debian 档位外采用自适应资源策略，配置带宽接受 1–10000 Mbps。安装使用下方固定版本入口与摘要。
 
 ```bash
 # 仅查看计划，无网络流量或配置写入
@@ -30,7 +30,7 @@ Debian VPS Tuning 用于配置 Debian 12/13 和 Ubuntu 24.04 LTS 云 VPS 的主�
 
 已有受管状态时，先核对[旧状态与迁移条件](docs/platform-support.md#旧状态与迁移)。安装新入口不等于迁移状态，不能用新版 apply 覆盖旧状态。
 
-本候选发布后使用下面的固定版本安装入口。它保留“先完整下载、再核对固定 SHA-256、最后执行”三个门禁，不会从 `main`/`master`/`latest` 下载，也不会在安装过程中自动执行调优或产生测试流量：
+使用下面的固定版本安装入口。它保留“先完整下载、再核对固定 SHA-256、最后执行”三个门禁，不会从 `main`/`master`/`latest` 下载，也不会在安装过程中自动执行调优或产生测试流量：
 
 ```bash
 (set -Eeuo pipefail; dvt_i="$(mktemp)"; trap 'rm -f -- "$dvt_i"' EXIT; curl --fail --show-error --silent --location --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 120 -o "$dvt_i" https://github.com/alieismy/debian-vps-tuning/releases/download/v0.2.0-rc.1/install.sh; printf '%s  %s\n' 'a039922793710a90b281a10ba5076761f6a8efd43c96c916328e0fe7c5f70d06' "$dvt_i" | sha256sum -c -; bash "$dvt_i")
@@ -269,7 +269,8 @@ bash ./debian-vps-tuning.sh diagnose
 # benchmark 还需要 BENCHMARK_HOST，见下文
 bash ./debian-vps-tuning.sh benchmark
 bash ./debian-vps-tuning.sh update
-bash ./debian-vps-tuning.sh update --target v0.1.0-rc.16
+# 仅在仍有旧版本管理状态时，检查新目标版本
+bash ./debian-vps-tuning.sh update --target v0.2.0-rc.1
 bash ./debian-vps-tuning.sh rollback
 ```
 
@@ -921,7 +922,7 @@ env PORT_SPEED_MBPS=1000 \
 
 状态更新先由 `jq` 写入同目录临时文件。只有命令退出码、非空检查、单一 JSON 对象和完整结构校验全部通过后，才原子替换 `state.json`。空文件、空白文件、多个 JSON 文档或更新失败均不能覆盖上一个有效状态。
 
-服务商扩容或降配端口后，使用 `dvt reconfigure --port <MBPS>`。开发候选只接受同一 rc.18 版本和 profile 的 `VERIFIED` 状态，先执行完整 `verify`，再保留现有 RTT；自动 buffer 按新带宽重算，显式 buffer 保持原值。同值请求只验证不写入。普通 `apply` 的参数不一致门禁没有放宽，不得手工编辑 `state.json` 代替重配置。
+服务商扩容或降配端口后，使用 `dvt reconfigure --port <MBPS>`。重配置只接受与当前脚本版本和 profile 一致的 `VERIFIED` 状态，先执行完整 `verify`，再保留现有 RTT；自动 buffer 按新带宽重算，显式 buffer 保持原值。同值请求只验证不写入。普通 `apply` 的参数不一致门禁没有放宽，不得手工编辑 `state.json` 代替重配置。
 
 重配置把旧 state 和 sysctl 管理文件保存为 root-only 固定备份，先提交 `RECONFIGURING`，再更新候选文件、必要的运行时 buffer、管理哈希并执行完整候选验证。任何失败会尝试恢复旧 sysctl 和旧 `VERIFIED` 状态；恢复失败时状态保留为 `DEGRADED`，`status` 显示事务和失败证据，普通 `verify`/`rollback`/`apply` 均拒绝越过，必须先执行 `dvt recover`。
 

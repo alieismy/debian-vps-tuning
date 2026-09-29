@@ -1,6 +1,6 @@
 # 临时 HTB 速率阶梯实验
 
-适用：未发布的 `0.2.0-rc.1` 完整候选 bundle。入口为 `dvt htb-sweep`，是 tcpfit 重构路线的第二阶段实现；普通、不修改 qdisc 的测量继续使用 [`dvt measure`](automatic-measurement.md)。当前验证状态以[验证说明](validation.md)为准。第一阶段 `d650709` 的真实 VPS 证据不能证明本入口的整形与恢复已经在 VPS 验收。
+适用：`0.2.0-rc.1` 完整且经过摘要核验的 bundle。入口为 `dvt htb-sweep`，是 tcpfit 重构路线的第二阶段实现；普通、不修改 qdisc 的测量继续使用 [`dvt measure`](automatic-measurement.md)。各轮固定版本的 VPS 与隔离 VM 验证状态见[验证说明](validation.md)；第一阶段普通测量的证据不替代本入口的整形与恢复验收。
 
 ## 行为与适用范围
 

@@ -10,6 +10,10 @@
 
 经既有授权只读核对一台测试 VPS，确认它的 rc.16 来源状态中两项 TCP 原值各只有一个字段；rc.19 总控与旧状态并存，状态摘要前后未变。本轮未对该主机写入、测速或重启，新版迁移须继续阻断此类不完整来源。此事实不影响全新主机的生命周期实现，但阻止宣称该存量主机已经完成升级。
 
+后继 `1b1ee5b` 的六组生命周期也通过并完成归档复核；Ubuntu ARM64 已通过依赖准备、安装、首次 apply 和同值幂等，但在重配置过程中触及 600 秒测试期限。`5b53adc` 仅调整该客体的 QEMU 指针认证模拟算法，全部期限与产品断言保持，详见[平台支持](platform-support.md)。该提交的 [push CI 36540841878](https://github.com/alieismy/debian-vps-tuning/actions/runs/36540841878) 与 [PR CI 36540847005](https://github.com/alieismy/debian-vps-tuning/actions/runs/36540847005) 均通过，日志核验 89 项 Python 无跳过、九份 profile、安装/迁移、原生 tc/iperf3 与 ShellCheck。
+
+最终 [平台复验 36540841895](https://github.com/alieismy/debian-vps-tuning/actions/runs/36540841895) 的七组全部成功；七份归档的大小/GitHub digest、实际 OS/架构、两次 boot ID 变化、17 项原值、qdisc、三类 HTB 恢复和 legacy swap 均独立复核。Ubuntu ARM64 的准备约 5.5 分钟、首次应用阶段约 7 分钟，未放宽原期限或断言。26 项发布文件与 `5b53adc` 及固定运行实现 `9ea12a6` 逐字节一致；后继文档同步沿用这一明确绑定的功能证据，不扩大到公网高速、IPv6、特定云厂商硬件或代理业务收益。
+
 
 ## 0.2.0-rc.1 第二阶段临时 HTB 候选（2026-09-28）
 
