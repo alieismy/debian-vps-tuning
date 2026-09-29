@@ -57,7 +57,11 @@ def main():
         assert runner_os.get('VERSION_ID', '').strip('"') == '24.04'
         dependencies = work / 'guest-dependencies'
         dependencies.mkdir()
-        run(['apt-get', 'download', 'jq:arm64', 'libjq1:arm64', 'libonig5:arm64'], cwd=dependencies)
+        try:
+            run(['apt-get', 'download', 'jq:arm64', 'libjq1:arm64', 'libonig5:arm64'],
+                cwd=dependencies, timeout=120)
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError('Ubuntu ARM guest dependency download exceeded 120 seconds') from error
         packages = sorted(dependencies.glob('*.deb'))
         assert len(packages) == 3, 'unexpected Ubuntu jq dependency set'
         records = []
