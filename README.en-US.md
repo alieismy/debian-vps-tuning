@@ -2,21 +2,26 @@
 
 # Debian VPS Tuning
 
-The third-stage candidate adds [persistent platform support](docs/platform-support.md) for Debian 12/13 and Ubuntu 24.04 LTS on x86_64/ARM64, adaptive resource profiles, and 1–10000 Mbps configuration inputs. Native guest lifecycle results are tracked separately; the rc.19 installation and resource limits below describe the published old release.
+`v0.2.0-rc.1` is the prerelease candidate for three capabilities: [automatic public iperf3 measurement](docs/automatic-measurement.md) without prior apply, [temporary HTB sweeps](docs/temporary-htb.md) with full restoration, and [persistent platform profiles](docs/platform-support.md) for Debian 12/13 and Ubuntu 24.04 LTS on x86_64/ARM64. Resource profiles are adaptive outside the original Debian tiers, and configuration bandwidth accepts 1–10000 Mbps. The download commands below become available when this candidate is published.
 
-The unpublished `0.2.0-rc.1` working branch now includes a second-stage `htb-sweep` entry. It reuses automatic endpoint selection and the shared traffic budget, requires an explicit interface and rate bounds, and temporarily shapes **all egress traffic** on that interface. Only a single root fq with fully restorable options is accepted; a frozen checkpoint and an independent watchdog protect restoration. See the [temporary HTB contract](docs/temporary-htb.md) and [validation record](docs/validation.md). The [first real-VPS HTB attempt](docs/temporary-htb-acceptance-2026-09-28.md) failed automatic restoration because of an fq weights parser defect. The original fq was recovered, and the candidate now validates restore syntax before shaping and handles the affected parser. The fix has passed a bounded [normal transaction and public-path SIGINT/SIGTERM retest](docs/temporary-htb-retest-2026-09-28.md) on the target. A subsequent [sampling correction and complete CLI retest](docs/temporary-htb-sampling-2026-09-28.md) finished normally and restored the original fq. Eleven of 15 samples were eligible, with no receiver divergence; window/resource failures and control drift kept the overall result at `INSUFFICIENT_EVIDENCE`. A reliable knee and performance benefits remain unverified. Earlier VPS acceptance applies separately to the first-stage `d650709` measurement code. Persistent configuration support remains unchanged.
+```bash
+# Plan only: no traffic or configuration writes
+bash debian-vps-tuning.sh measure --rate-cap 20 --plan-only
+```
 
-A conservative host network tuning script for Debian 12/13 small cloud VPS. The project primarily targets natively systemd-deployed **3X-UI, Xray-core, VLESS + REALITY + TCP** scenarios; the current target machine acceptance baseline includes 3X-UI v3.4.2 and Xray-core v26.6.27, but this is not a compatibility guarantee for other versions. The script also provides limited read-only recognition for S-UI, sing-box, and standalone Xray services.
+The [validation record](docs/validation.md) separates Linux CI, native guest lifecycles and bounded VPS evidence. Automatic IPv4 measurement and normal/interrupted temporary HTB restoration have been exercised on one VPS. The complete low-rate sweep produced 11 eligible samples out of 15 and `INSUFFICIENT_EVIDENCE`; no reliable policer knee or proxy performance benefit has been established. HTB remains temporary and accepts only a fully restorable single root fq. Historical migration examples below retain their original versions.
+
+A conservative host network tuning script for Debian 12/13 and Ubuntu 24.04 LTS cloud VPS. The project primarily targets natively systemd-deployed **3X-UI, Xray-core, VLESS + REALITY + TCP** scenarios; the current target machine acceptance baseline includes 3X-UI v3.4.2 and Xray-core v26.6.27, but this is not a compatibility guarantee for other versions. The script also provides limited read-only recognition for S-UI, sing-box, and standalone Xray services.
 
 The script uses BBR + fq, controlled TCP buffering, standard queue parameters, emergency swap, and journald space limits, with explicit `preflight`, `apply`, `reconfigure`, `verify`, and rollback lifecycles. It does not configure proxy services, routing, or firewalls, nor does it promise to increase throughput or reduce latency across all routes, virtualization platforms, and loads.
 
 > **System Selection Summary (as of 2026-08-04):** Newly created 1C1G, 1C2G, and 2C2G VPS instances are recommended to use Debian 13 minimal by default. Debian 13 is the current stable release; Debian 12 has transitioned to LTS and is better suited for retaining existing stable nodes or meeting explicit compatibility constraints. The OS version alone does not guarantee BBR availability, higher performance, or lower idle memory usage; virtualization type, running kernel, and target machine resources must still be verified.
 
-> The current prerelease is `v0.1.0-rc.19`. The first installation example below is pinned to rc.19; later migration examples retain immutable historical rc.17 paths. The official `v0.1.0` still requires [Target VPS Runtime Acceptance](docs/validation.md). This prerelease does not establish target-host, full-bandwidth, or performance acceptance.
+> This is a Pre-release, not a stable performance claim. Platform lifecycle coverage and remaining target-host gates are documented in the [support matrix](docs/platform-support.md).
 
-> This English document was originally translated from the rc.11 documentation. Release-critical URLs and the current development contracts are synchronized here. The Chinese [README](README.md) and the [rc.19 release notes](docs/releases/v0.1.0-rc.19.md) remain authoritative for the complete traffic-budget ledger, checkpoint/resume migration, installer, TcpQuality evidence, advisory probe, non-persistent HTB, and `mq 0:` handling details.
+> This English document was originally translated from the rc.11 documentation. Release-critical URLs and the current development contracts are synchronized here. The Chinese [README](README.md) and the [current release notes](docs/releases/v0.2.0-rc.1.md) remain authoritative for the complete traffic-budget ledger, checkpoint/resume migration, installer, TcpQuality evidence, advisory probe, non-persistent HTB, and `mq 0:` handling details.
 
-rc.19 adds repository-only offline calibration of existing probe evidence. See [usage and evidence boundaries](docs/measured-calibration.md). It generates no traffic and applies no settings.
+Repository-only offline calibration remains available for fixed-profile evidence; adaptive profiles are rejected until their evidence contract is defined. It performs calibration of existing probe evidence. See [usage and evidence boundaries](docs/measured-calibration.md). It generates no traffic and applies no settings.
 
 ## Online Installation and Verification
 
@@ -24,7 +29,9 @@ The following commands assume you have entered the VPS root shell (prompt usuall
 
 ### 1. Online Installation
 
-The rc.19 prerelease can be installed through the following immutable entry after verifying the installer before execution. It does not fall back to `main`, `master`, or `latest`, and installation itself does not run tuning or generate test traffic:
+An existing managed installation must first pass the [migration source checks](docs/platform-support.md#旧状态与迁移). Installing the new entrypoint alone does not migrate state.
+
+The v0.2.0-rc.1 candidate, once published, can be installed through the following immutable entry after verifying the installer before execution. It does not fall back to `main`, `master`, or `latest`, and installation itself does not run tuning or generate test traffic:
 
 ```bash
 (
@@ -35,9 +42,9 @@ The rc.19 prerelease can be installed through the following immutable entry afte
     --proto '=https' --proto-redir '=https' \
     --connect-timeout 15 --max-time 120 \
     -o "$dvt_i" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.19/install.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.2.0-rc.1/install.sh
   printf '%s  %s\n' \
-    '3bef587d479f5771da9af8d193baa63b7a7f8480016adf5514dfc944429a8ed3' \
+    'a039922793710a90b281a10ba5076761f6a8efd43c96c916328e0fe7c5f70d06' \
     "$dvt_i" | sha256sum -c -
   bash "$dvt_i"
 )
@@ -74,10 +81,10 @@ Execute after re-logging into the VPS. `verify` is read-only validation and will
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.17/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.2.0-rc.1/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    '2530f70a5a675c4733d5bc0109ccbcc35daee23a9e460d920a4b346a3216bfc7' \
+    'c547a88c519f27d2996eaaf6fe34716dffc391492687251a801387af20429dc2' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   bash "$dvt_tmp/debian-vps-tuning.sh" verify
@@ -105,10 +112,10 @@ The recommended order is to complete tuning and reboot verification first, then 
     --connect-timeout 15 \
     --max-time 120 \
     -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.17/debian-vps-tuning.sh
+    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.2.0-rc.1/debian-vps-tuning.sh
 
   printf '%s  %s\n' \
-    '2530f70a5a675c4733d5bc0109ccbcc35daee23a9e460d920a4b346a3216bfc7' \
+    'c547a88c519f27d2996eaaf6fe34716dffc391492687251a801387af20429dc2' \
     "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
 
   env \
@@ -123,6 +130,8 @@ printf 'strict_verify_after_3xui_exit=%s\n' "$?"
 Strict verification requires `x-ui.service` to be active, and checks that the systemd configuration, 3X-UI main process, and direct Xray child process NOFILE soft/hard limits are all not less than 65536. Reboot once more after installing 3X-UI, and repeat this strict verification command to prove that boot startup and new process inheritance are still correct.
 
 ### 4. Execute Read-Only Upgrade Check from Early rc Versions (historical rc.17 example)
+
+Recovery limitation added on 2026-09-29: older releases may have saved incomplete original TCP buffer vectors. Before any historical rollback, check the [original-value and recovery conditions](docs/platform-support.md#旧状态与迁移). Successful old-version verify does not prove that all three original fields were saved. Keep incomplete states and stop before rollback or reboot.
 
 For a direct rc.16-to-rc.19 migration, follow the [complete Chinese guide](README.md#从-rc16-升级到-rc19). It pins the rc.19 controller, runs read-only `update --target v0.1.0-rc.19`, prepares a persistent checkpoint with that controller, and separates the two manual reboot gates from the final installer switch. The currently installed rc.16 `dvt` must not be used for `migrate prepare`. The rc.17 example below is retained as a historical read-only check.
 
@@ -161,10 +170,10 @@ A cross-version upgrade may remove the old managed version before installing the
 
 ### 5. Online Execution Notes
 
-- Only supports vendor minimal Debian 12/13, `x86_64/amd64`, and the four CPU/memory resource tiers listed in the README; other combinations will be rejected;
-- Port bandwidth should be the provider's plan limit, not the link speed shown by the virtual NIC; default is 200 Mbps, allows 100–1000 Mbps;
-- Online entry is pinned to `v0.1.0-rc.17` and never falls back to `master`, `main`, `latest`, HTTP, or third-party mirrors;
-- The commands verify the fixed SHA-256 of the rc.17 main entry before execution; the controller then verifies the Release `SHA256SUMS` and selected profile again;
+- Persistent profiles support Debian 12/13 and Ubuntu 24.04 LTS on `x86_64`/`aarch64`; the [platform contract](docs/platform-support.md) defines resource selection and capability checks;
+- Port bandwidth should be the provider's plan limit, not the link speed shown by the virtual NIC; default is 200 Mbps, allows 1–10000 Mbps;
+- Current installation and post-reboot verification are pinned to `v0.2.0-rc.1`; explicitly historical migrations retain their versions. Downloads never fall back to `master`, `main`, `latest`, HTTP, or third-party mirrors;
+- Each command verifies the fixed SHA-256 for its selected release before execution; the controller then verifies that release's `SHA256SUMS` and selected profile again;
 - Main entry, `SHA256SUMS`, and profile must come from one Release; do not mix rc.16 and rc.17 assets in `/root` or one working directory;
 - Tags should not be moved or same-named assets replaced after publication; release a new version when defects are found;
 - `update` is a read-only upgrade check and will not automatically migrate configurations; after a passed check, you must still choose another maintenance window to complete manual rollback/apply and two reboots;
@@ -225,7 +234,7 @@ Therefore, the project will not roll back rc.10 based on these single reports, m
 
 ## Local Usage and Command Line Mode
 
-`debian-vps-tuning.sh` is the main entry point. It automatically reads the Debian major version, amd64 architecture, available logical CPUs, and actual memory, selecting one from six OS/memory profiles; users do not need to manually determine 512M/1G/2G filenames. The main entry script does not contain another set of tuning logic, it only handles selection, SHA-256 verification, and invocation.
+`debian-vps-tuning.sh` is the main entry point. It reads OS/version, x86_64/aarch64 architecture, logical CPUs and memory to select one of nine profiles. Original Debian tiers retain their profile IDs; other supported combinations use adaptive profiles. The main entry script does not contain another set of tuning logic, it only handles selection, SHA-256 verification, and invocation.
 
 Run from the complete project directory:
 
@@ -263,12 +272,12 @@ The reason is that they directly execute the download stream under root privileg
 
 ## Applicable Scenarios
 
-- VPS vendor pre-installed Debian 12 or Debian 13 minimal systems;
-- `x86_64/amd64`; supports four resource tiers: 1C512MB, 1C1GB, 1C2GB, and 2C2GB;
-- Measured memory boundaries are 384–767 MiB, 768–1535 MiB, or 1536–3072 MiB;
+- Minimal Debian 12/13 or Ubuntu 24.04 LTS with native systemd;
+- `x86_64/amd64` or `aarch64/arm64`; at least one logical CPU;
+- At least 384 MiB physical RAM; original Debian tiers retain their policies, with adaptive selection outside those tiers;
 - 10 GB, 15 GB, or larger SSDs, with sufficient remaining space;
 - Normal default routes for IPv4 or IPv4 + IPv6 dual-stack;
-- Provider port limit 100–1000 Mbps, designed by default at 200 Mbps;
+- Provider port limit 1–10000 Mbps, designed by default at 200 Mbps;
 - Small proxy servers primarily using TCP, with connection scales empirically tested on target machines; the project does not guarantee capacity based on "number of users";
 - The kernel actually provides BBR and fq.
 
@@ -279,7 +288,7 @@ Main validation baselines:
 | Debian 12 (bookworm) | Linux 6.1 series | 1C512MB, 1C1GB, 1C2GB, 2C2GB |
 | Debian 13 (trixie) | Linux 6.12 series | 1C512MB, 1C1GB, 1C2GB, 2C2GB |
 
-These are known validation baselines, not patch level whitelists. The script strictly checks the Debian major version and amd64 architecture, but after kernel minor version changes, it still relies on actual BBR/fq capabilities.
+These are known validation baselines, not patch level whitelists. Current OS/architecture coverage and native guest results are in the [platform matrix](docs/platform-support.md); every host still needs actual BBR/fq capabilities.
 
 ## Debian 12/13 Selection
 
@@ -339,7 +348,7 @@ sysctl -n net.core.default_qdisc
 tc -s -d qdisc show
 ```
 
-The six scripts separately verify OS, CPU, memory, running kernel capabilities, and qdisc topology, avoiding directly copying Debian 12 environmental assumptions to Debian 13. OS selection cannot replace target machine `preflight`.
+The generated profiles separately verify OS, CPU, memory, running kernel capabilities, and qdisc topology, avoiding directly copying Debian 12 environmental assumptions to Debian 13. OS selection cannot replace target machine `preflight`.
 
 ## Script Selection
 
@@ -351,10 +360,13 @@ The six scripts separately verify OS, CPU, memory, running kernel capabilities, 
 | `debian13-1c512m-vps-tuning.sh` | Debian 13 | 1 vCPU | 384–767 MiB | 1024/2048 MiB |
 | `debian13-1c1g-vps-tuning.sh` | Debian 13 | 1 vCPU | 768–1535 MiB | 1024/2048 MiB |
 | `debian13-1c2g-vps-tuning.sh` | Debian 13 | 1–2 vCPU | 1536–3072 MiB | 1024/4096 MiB |
+| `debian12-adaptive-vps-tuning.sh` | Debian 12 | ≥1 vCPU | ≥384 MiB | disabled / 4096 MiB |
+| `debian13-adaptive-vps-tuning.sh` | Debian 13 | ≥1 vCPU | ≥384 MiB | disabled / 4096 MiB |
+| `ubuntu2404-adaptive-vps-tuning.sh` | Ubuntu 24.04 | ≥1 vCPU | ≥384 MiB | disabled / 4096 MiB |
 
-`1c2g` in filenames and state IDs is a compatibility name; the same 2G profile carries both 1C2GB and 2C2GB resource tiers, no duplicate 2C2G files are created, existing `debian12-1c2g`/`debian13-1c2g` states do not need migration. The six resource scripts still perform their own system, architecture, CPU, and memory verification; main entry selection cannot bypass underlying preflight. 2C512MB, 2C1GB, above 3 vCPUs, and out-of-bound memory will be explicitly rejected.
+`1c2g` in filenames and state IDs is a compatibility name: the same 2G profile carries both 1C2GB and 2C2GB. Existing profile IDs remain stable, while a version upgrade still requires the state migration checks. Each profile independently verifies its OS, architecture, CPU and memory; controller selection cannot bypass preflight. Other Debian CPU/RAM combinations select the matching adaptive profile. Ubuntu 24.04 uses its own adaptive profile.
 
-Scripts use 200 Mbps as the default port limit, but also allow explicit setting of 100–1000 Mbps. This should be the VPS plan or provider-given limit, do not treat the link speed shown by the virtual NIC as the plan limit.
+Scripts use 200 Mbps as the default port limit, but also allow explicit setting of 1–10000 Mbps. This should be the VPS plan or provider-given limit, do not treat the link speed shown by the virtual NIC as the plan limit.
 
 ## What the Script Will Modify
 
@@ -693,7 +705,7 @@ and the [VMISS 1C2G A/B/A SOP](docs/experiments/vmiss-1c2g-200mbps-htb-aba.md).
 The old [VMISS Basic v0.2.1 document](docs/experiments/vmiss-basic-200mbps-htb-aba.md)
 is historical audit evidence only.
 
-## 100–1000 Mbps
+## 1–10000 Mbps configuration inputs
 
 100 Mbps:
 
@@ -716,7 +728,7 @@ env PORT_SPEED_MBPS=1000 \
   bash ./debian13-1c2g-vps-tuning.sh apply
 ```
 
-Any integer within 100–1000 can be used, 500 Mbps is also provided in the main menu. rc.16 maintains the rc.15/rc.14/rc.13/rc.12 network parameters: default target RTT is 200 ms, using 1×, 1.25×, 1.5×BDP targets by resource tier, then rounding up to 16/32/64 MiB, constrained by 16/32/64 MiB limits of 512M/1G/2G profiles:
+Any integer within 1–10000 can be configured; this does not certify throughput. Adaptive buffer caps are documented in the [platform contract](docs/platform-support.md). The original fixed-profile policy remains: default target RTT is 200 ms, using 1×, 1.25×, 1.5×BDP targets by resource tier, then rounding up to 16/32/64 MiB, constrained by 16/32/64 MiB limits of 512M/1G/2G profiles:
 
 | Resource Tier | BDP Coeff | 100 Mbps | 200 Mbps | 500 Mbps | 1000 Mbps |
 |---|---:|---:|---:|---:|---:|
@@ -724,17 +736,17 @@ Any integer within 100–1000 can be used, 500 Mbps is also provided in the main
 | 1G | 1.25× | 16 MiB | 16 MiB | 16 MiB | 32 MiB |
 | 2G | 1.5× | 16 MiB | 16 MiB | 32 MiB | 64 MiB |
 
-All resource tiers for the main 200 Mbps are 16 MiB. 512M tier prioritizes limiting memory pressure; 1G/2G tiers progressively increase high BDP headroom, only the 512M/1000 Mbps/200 ms combination triggers a resource truncation warning. The limits here are the maximum socket buffers allowed by auto-tuning, not indicating every connection will immediately fill up. Linux TCP receive buffering still grows automatically by connection demand via auto-tuning; explicit application `setsockopt(SO_RCVBUF)` may change this behavior. Resource truncation is for memory protection, does not mean bandwidth input is invalid. Without continuous monitoring and high BDP evidence, manually specifying `BUF_MAX` is not recommended.
+All fixed resource tiers at 200 Mbps use a 16 MiB cap. The 512M tier prioritizes limiting memory pressure; 1G/2G tiers progressively increase high BDP headroom. Within this table, only the 512M/1000 Mbps/200 ms combination triggers a truncation warning; higher bandwidth inputs can also reach profile caps. These are maximum socket buffers, not memory allocated to every connection. Linux TCP receive buffering grows with connection demand; application `setsockopt(SO_RCVBUF)` may change that behavior. Resource truncation protects memory and does not make the bandwidth input invalid. Avoid manually setting `BUF_MAX` without sustained monitoring and high BDP evidence.
 
 ## Parameters
 
 | Variable | Default | Range/Description |
 |---|---:|---|
-| `PORT_SPEED_MBPS` | `200` | `100–1000` |
+| `PORT_SPEED_MBPS` | `200` | `1–10000` |
 | `BUFFER_TARGET_RTT_MS` | `200` | `20–500` |
-| `BUF_MAX` | `auto` | 512M/1G/2G profile limits are 16/32/64 MiB respectively |
-| `ENABLE_SWAP` | `1` | `0` or `1` |
-| `SWAP_MB` | `1024` | 512M/1G scripts max 2048, 2G script max 4096 |
+| `BUF_MAX` | `auto` | Fixed profiles: 16/32/64 MiB; adaptive: RAM-based cap of 16–256 MiB |
+| `ENABLE_SWAP` | Fixed: `1`; adaptive: `0` | `0` or `1` |
+| `SWAP_MB` | `1024` | 512M/1G scripts max 2048, 2G/adaptive max 4096 |
 | `PURGE_CREATED_SWAP` | `0` | Whether to clean up script-created swap during rollback |
 | `PROXY_SERVICE_UNITS` | Auto-detect | Space-separated systemd services |
 | `REQUIRE_PROXY_SERVICE` | `0` | Verification fails if target proxy service is missing when `1` |
@@ -877,7 +889,7 @@ The first version primarily validates native systemd deployments. Docker may cha
 
 - Local `bash -n`, ShellCheck, generation consistency, disabled key, and encoding checks do not equal successful target VPS runtime;
 - BBR, fq, swap, reboot persistence, UFW, 3X-UI, and actual client connectivity must be validated on the VPS;
-- Current pre-release scope only supports amd64;
+- OS/architecture support and native guest evidence are tracked in the [platform matrix](docs/platform-support.md); this does not prove provider-specific or proxy business behavior;
 - Policy-routing configuration/apply support, TProxy, gateways, Docker firewalls, and complex qdiscs are out of scope; rc.16 adds read-only policy-rule/table evidence only;
 - Performance results are affected by CPU, virtualization overselling, lines, cross-border routing, clients, and encryption overhead.
 - Performance acceptance should separately cover 1, 3, 5, 10 concurrency; the script will not automatically generate proxy traffic.

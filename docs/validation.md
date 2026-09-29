@@ -2,9 +2,13 @@
 
 ## 0.2.0-rc.1 第三阶段跨平台候选（2026-09-29）
 
-新增九份生成 profile、ARM64 和 Ubuntu 24.04 LTS、内存自适应策略与 1–10000 Mbps 配置参数，契约和逐平台状态见[平台支持矩阵](platform-support.md)。固定 `d38ec3f` 的主 Linux CI [36531809720](https://github.com/alieismy/debian-vps-tuning/actions/runs/36531809720) 已通过；同版本真实 VM 在回滚读回中暴露 TCP buffer 原始向量截断，不能记为平台生命周期通过。
+生成 profile 扩为九份，纳入 ARM64、Ubuntu 24.04 LTS、内存自适应策略与 1–10000 Mbps 配置参数，契约和逐平台状态见[平台支持矩阵](platform-support.md)。固定 `d38ec3f` 的主 Linux CI [36531809720](https://github.com/alieismy/debian-vps-tuning/actions/runs/36531809720) 已通过；同版本真实 VM 在回滚读回中暴露 TCP buffer 原始向量截断，不能记为平台生命周期通过。
 
 修正由完整向量回归、来源状态拒绝和回滚读回检查约束。`tests/platform-vm.py` 使用官方固定摘要镜像、原生客体 OS/架构、真实 boot ID 变化及系统状态对照；`tests/platform-htb-native.py` 补充 kernel-created fq 0: 与看护恢复。下列较早提交的通过证据均保留固定版本边界，不替代第三阶段最终提交的结果。
+
+固定 `9ea12a6fcc191129cf09645c5c377e2e28cb3a94` 的 [Linux CI 36534049141](https://github.com/alieismy/debian-vps-tuning/actions/runs/36534049141) 和 PR CI 36534055685 全部通过，日志确认 89 项 Python 无跳过，另覆盖 root 安装/预算/迁移、原生 tc/iperf3 和固定 ShellCheck。平台 [36534049122](https://github.com/alieismy/debian-vps-tuning/actions/runs/36534049122) 的四组 x86_64 已通过且下载归档逐项核验：官方镜像摘要、实际 OS/arch、两次 boot ID 变化、17 项 sysctl 原值恢复、qdisc 参数、三类 fq 0: 恢复和 legacy swap。三组 ARM64 仍运行，不计为通过。
+
+经既有授权只读核对一台测试 VPS，确认它的 rc.16 来源状态中两项 TCP 原值各只有一个字段；rc.19 总控与旧状态并存，状态摘要前后未变。本轮未对该主机写入、测速或重启，新版迁移须继续阻断此类不完整来源。此事实不影响全新主机的生命周期实现，但阻止宣称该存量主机已经完成升级。
 
 
 ## 0.2.0-rc.1 第二阶段临时 HTB 候选（2026-09-28）

@@ -29,15 +29,23 @@ BDP 超过封顶时明确报告 `auto-clamped`；显式 `BUF_MAX` 超过资源�
 
 schema 4 的 `profile` 增加 `os_id`/`os_version` 描述字段；Debian 保留 `debian_version`，Ubuntu 将其置为 `null`。旧 schema 4 读取契约不要求新增字段，不会把 Ubuntu 伪装成 Debian。现有迁移器仍只接受已定义的 rc.1–rc.19 Debian 来源，未为不存在的 Ubuntu 历史版本放宽来源检查。
 
+## 旧状态与迁移
+
+安装新版本只替换执行入口，不迁移旧 managed state。现有主机应保留原版本脚本和状态，用目标版本的 `update --target v0.2.0-rc.1` 做只读检查，再由目标版本的 `migrate prepare` 检查来源和恢复条件。只有 checkpoint 成为 `PREPARED` 后才可按其输出进入回滚、两次重启和目标 apply/verify；不要直接套用下方历史 rc.16→rc.19 的命令来迁移新版本。
+
+本轮发现更早版本可能只保存 `tcp_rmem/tcp_wmem` 的第一项。缺少另外两项时，新迁移器拒绝创建 checkpoint，新回滚路径保留状态并拒绝写入。即使项目文件已经消失，仍不能据此证明内核原值已恢复，因此完整性检查也不为“仅清理残留状态”跳过。这是有意保留的恢复边界。
+
+遇到拒绝时，保留状态、原版完整资产和备份，停在只读盘点。只有可核验的应用前快照或原始配置能支持逐项恢复；不能把当前调优值、发行版默认值或同型号主机的值猜作原值，也不要删除/修改状态来绕过检查。没有原始证据时，应在独立恢复任务中评估有业务备份的干净系统重建；本版不能自动补回历史丢失字段。
+
 ## 验证矩阵
 
 | 平台 | x86_64 | ARM64 |
 |---|---|---|
-| Debian 12 | `8e318c4` 完整生命周期通过 | 运行中 |
-| Debian 13 | `8e318c4` 完整生命周期通过 | 运行中 |
-| Ubuntu 24.04 LTS | `8e318c4` 完整生命周期通过 | 运行中 |
+| Debian 12 | `9ea12a6` 完整生命周期通过 | 运行中 |
+| Debian 13 | `9ea12a6` 完整生命周期通过 | 运行中 |
+| Ubuntu 24.04 LTS | `9ea12a6` 完整生命周期通过 | 运行中 |
 
-x86_64 证据来自 [CI 36533428824](https://github.com/alieismy/debian-vps-tuning/actions/runs/36533428824) 的对应三个已完成 job，不能把仍运行的 ARM64 job 记为通过。另增加 Debian 13/x86_64 1C1G 旧 profile 的默认 swap/生命周期兼容用例。
+x86_64 证据来自 [CI 36534049122](https://github.com/alieismy/debian-vps-tuning/actions/runs/36534049122) 的对应三个 adaptive job 和 Debian 13 的 1C1G legacy job；四份下载归档均已逐项复核。legacy 的 1024 MiB swap 创建、重启验证和回滚清理通过。不能把仍运行的 ARM64 job 记为通过。
 
 `tests/platform-vm.py` 使用固定日期目录和官方镜像摘要、一次性 SSH 凭据、严格主机密钥校验和独立 QEMU 客体；生命周期覆盖校验安装、重复安装、preflight、apply、同值幂等、1→10000→1 Mbps 重配置、真实客体重启、verify、rollback 及再次重启。比较 17 项 sysctl、qdisc 参数、受管文件和状态，保存镜像/架构/内存/页大小/boot ID 及运行输出。客体内不执行公网 iperf3，不接触用户 VPS。
 

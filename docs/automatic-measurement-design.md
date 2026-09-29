@@ -36,4 +36,4 @@
 3. 已完成验证：异常/预算/路径/证据回归、安装资产及文档同步、本地适用门禁及 Linux CI；具体命令结果与 fixture/目标机边界以[验证说明](validation.md)及[项目备忘](project-memo.md)为准，不提升为公共服务或业务验收。
 4. 已完成有限运行验收：单台 Debian 13/x86_64 的 IPv4 公共端点短测、loopback 真实信号/结算和前后配置观察，见[运行记录](automatic-measurement-acceptance-2026-09-28.md)。该第一阶段固定候选记录不覆盖更广平台、IPv6、高速区间、公共路径中断与业务效果；后续临时 HTB 的运行证据单独记录。
 
-后续进度（2026-09-28）：第二阶段已实现独立的 [临时 HTB 扫描](temporary-htb.md)，并取得[正常事务及信号恢复](temporary-htb-retest-2026-09-28.md)和[完整 CLI 采集/恢复](temporary-htb-sampling-2026-09-28.md)的有限运行证据；可靠拐点、更多平台和业务效果尚未验收。第三阶段 Ubuntu/ARM64/大资源持久策略尚未实现，测量入口的能力检测不代表这些平台已支持持久 apply。版本保持未发布候选，当前整体状态见[项目备忘](project-memo.md)。无性能收益或交付日期承诺。
+后续进度（2026-09-29）：第二阶段已实现独立的 [临时 HTB 扫描](temporary-htb.md)，并取得[正常事务及信号恢复](temporary-htb-retest-2026-09-28.md)和[完整 CLI 采集/恢复](temporary-htb-sampling-2026-09-28.md)的有限运行证据；可靠拐点与业务效果尚未验收。第三阶段已实现 Ubuntu 24.04/ARM64/自适应资源的持久策略，契约与逐平台生命周期证据见[平台支持](platform-support.md)。本文件继续作为第一阶段契约，整体交付状态由[项目备忘](project-memo.md)记录，不用测量的能力检测替代持久 apply 的验证。
