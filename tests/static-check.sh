@@ -11,6 +11,9 @@ scripts=(
   debian13-1c512m-vps-tuning.sh
   debian13-1c1g-vps-tuning.sh
   debian13-1c2g-vps-tuning.sh
+  debian12-adaptive-vps-tuning.sh
+  debian13-adaptive-vps-tuning.sh
+  ubuntu2404-adaptive-vps-tuning.sh
 )
 controller='debian-vps-tuning.sh'
 tcpquality_tool='tcpquality-evidence.sh'
@@ -2408,7 +2411,7 @@ PY
     jq -n \
       --argjson schema 4 --arg version 'test' \
       --arg profile 'test-profile' --arg profile_label 'Test Profile' \
-      --arg debian '12' --arg arch 'x86_64' --arg kernel 'test-kernel' \
+      --arg debian '12' --arg os_id 'debian' --arg os_version '12' --arg arch 'x86_64' --arg kernel 'test-kernel' \
       --argjson mem 960 --argjson port 1000 --argjson rtt 200 \
       --argjson buf 33554432 --arg mode 'auto' \
       --argjson target_numerator 5 --argjson target_denominator 4 \

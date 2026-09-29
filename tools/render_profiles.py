@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render the six standalone VPS tuning scripts from one reviewed template."""
+"""从同一模板生成兼容档位、自适应档位及测量 runtime。"""
 
 from __future__ import annotations
 
@@ -128,6 +128,29 @@ PROFILES = {
         "JOURNAL_KEEP_FREE": "1G",
     },
 }
+
+# 既有 profile ID 与策略保持稳定，新平台/资源组合使用独立的自适应契约。
+for values in PROFILES.values():
+    values.update(OS_ID="debian", OS_VERSION=values["DEBIAN_VERSION"],
+                  RESOURCE_POLICY="fixed", DEFAULT_ENABLE_SWAP="1")
+
+for os_id, version, prefix, label in (
+    ("debian", "12", "debian12", "Debian 12"),
+    ("debian", "13", "debian13", "Debian 13"),
+    ("ubuntu", "24.04", "ubuntu2404", "Ubuntu 24.04 LTS"),
+):
+    PROFILES[f"{prefix}-adaptive-vps-tuning.sh"] = {
+        "OS_ID": os_id, "OS_VERSION": version,
+        "DEBIAN_VERSION": version if os_id == "debian" else "",
+        "DEBIAN_CODENAME": {"12": "bookworm", "13": "trixie"}.get(version, ""),
+        "PROFILE_ID": f"{prefix}-adaptive", "PROFILE_LABEL": f"{label} / adaptive",
+        "RESOURCE_POLICY": "adaptive", "DEFAULT_ENABLE_SWAP": "0",
+        "CPU_MIN": "1", "CPU_MAX": "0", "RAM_MIN_MIB": "384", "RAM_MAX_MIB": "0",
+        "BUF_MAX_LIMIT": "268435456", "BUFFER_TARGET_NUMERATOR": "1",
+        "BUFFER_TARGET_DENOMINATOR": "1", "SWAP_MAX_MIB": "4096",
+        "SWAP_RESERVE_MIB": "1024", "JOURNAL_SYSTEM_MAX_USE": "128M",
+        "JOURNAL_RUNTIME_MAX_USE": "64M", "JOURNAL_KEEP_FREE": "1G",
+    }
 
 
 def render(template: str, values: dict[str, str]) -> str:

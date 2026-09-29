@@ -46,7 +46,7 @@ jobs:
       - name: ShellCheck 0.11.0
         run: |
           mkdir -p .tmp/ci-helpers
-          for script in debian1*-vps-tuning.sh; do
+          for script in debian1*-vps-tuning.sh ubuntu*-vps-tuning.sh; do
             helper=".tmp/ci-helpers/${script}.helper"
             awk "/^  write_managed_file .*FQ_HELPER.*<<'EOF_HELPER'/ {inside=1; next} /^EOF_HELPER$/ {inside=0} inside" \
               "$script" >"$helper"
@@ -61,6 +61,9 @@ jobs:
             debian13-1c512m-vps-tuning.sh \
             debian13-1c1g-vps-tuning.sh \
             debian13-1c2g-vps-tuning.sh \
+            debian12-adaptive-vps-tuning.sh \
+            debian13-adaptive-vps-tuning.sh \
+            ubuntu2404-adaptive-vps-tuning.sh \
             tcpquality-evidence.sh \
             dvt-traffic-budget.sh \
             dvt-migrate.sh \
@@ -78,5 +81,6 @@ jobs:
             tests/installer-check.sh \
             tests/rc18-check.sh \
             tests/temporary-htb-check.sh \
+            tests/platform-guest.sh \
             experiments/htb-aggregate/tests/static-check.sh \
             .tmp/ci-helpers/*.helper

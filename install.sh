@@ -9,7 +9,7 @@ export PATH
 INSTALLER_VERSION='0.2.0-rc.1'
 RELEASE_TAG='v0.2.0-rc.1'
 REPOSITORY='alieismy/debian-vps-tuning'
-EXPECTED_MANIFEST_SHA256='a5a110a18b43b6cc7a9864c87b4a5a1ac38d645d36c142d39b4167ff31124b92'
+EXPECTED_MANIFEST_SHA256='286e70f48e8595b5d3665f991c88a7ba3cd2e973b4fcbc4cf0b236f84a428297'
 DEFAULT_PREFIX='/usr/local'
 
 source_dir=''
@@ -25,6 +25,9 @@ assets=(
   debian13-1c512m-vps-tuning.sh
   debian13-1c1g-vps-tuning.sh
   debian13-1c2g-vps-tuning.sh
+  debian12-adaptive-vps-tuning.sh
+  debian13-adaptive-vps-tuning.sh
+  ubuntu2404-adaptive-vps-tuning.sh
   tcpquality-evidence.sh
   dvt-traffic-budget.sh
   dvt-migrate.sh

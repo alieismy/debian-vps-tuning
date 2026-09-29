@@ -1,0 +1,38 @@
+{
+  "debian12": {
+    "amd64": {
+      "url": "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2",
+      "algorithm": "sha512",
+      "digest": "b789a983661b93ae280dcebbcecc425e7a05f15ab4a60d08e0bf130759a4f84dd26de39bd0e77e33b3f513910e5c5e84bdb335324b5138b4c43a0899a1733455"
+    },
+    "arm64": {
+      "url": "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-arm64.qcow2",
+      "algorithm": "sha512",
+      "digest": "2c94f9e36787ec5bc8703e261a03f7b046ff71407cfbff18a2c0849a9dcc0973dcd6ef4cf02b9dd66a795ae204061516f4c967d69b41158a4ed1f066474d9638"
+    }
+  },
+  "debian13": {
+    "amd64": {
+      "url": "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-amd64.qcow2",
+      "algorithm": "sha512",
+      "digest": "a733e7d49442a03e70d03e4eb5aaf3967f3efc69ef70952f9bb10fc1ee2c4876eb95956b5ad2d31350e5fada768feb651352535fb8cd1233f61998a5a7d2e93c"
+    },
+    "arm64": {
+      "url": "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-arm64.qcow2",
+      "algorithm": "sha512",
+      "digest": "bef60fa5c4f5511cf83fe1ade0279edd5318dccbbb44f14eb0aa7f3b467e038d7a7c0b6f837be0ad1c3b2e06c5ed8e27adfdf0fd111a201b8f4c9347cd414863"
+    }
+  },
+  "ubuntu2404": {
+    "amd64": {
+      "url": "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img",
+      "algorithm": "sha256",
+      "digest": "6a81c37564db9b1ee84e141922625e1d7c5b389b99bb3c572e0243607d5bb4d2"
+    },
+    "arm64": {
+      "url": "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-arm64.img",
+      "algorithm": "sha256",
+      "digest": "1d6bffe64b848468ac97f821d369a4846d983de1800ccf6b5ec8853e85cefc55"
+    }
+  }
+}

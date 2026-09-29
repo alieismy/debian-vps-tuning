@@ -13,8 +13,8 @@ RELEASE_BASE_URL="https://github.com/${REPOSITORY}/releases/download/${RELEASE_T
 
 STATE_FILE='/var/lib/proxy-vps-tuning/state.json'
 DEFAULT_PORT_SPEED_MBPS=200
-MIN_PORT_SPEED_MBPS=100
-MAX_PORT_SPEED_MBPS=1000
+MIN_PORT_SPEED_MBPS=1
+MAX_PORT_SPEED_MBPS=10000
 
 EXIT_USAGE=2
 EXIT_UNSUPPORTED=3
@@ -113,9 +113,9 @@ Behavior:
   - recover restores an interrupted reconfigure transaction, or performs the
     advanced rc.2 empty-state recovery when explicitly acknowledged.
 
-The controller selects Debian 12/13 and supported CPU/RAM combinations
-automatically. It never changes the tuning configuration itself; it invokes
-one verified profile script.
+The controller supports Debian 12/13 and Ubuntu 24.04 LTS on x86_64/aarch64.
+It preserves existing Debian profiles and selects adaptive profiles for new
+resource combinations (at least 384 MiB RAM). It invokes one verified script.
 EOF_USAGE
 }
 
@@ -131,13 +131,16 @@ need_command() {
 
 validate_port_speed() {
   local value="$1"
-  [[ "$value" =~ ^[0-9]{3,4}$ ]] || return 1
+  [[ "$value" =~ ^[0-9]{1,5}$ ]] || return 1
   value=$((10#$value))
   [ "$value" -ge "$MIN_PORT_SPEED_MBPS" ] && [ "$value" -le "$MAX_PORT_SPEED_MBPS" ]
 }
 
 profile_metadata() {
   case "$1" in
+    debian12-adaptive) printf '%s\t%s\n' 'debian12-adaptive-vps-tuning.sh' 'Debian 12 / adaptive' ;;
+    debian13-adaptive) printf '%s\t%s\n' 'debian13-adaptive-vps-tuning.sh' 'Debian 13 / adaptive' ;;
+    ubuntu2404-adaptive) printf '%s\t%s\n' 'ubuntu2404-adaptive-vps-tuning.sh' 'Ubuntu 24.04 LTS / adaptive' ;;
     debian12-1c512m)
       printf '%s\t%s\n' 'debian12-1c512m-vps-tuning.sh' 'Debian 12 / 1 vCPU / 512 MiB'
       ;;
@@ -171,15 +174,18 @@ detect_profile_from() {
   # shellcheck disable=SC1090
   os_values="$(set +u; . "$os_release_file"; printf '%s\t%s\t%s' "${ID:-}" "${VERSION_ID:-}" "${PRETTY_NAME:-unknown}")"
   IFS=$'\t' read -r os_id version_id pretty_name <<<"$os_values"
-  [ "$os_id" = 'debian' ] || return 2
-  case "$version_id" in 12 | 13) ;; *) return 2 ;; esac
-  [ "$arch" = 'x86_64' ] || return 2
+  case "$os_id:$version_id" in debian:12 | debian:13 | ubuntu:24.04) ;; *) return 2 ;; esac
+  case "$arch" in x86_64 | aarch64) ;; *) return 2 ;; esac
   [[ "$cpus" =~ ^[1-9][0-9]*$ ]] || return 1
 
   mem_mib="$(awk '/^MemTotal:/ {printf "%d", $2 / 1024; found=1} END {if (!found) exit 1}' "$meminfo_file")" || return 1
   [[ "$mem_mib" =~ ^[0-9]+$ ]] || return 1
 
-  if [ "$cpus" -eq 1 ] && [ "$mem_mib" -ge 384 ] && [ "$mem_mib" -le 767 ]; then
+  [ "$mem_mib" -ge 384 ] || return 3
+  if [ "$os_id" = ubuntu ]; then
+    profile='ubuntu2404-adaptive'
+    resource_class='adaptive'
+  elif [ "$cpus" -eq 1 ] && [ "$mem_mib" -ge 384 ] && [ "$mem_mib" -le 767 ]; then
     profile="debian${version_id}-1c512m"
     resource_class='1C512MB'
   elif [ "$cpus" -eq 1 ] && [ "$mem_mib" -ge 768 ] && [ "$mem_mib" -le 1535 ]; then
@@ -192,7 +198,8 @@ detect_profile_from() {
     profile="debian${version_id}-1c2g"
     resource_class='2C2GB'
   else
-    return 3
+    profile="debian${version_id}-adaptive"
+    resource_class='adaptive'
   fi
 
   metadata="$(profile_metadata "$profile")" || return 1
@@ -212,8 +219,8 @@ detect_environment() {
   case "$rc" in
     0) ;;
     1) die "$EXIT_UNSUPPORTED" '无法读取或解析 /etc/os-release、/proc/meminfo 或可用逻辑 CPU 数。' ;;
-    2) die "$EXIT_UNSUPPORTED" "只支持 Debian 12/13、amd64；检测到架构 ${DETECTED_ARCH}。" ;;
-    3) die "$EXIT_UNSUPPORTED" "只支持四个资源档：1C512MB (384–767 MiB)、1C1GB (768–1535 MiB)、1C2GB 或 2C2GB (1536–3072 MiB)；检测到 ${DETECTED_CPUS} vCPU、${DETECTED_MEMORY_MIB} MiB RAM。" ;;
+    2) die "$EXIT_UNSUPPORTED" "支持 Debian 12/13、Ubuntu 24.04 LTS 和 x86_64/aarch64；检测到架构 ${DETECTED_ARCH}。" ;;
+    3) die "$EXIT_UNSUPPORTED" "需要至少 384 MiB RAM；检测到 ${DETECTED_CPUS} vCPU、${DETECTED_MEMORY_MIB} MiB RAM。" ;;
     *) die "$EXIT_UNSUPPORTED" '环境检测发生未知错误。' ;;
   esac
   IFS=$'\t' read -r DETECTED_PROFILE DETECTED_LABEL DETECTED_PRETTY_NAME DETECTED_MEMORY_MIB DETECTED_RESOURCE_CLASS <<<"$detected"
@@ -326,7 +333,7 @@ choose_port_interactively() {
   2) 200 Mbps（默认）
   3) 500 Mbps
   4) 1000 Mbps
-  5) 自定义 100–1000 Mbps
+  5) 自定义 1–10000 Mbps
 EOF_PORT
   printf '\n请选择 [默认 2]：'
   IFS= read -r choice
@@ -336,9 +343,9 @@ EOF_PORT
     3) PORT_SPEED_MBPS_SELECTED=500 ;;
     4) PORT_SPEED_MBPS_SELECTED=1000 ;;
     5)
-      printf '请输入 100–1000 的整数：'
+      printf '请输入 1–10000 的整数：'
       IFS= read -r custom
-      validate_port_speed "$custom" || die "$EXIT_USAGE" '带宽必须是 100–1000 的整数。'
+      validate_port_speed "$custom" || die "$EXIT_USAGE" '带宽必须是 1–10000 的整数。'
       PORT_SPEED_MBPS_SELECTED=$((10#$custom))
       ;;
     *) die "$EXIT_USAGE" '无效带宽选择。' ;;
@@ -363,17 +370,17 @@ select_port_speed() {
     else
       [ -n "$CLI_PORT_SPEED_MBPS" ] ||
         die "$EXIT_USAGE" 'reconfigure 必须显式使用 --port <MBPS>；不会采用默认值或 PORT_SPEED_MBPS 环境变量。'
-      validate_port_speed "$CLI_PORT_SPEED_MBPS" || die "$EXIT_USAGE" '带宽必须是 100–1000 的整数。'
+      validate_port_speed "$CLI_PORT_SPEED_MBPS" || die "$EXIT_USAGE" '带宽必须是 1–10000 的整数。'
       PORT_SPEED_MBPS_SELECTED=$((10#$CLI_PORT_SPEED_MBPS))
     fi
     return 0
   fi
 
   if [ -n "$CLI_PORT_SPEED_MBPS" ]; then
-    validate_port_speed "$CLI_PORT_SPEED_MBPS" || die "$EXIT_USAGE" '带宽必须是 100–1000 的整数。'
+    validate_port_speed "$CLI_PORT_SPEED_MBPS" || die "$EXIT_USAGE" '带宽必须是 1–10000 的整数。'
     PORT_SPEED_MBPS_SELECTED=$((10#$CLI_PORT_SPEED_MBPS))
   elif [ -n "${PORT_SPEED_MBPS:-}" ]; then
-    validate_port_speed "$PORT_SPEED_MBPS" || die "$EXIT_USAGE" 'PORT_SPEED_MBPS 必须是 100–1000 的整数。'
+    validate_port_speed "$PORT_SPEED_MBPS" || die "$EXIT_USAGE" 'PORT_SPEED_MBPS 必须是 1–10000 的整数。'
     PORT_SPEED_MBPS_SELECTED=$((10#$PORT_SPEED_MBPS))
   elif [ "$ACTION" = 'apply' ] && [ -n "$STATE_PROFILE" ]; then
     validate_port_speed "$STATE_PORT_SPEED_MBPS" ||

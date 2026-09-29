@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Generated from tools/profile-template.sh.in. Do not edit generated profiles directly.
-# @PROFILE_LABEL@ / 3X-UI-first conservative VPS tuning.
+# Debian 12 / adaptive / 3X-UI-first conservative VPS tuning.
 
 set -Eeuo pipefail
 IFS=$'\n\t'
@@ -13,29 +13,29 @@ LEGACY_STATE_SCHEMA_VERSION=3
 NAMESPACE='proxy-vps'
 MANAGED_MARKER='# Managed by debian-vps-tuning; namespace=proxy-vps'
 
-TARGET_DEBIAN_VERSION='@DEBIAN_VERSION@'
-TARGET_OS_ID='@OS_ID@'
-TARGET_OS_VERSION='@OS_VERSION@'
-PROFILE_RESOURCE_POLICY='@RESOURCE_POLICY@'
-PROFILE_ID='@PROFILE_ID@'
-PROFILE_LABEL='@PROFILE_LABEL@'
-PROFILE_CPU_MIN=@CPU_MIN@
-PROFILE_CPU_MAX=@CPU_MAX@
-PROFILE_RAM_MIN_MIB=@RAM_MIN_MIB@
-PROFILE_RAM_MAX_MIB=@RAM_MAX_MIB@
-SWAP_MAX_MIB=@SWAP_MAX_MIB@
-SWAP_CREATE_RESERVE_MIB=@SWAP_RESERVE_MIB@
-JOURNAL_SYSTEM_MAX_USE='@JOURNAL_SYSTEM_MAX_USE@'
-JOURNAL_SYSTEM_KEEP_FREE='@JOURNAL_KEEP_FREE@'
-JOURNAL_RUNTIME_MAX_USE='@JOURNAL_RUNTIME_MAX_USE@'
+TARGET_DEBIAN_VERSION='12'
+TARGET_OS_ID='debian'
+TARGET_OS_VERSION='12'
+PROFILE_RESOURCE_POLICY='adaptive'
+PROFILE_ID='debian12-adaptive'
+PROFILE_LABEL='Debian 12 / adaptive'
+PROFILE_CPU_MIN=1
+PROFILE_CPU_MAX=0
+PROFILE_RAM_MIN_MIB=384
+PROFILE_RAM_MAX_MIB=0
+SWAP_MAX_MIB=4096
+SWAP_CREATE_RESERVE_MIB=1024
+JOURNAL_SYSTEM_MAX_USE='128M'
+JOURNAL_SYSTEM_KEEP_FREE='1G'
+JOURNAL_RUNTIME_MAX_USE='64M'
 
 DEFAULT_PORT_SPEED_MBPS=200
 DEFAULT_BUFFER_TARGET_RTT_MS=200
-BUFFER_TARGET_NUMERATOR=@BUFFER_TARGET_NUMERATOR@
-BUFFER_TARGET_DENOMINATOR=@BUFFER_TARGET_DENOMINATOR@
+BUFFER_TARGET_NUMERATOR=1
+BUFFER_TARGET_DENOMINATOR=1
 DEFAULT_SWAP_MB=1024
 MIN_BUF_MAX=262144
-MAX_BUF_MAX=@BUF_MAX_LIMIT@
+MAX_BUF_MAX=268435456
 SWAP_FILE='/swapfile-proxy'
 FSTAB_FILE='/etc/fstab'
 
@@ -43,7 +43,7 @@ PORT_SPEED_MBPS_INPUT="${PORT_SPEED_MBPS:-}"
 BUFFER_TARGET_RTT_MS_INPUT="${BUFFER_TARGET_RTT_MS:-}"
 BUF_MAX_ENV_WAS_SET="${BUF_MAX+x}"
 BUF_MAX_INPUT="${BUF_MAX:-auto}"
-ENABLE_SWAP="${ENABLE_SWAP:-@DEFAULT_ENABLE_SWAP@}"
+ENABLE_SWAP="${ENABLE_SWAP:-0}"
 SWAP_MB_INPUT="${SWAP_MB:-$DEFAULT_SWAP_MB}"
 PURGE_CREATED_SWAP="${PURGE_CREATED_SWAP:-0}"
 ALLOW_EMPTY_STATE_RECOVERY="${ALLOW_EMPTY_STATE_RECOVERY:-0}"
@@ -2642,7 +2642,376 @@ show_status() {
   ss -lntup 2>/dev/null || true
 }
 
-@MEASUREMENT_COUNTERS@
+softnet_snapshot() {
+  local source="${1:-/proc/net/softnet_stat}"
+  local cpu=0 processed dropped squeezed
+  while IFS=$' \t' read -r processed dropped squeezed _; do
+    [ -n "$processed" ] || continue
+    printf '%s\t%s\t%s\t%s\n' "$cpu" \
+      "$((16#$processed))" "$((16#$dropped))" "$((16#$squeezed))"
+    cpu=$((cpu + 1))
+  done <"$source"
+}
+
+cpu_snapshot() {
+  local source="${1:-/proc/stat}"
+  awk '$1 == "cpu" {
+    printf "user\t%s\nnice\t%s\nsystem\t%s\nidle\t%s\niowait\t%s\nirq\t%s\nsoftirq\t%s\nsteal\t%s\n", \
+      $2+0, $3+0, $4+0, $5+0, $6+0, $7+0, $8+0, $9+0
+    exit
+  }' "$source"
+}
+
+show_cpu_delta() {
+  local before="$1" after="$2" prefix="$3"
+  awk -F '\t' -v prefix="$prefix" '
+    NR == FNR {old[$1]=$2; next}
+    {
+      delta[$1]=$2-(old[$1]+0)
+      total+=delta[$1]
+    }
+    END {
+      printf "[%s] total_ticks=%d", prefix, total
+      for (i=1; i<=8; i++) {
+        key=(i==1 ? "user" : i==2 ? "nice" : i==3 ? "system" : i==4 ? "idle" : i==5 ? "iowait" : i==6 ? "irq" : i==7 ? "softirq" : "steal")
+        pct=(total > 0 ? delta[key]*100/total : 0)
+        printf " %s_ticks=%d %s_pct=%.2f", key, delta[key], key, pct
+      }
+      printf "\n"
+    }
+  ' "$before" "$after"
+}
+
+link_counter_snapshot() {
+  local ifaces_file="$1" sys_class_root="${2:-/sys/class/net}" iface stat value
+  while IFS= read -r iface; do
+    [ -n "$iface" ] || continue
+    for stat in rx_bytes rx_packets rx_dropped rx_errors tx_bytes tx_packets tx_dropped tx_errors; do
+      [ -r "${sys_class_root}/${iface}/statistics/${stat}" ] || continue
+      IFS= read -r value <"${sys_class_root}/${iface}/statistics/${stat}" || continue
+      [[ "$value" =~ ^[0-9]+$ ]] || continue
+      printf '%s.%s\t%s\n' "$iface" "$stat" "$value"
+    done
+  done <"$ifaces_file"
+}
+
+ethtool_counter_snapshot() {
+  local ifaces_file="$1" iface
+  command -v ethtool >/dev/null 2>&1 || return 0
+  while IFS= read -r iface; do
+    [ -n "$iface" ] || continue
+    ethtool -S "$iface" 2>/dev/null | awk -v iface="$iface" '
+      /^[[:space:]]*[A-Za-z0-9_.-]+:[[:space:]]*[0-9]+[[:space:]]*$/ {
+        key=$1
+        sub(/:$/, "", key)
+        lower=tolower(key)
+        if (lower ~ /(drop|discard|miss|error|timeout|no.?buffer|overrun)/) {
+          print iface "." key "\t" $2
+        }
+      }
+    '
+  done <"$ifaces_file"
+}
+
+tcp_counter_snapshot() {
+  local snmp_file="${1:-/proc/net/snmp}" netstat_file="${2:-/proc/net/netstat}"
+  awk '
+    FNR % 2 == 1 {
+      prefix=$1
+      sub(/:$/, "", prefix)
+      for (i=2; i<=NF; i++) header[i]=$i
+      next
+    }
+    {
+      prefix=$1
+      sub(/:$/, "", prefix)
+      for (i=2; i<=NF; i++) {
+        key=prefix header[i]
+        if (key ~ /^(IpInDiscards|IpOutDiscards|TcpRetransSegs|TcpExtListenDrops|TcpExtListenOverflows|TcpExtTCPLostRetransmit|TcpExtTCPTimeouts|TcpExtTCPSpuriousRTOs|TcpExtTCPSynRetrans|TcpExtTCPFastOpenActive|TcpExtTCPFastOpenActiveFail|TcpExtTCPFastOpenPassive|TcpExtTCPFastOpenPassiveFail|TcpExtTCPFastOpenListenOverflow)$/) {
+          print key "\t" $i
+        }
+      }
+    }
+  ' "$snmp_file" "$netstat_file" 2>/dev/null
+}
+
+show_counter_delta() {
+  local before="$1" after="$2" prefix="$3"
+  awk -F '\t' -v prefix="$prefix" '
+    NR == FNR {old[$1]=$2; next}
+    {delta=$2-(old[$1]+0); printf "[%s] %s=%d\n", prefix, $1, delta}
+  ' "$before" "$after"
+}
+
+counter_delta_json() {
+  local before="$1" after="$2"
+  awk -F '\t' '
+    function valid_row(key, value) {
+      return key != "" && value ~ /^[0-9]+$/
+    }
+    FILENAME == ARGV[1] {
+      if (!valid_row($1, $2) || ($1 in old)) exit 40
+      old[$1]=$2
+      old_count++
+      next
+    }
+    {
+      if (!valid_row($1, $2) || ($1 in seen_after)) exit 41
+      if (!($1 in old)) exit 42
+      seen_after[$1]=1
+      after_count++
+      delta=$2-old[$1]
+      if (delta < 0) exit 43
+      output[after_count]=$1 "\t" delta
+    }
+    END {
+      if (old_count == 0 || after_count == 0 || old_count != after_count) exit 44
+      for (key in old) if (!(key in seen_after)) exit 45
+      for (i=1; i<=after_count; i++) print output[i]
+    }
+  ' "$before" "$after" |
+    jq -Rn '[inputs | split("\t") | {key:.[0],value:(.[1] | tonumber)}] | from_entries'
+}
+
+link_total_delta() {
+  local before="$1" after="$2" suffix="$3"
+  local delta_json
+  delta_json="$(counter_delta_json "$before" "$after")" || return "$EXIT_VERIFY"
+  jq -er --arg suffix "$suffix" '
+    [. | to_entries[] | select(.key | endswith($suffix)) | .value] |
+    if length > 0 then add else error("required link counters are missing") end
+  ' <<<"$delta_json"
+}
+
+qdisc_counter_snapshot() {
+  local ifaces_file="$1" iface
+  while IFS= read -r iface; do
+    [ -n "$iface" ] || continue
+    tc -s -d qdisc show dev "$iface" 2>/dev/null |
+      awk -v iface="$iface" '
+        /^qdisc / {
+          kind=$2
+          handle=$3
+          scope="other"
+          for (header_index=4; header_index<=NF; header_index++) {
+            if ($header_index == "root") scope="root"
+            else if ($header_index == "parent" &&
+                     ($(header_index+1) ~ /^:[0-9]+$/ ||
+                      $(header_index+1) ~ /^[0-9]+:[0-9]+$/) &&
+                     kind != "ingress" && kind != "clsact") scope="leaf"
+          }
+          key=iface "." scope "." kind "." handle
+          active=1
+          next
+        }
+        active && /^[[:space:]]*Sent / {
+          line=$0
+          gsub(/[(),]/, "", line)
+          count=split(line, field, /[[:space:]]+/)
+          bytes=packets=dropped=overlimits=requeues=""
+          for (i=1; i<=count; i++) {
+            if (field[i] == "Sent") bytes=field[i+1]
+            else if (field[i] == "bytes") packets=field[i+1]
+            else if (field[i] == "dropped") dropped=field[i+1]
+            else if (field[i] == "overlimits") overlimits=field[i+1]
+            else if (field[i] == "requeues") requeues=field[i+1]
+          }
+          if (bytes !~ /^[0-9]+$/ || packets !~ /^[0-9]+$/ || dropped !~ /^[0-9]+$/ ||
+              overlimits !~ /^[0-9]+$/ || requeues !~ /^[0-9]+$/) exit 46
+          print key ".bytes\t" bytes
+          print key ".packets\t" packets
+          print key ".dropped\t" dropped
+          print key ".overlimits\t" overlimits
+          print key ".requeues\t" requeues
+          active=0
+          emitted++
+        }
+        END {if (emitted == 0) exit 47}
+      '
+  done <"$ifaces_file"
+}
+
+build_benchmark_phase_summary() {
+  local label="$1" reverse="$2" tmp_dir="$3"
+  local iperf_json="${tmp_dir}/${label}.iperf3.json"
+  local output_tmp="${tmp_dir}/${label}.summary.json.tmp"
+  local output="${tmp_dir}/${label}.summary.json"
+  local tcp_delta link_delta qdisc_delta tx_bytes rx_bytes
+  tcp_delta="$(counter_delta_json "${tmp_dir}/${label}.tcp.before" "${tmp_dir}/${label}.tcp.after")" || return "$EXIT_VERIFY"
+  link_delta="$(counter_delta_json "${tmp_dir}/${label}.link.before" "${tmp_dir}/${label}.link.after")" || return "$EXIT_VERIFY"
+  qdisc_delta="$(counter_delta_json "${tmp_dir}/${label}.qdisc.before" "${tmp_dir}/${label}.qdisc.after")" || return "$EXIT_VERIFY"
+  tx_bytes="$(link_total_delta "${tmp_dir}/${label}.link.before" "${tmp_dir}/${label}.link.after" '.tx_bytes')" || return "$EXIT_VERIFY"
+  rx_bytes="$(link_total_delta "${tmp_dir}/${label}.link.before" "${tmp_dir}/${label}.link.after" '.rx_bytes')" || return "$EXIT_VERIFY"
+
+  jq -e --arg phase_label "$label" --argjson reverse "$reverse" \
+    --argjson expected_seconds "$BENCHMARK_SECONDS_RESOLVED" \
+    --argjson tcp_delta "$tcp_delta" --argjson link_delta "$link_delta" \
+    --argjson qdisc_delta "$qdisc_delta" --argjson host_tx_bytes "$tx_bytes" \
+    --argjson host_rx_bytes "$rx_bytes" '
+      def metric_total($entries; $suffix):
+        [$entries[] | select(.key | endswith($suffix)) | .value] |
+        if length > 0 then add else error("qdisc metric is missing: " + $suffix) end;
+      def totals($entries):
+        (metric_total($entries; ".bytes")) as $bytes |
+        (metric_total($entries; ".packets")) as $packets |
+        (metric_total($entries; ".dropped")) as $dropped |
+        (metric_total($entries; ".overlimits")) as $overlimits |
+        (metric_total($entries; ".requeues")) as $requeues |
+        {
+          bytes_delta:$bytes,
+          packets_delta:$packets,
+          dropped_delta:$dropped,
+          overlimits_delta:$overlimits,
+          requeues_delta:$requeues,
+          dropped_per_gib:(if $bytes > 0 then ($dropped * 1073741824 / $bytes) else null end),
+          overlimits_per_gib:(if $bytes > 0 then ($overlimits * 1073741824 / $bytes) else null end)
+        };
+      def qdisc_interfaces($entries; $scope; $kind):
+        [$entries[] |
+          select(.key | contains("." + $scope + "." + $kind + ".")) |
+          (.key | split("." + $scope + "." + $kind + ".")[0])] | unique;
+      def absolute: if . < 0 then -. else . end;
+      def relative_error($reported; $computed):
+        (($reported - $computed) | absolute) /
+        ([$reported, $computed] | map(absolute) | max);
+      (.end.sum_sent // null) as $sent |
+      (.end.sum_received // null) as $received |
+      ($qdisc_delta | to_entries | map(select(.key | contains(".root.")))) as $qdisc_root_entries |
+      ($qdisc_delta | to_entries | map(select(.key | contains(".leaf.")))) as $qdisc_leaf_entries |
+      ($qdisc_root_entries | length > 0) as $has_root |
+      ($qdisc_leaf_entries | length > 0) as $has_leaf |
+      ($qdisc_root_entries | any(.key | contains(".root.mq."))) as $root_is_mq |
+      ($qdisc_root_entries | any(.key | contains(".root.htb."))) as $root_is_htb |
+      (qdisc_interfaces($qdisc_root_entries; "root"; "htb")) as $htb_root_interfaces |
+      (qdisc_interfaces($qdisc_leaf_entries; "leaf"; "fq")) as $fq_leaf_interfaces |
+      (all($htb_root_interfaces[]; . as $iface | $fq_leaf_interfaces | index($iface) != null)) as $htb_fq_leaf_complete |
+      if (.error? != null) then
+        error("iperf3 JSON reports an error")
+      elif ($sent | type) != "object" or ($received | type) != "object" then
+        error("iperf3 JSON lacks end.sum_sent or end.sum_received")
+      elif ($sent.bytes | type) != "number" or $sent.bytes <= 0 or
+           ($sent.bits_per_second | type) != "number" or $sent.bits_per_second < 0 or
+           ($sent.retransmits | type) != "number" or $sent.retransmits < 0 or
+           ($sent.seconds | type) != "number" or $sent.seconds <= 0 or
+           ($received.bytes | type) != "number" or $received.bytes <= 0 or
+           ($received.bits_per_second | type) != "number" or $received.bits_per_second < 0 or
+           ($received.seconds | type) != "number" or $received.seconds <= 0 then
+        error("iperf3 JSON contains missing, non-numeric or invalid summary fields")
+      elif ($has_root | not) then
+        error("root qdisc counters are missing")
+      elif $root_is_mq and ($has_leaf | not) then
+        error("mq root exists but managed leaf qdisc counters are missing")
+      elif $root_is_htb and (($has_leaf | not) or ($htb_fq_leaf_complete | not)) then
+        error("htb root exists but its expected fq leaf qdisc counters are missing")
+      else
+        ($sent.bytes * 8 / $sent.seconds) as $sent_computed_bps |
+        ($received.bytes * 8 / $received.seconds) as $received_computed_bps |
+        (relative_error($sent.bits_per_second; $sent_computed_bps)) as $sent_bps_error |
+        (relative_error($received.bits_per_second; $received_computed_bps)) as $received_bps_error |
+        ([0.25, ($expected_seconds * 0.05)] | max) as $duration_tolerance |
+        ([1048576, ($sent.bytes * 0.01)] | max) as $receiver_bytes_tolerance |
+        ([
+          if (($sent.seconds - $expected_seconds) | absolute) > $duration_tolerance
+          then "sender-duration-mismatch" else empty end,
+          if (($received.seconds - $expected_seconds) | absolute) > $duration_tolerance
+          then "receiver-duration-mismatch" else empty end,
+          if (($sent.seconds - $received.seconds) | absolute) > $duration_tolerance
+          then "sender-receiver-window-mismatch" else empty end,
+          if $sent_bps_error > 0.01 then "sender-bps-arithmetic-mismatch" else empty end,
+          if $received_bps_error > 0.01 then "receiver-bps-arithmetic-mismatch" else empty end,
+          if $received.bytes > ($sent.bytes + $receiver_bytes_tolerance)
+          then "receiver-bytes-exceed-sender-tolerance" else empty end
+        ]) as $measurement_issues |
+        (totals($qdisc_root_entries)) as $root_totals |
+        (if $has_leaf then totals($qdisc_leaf_entries) else null end) as $leaf_totals |
+        (($root_totals.dropped_delta > 0) or
+         ($root_totals.requeues_delta > 0) or
+         ($leaf_totals != null and
+          (($leaf_totals.dropped_delta > 0) or ($leaf_totals.requeues_delta > 0)))) as $qdisc_anomaly |
+        {
+          schema_version:3,
+          direction:$phase_label,
+          reverse:($reverse == 1),
+          measurement_window:{
+            status:(if ($measurement_issues | length) == 0 then "VALID" else "INVALID_MEASUREMENT_WINDOW" end),
+            valid:(($measurement_issues | length) == 0),
+            expected_seconds:$expected_seconds,
+            duration_tolerance_seconds:$duration_tolerance,
+            bitrate_relative_error_tolerance:0.01,
+            receiver_bytes_tolerance:$receiver_bytes_tolerance,
+            issues:$measurement_issues
+          },
+          sender:{
+            bytes:$sent.bytes,
+            seconds:$sent.seconds,
+            bits_per_second:$sent.bits_per_second,
+            computed_bits_per_second:$sent_computed_bps,
+            bits_per_second_relative_error:$sent_bps_error,
+            mbps:($sent.bits_per_second/1000000),
+            retransmits:$sent.retransmits,
+            retransmits_per_gib:($sent.retransmits * 1073741824 / $sent.bytes)
+          },
+          receiver:{
+            bytes:$received.bytes,
+            seconds:$received.seconds,
+            bits_per_second:$received.bits_per_second,
+            computed_bits_per_second:$received_computed_bps,
+            bits_per_second_relative_error:$received_bps_error,
+            mbps:($received.bits_per_second/1000000)
+          },
+          host:{tx_bytes_delta:$host_tx_bytes,rx_bytes_delta:$host_rx_bytes,tcp_delta:$tcp_delta,link_delta:$link_delta},
+          qdisc_delta:$qdisc_delta,
+          qdisc_coverage:{
+            aggregation_source:(if $root_is_mq then "leaf" else "root" end),
+            topology:(if $root_is_htb then "htb-fq" elif $root_is_mq then "mq-leaves" else "root-only" end),
+            has_root:$has_root,has_leaf:$has_leaf,root_is_mq:$root_is_mq,root_is_htb:$root_is_htb,
+            htb_root_interfaces:$htb_root_interfaces,fq_leaf_interfaces:$fq_leaf_interfaces,
+            htb_fq_leaf_complete:$htb_fq_leaf_complete
+          },
+          qdisc_root_totals:$root_totals,
+          qdisc_leaf_totals:$leaf_totals,
+          qdisc_active_totals:(if $root_is_mq then totals($qdisc_leaf_entries) else totals($qdisc_root_entries) end),
+          qdisc_health:{
+            status:(if $qdisc_anomaly then "LOCAL_QUEUE_ANOMALY" else "NO_LOCAL_QUEUE_DROP_OR_REQUEUE" end),
+            any_drop_or_requeue:$qdisc_anomaly,
+            root:{dropped_delta:$root_totals.dropped_delta,requeues_delta:$root_totals.requeues_delta},
+            leaf:(if $leaf_totals == null then null else
+              {dropped_delta:$leaf_totals.dropped_delta,requeues_delta:$leaf_totals.requeues_delta} end)
+          },
+          interpretation:{
+            iperf_sender_retransmits:"sender-side iperf3 statistic for this direction",
+            host_tcp_delta:"host-wide counters; may include unrelated traffic",
+            qdisc_active_totals:"leaf counters are used for mq traffic totals; otherwise root counters are used; root and leaf bytes are never added",
+            qdisc_health:"root and leaf drops/requeues are checked independently; local qdisc health does not describe downstream or remote-path loss"
+          }
+        }
+      end
+    ' "$iperf_json" >"$output_tmp" || { rm -f -- "$output_tmp"; return "$EXIT_VERIFY"; }
+  chmod 0600 "$output_tmp" || { rm -f -- "$output_tmp"; return "$EXIT_VERIFY"; }
+  mv -f -- "$output_tmp" "$output" || return "$EXIT_VERIFY"
+  printf '[benchmark-%s-summary] sender_mbps=%s sender_retransmits=%s sender_retransmits_per_gib=%s host_tcp_retrans_delta=%s host_tx_bytes_delta=%s qdisc_root_drop_delta=%s qdisc_leaf_drop_delta=%s qdisc_health=%s qdisc_source=%s\n' \
+    "$label" \
+    "$(jq -r '.sender.mbps // "null"' "$output")" \
+    "$(jq -r '.sender.retransmits // "null"' "$output")" \
+    "$(jq -r '.sender.retransmits_per_gib // "null"' "$output")" \
+    "$(jq -r '.host.tcp_delta.TcpRetransSegs // "null"' "$output")" \
+    "$(jq -r '.host.tx_bytes_delta' "$output")" \
+    "$(jq -r '.qdisc_root_totals.dropped_delta' "$output")" \
+    "$(jq -r '.qdisc_leaf_totals.dropped_delta // "null"' "$output")" \
+    "$(jq -r '.qdisc_health.status' "$output")" \
+    "$(jq -r '.qdisc_coverage.aggregation_source' "$output")"
+}
+
+show_softnet_delta() {
+  local before="$1" after="$2"
+  awk -F '\t' '
+    NR == FNR {processed[$1]=$2; dropped[$1]=$3; squeezed[$1]=$4; next}
+    {
+      printf "[softnet-delta] cpu=%s processed=%d dropped=%d time_squeeze=%d\n",
+        $1, $2-(processed[$1]+0), $3-(dropped[$1]+0), $4-(squeezed[$1]+0)
+    }
+  ' "$before" "$after"
+}
 
 show_proxy_process_evidence() {
   local phase="$1" unit active main_pid role pid fd_count row
@@ -2841,7 +3210,141 @@ show_diagnostics() {
   info '诊断完成；增量计数是采样证据，不单独证明端到端业务性能。'
 }
 
-@MEASUREMENT_PHASE@
+benchmark_reap_active_child() {
+  local pid="${BENCHMARK_ACTIVE_CHILD_PID:-}" pgid="${BENCHMARK_ACTIVE_CHILD_PGID:-}" target='' attempt
+  [ -n "$pid" ] || return 0
+  if [[ "$pgid" =~ ^[0-9]+$ ]] && [ "$pgid" -gt 1 ] && [ "$pgid" = "$pid" ]; then
+    if kill -0 -- "-${pgid}" 2>/dev/null; then
+      target="-${pgid}"
+    fi
+  fi
+  if [ -z "$target" ] && [[ "$pid" =~ ^[0-9]+$ ]] && [ "$pid" -gt 1 ] && kill -0 "$pid" 2>/dev/null; then
+    target="$pid"
+  fi
+  if [ -n "$target" ]; then
+    kill -TERM -- "$target" 2>/dev/null || true
+    attempt=0
+    while [ "$attempt" -lt "$BENCHMARK_TIMEOUT_TERMINATE_GRACE_SECONDS" ]; do
+      kill -0 -- "$target" 2>/dev/null || break
+      sleep 1
+      attempt=$((attempt + 1))
+    done
+    if kill -0 -- "$target" 2>/dev/null; then
+      kill -KILL -- "$target" 2>/dev/null || true
+    fi
+  fi
+  wait "$pid" 2>/dev/null || true
+  BENCHMARK_ACTIVE_CHILD_PID=''
+  BENCHMARK_ACTIVE_CHILD_PGID=''
+  return 0
+}
+
+benchmark_handle_signal() {
+  local signal_name="$1" exit_code="$2"
+  benchmark_failure_stage="signal-${signal_name}"
+  benchmark_reap_active_child
+  exit "$exit_code"
+}
+
+run_iperf3_with_timeout() {
+  local output_file="$1"
+  shift
+  local rc=0 started_at="$SECONDS" elapsed=0
+  BENCHMARK_ACTIVE_CHILD_PID=''
+  BENCHMARK_ACTIVE_CHILD_PGID=''
+  setsid timeout --foreground --signal=TERM \
+    --kill-after="${BENCHMARK_TIMEOUT_TERMINATE_GRACE_SECONDS}s" \
+    "${BENCHMARK_PHASE_TIMEOUT_RESOLVED}s" iperf3 "$@" >"$output_file" &
+  BENCHMARK_ACTIVE_CHILD_PID=$!
+  BENCHMARK_ACTIVE_CHILD_PGID="$BENCHMARK_ACTIVE_CHILD_PID"
+  if wait "$BENCHMARK_ACTIVE_CHILD_PID"; then
+    rc=0
+  else
+    rc=$?
+  fi
+  elapsed=$((SECONDS - started_at))
+  if [ "$rc" -eq 0 ]; then
+    BENCHMARK_ACTIVE_CHILD_PID=''
+    BENCHMARK_ACTIVE_CHILD_PGID=''
+  else
+    benchmark_reap_active_child
+  fi
+  case "$rc" in
+    124)
+      warn "iperf3 超过 ${BENCHMARK_PHASE_TIMEOUT_RESOLVED} 秒硬上限；已终止隔离进程组并保留失败证据。"
+      ;;
+    137)
+      if [ "$elapsed" -ge "$BENCHMARK_PHASE_TIMEOUT_RESOLVED" ]; then
+        warn "iperf3 超过 ${BENCHMARK_PHASE_TIMEOUT_RESOLVED} 秒硬上限且 TERM 后仍未退出；已升级到 KILL、回收进程组并保留失败证据。"
+      else
+        warn 'iperf3 在硬上限前返回 137；进程可能收到外部 SIGKILL，已回收进程组并保留失败证据。'
+      fi
+      ;;
+  esac
+  return "$rc"
+}
+
+run_benchmark_phase() {
+  local label="$1" reverse="$2" tmp_dir="$3" ifaces_file="$4"
+  local current_rc=0 iface
+  local -a rate_args=()
+  if declare -p BENCHMARK_RATE_ARGS >/dev/null 2>&1; then
+    rate_args=("${BENCHMARK_RATE_ARGS[@]}")
+  fi
+  softnet_snapshot '/proc/net/softnet_stat' >"${tmp_dir}/${label}.softnet.before" || return "$EXIT_VERIFY"
+  tcp_counter_snapshot '/proc/net/snmp' '/proc/net/netstat' >"${tmp_dir}/${label}.tcp.before" || return "$EXIT_VERIFY"
+  cpu_snapshot '/proc/stat' >"${tmp_dir}/${label}.cpu.before" || return "$EXIT_VERIFY"
+  link_counter_snapshot "$ifaces_file" >"${tmp_dir}/${label}.link.before" || return "$EXIT_VERIFY"
+  qdisc_counter_snapshot "$ifaces_file" >"${tmp_dir}/${label}.qdisc.before" || return "$EXIT_VERIFY"
+  while IFS= read -r iface; do
+    [ -n "$iface" ] || continue
+    printf '[benchmark-%s-qdisc-before] interface=%s\n' "$label" "$iface"
+    tc -s -d qdisc show dev "$iface" 2>/dev/null | tee -a "${tmp_dir}/${label}.qdisc.raw.before" || true
+  done <"$ifaces_file"
+
+  if [ "$reverse" = '1' ]; then
+    if run_iperf3_with_timeout "${tmp_dir}/${label}.iperf3.json" \
+      --client "$BENCHMARK_HOST_RESOLVED" --port "$BENCHMARK_PORT_RESOLVED" \
+      --time "$BENCHMARK_SECONDS_RESOLVED" --omit "$BENCHMARK_OMIT_RESOLVED" \
+      --parallel "$BENCHMARK_PARALLEL_RESOLVED" "${BENCHMARK_FAMILY_ARGS[@]}" \
+      "${rate_args[@]}" --reverse --json; then
+      current_rc=0
+    else
+      current_rc=$?
+    fi
+  else
+    if run_iperf3_with_timeout "${tmp_dir}/${label}.iperf3.json" \
+      --client "$BENCHMARK_HOST_RESOLVED" --port "$BENCHMARK_PORT_RESOLVED" \
+      --time "$BENCHMARK_SECONDS_RESOLVED" --omit "$BENCHMARK_OMIT_RESOLVED" \
+      --parallel "$BENCHMARK_PARALLEL_RESOLVED" "${BENCHMARK_FAMILY_ARGS[@]}" \
+      "${rate_args[@]}" --json; then
+      current_rc=0
+    else
+      current_rc=$?
+    fi
+  fi
+  cat "${tmp_dir}/${label}.iperf3.json" 2>/dev/null || true
+
+  softnet_snapshot '/proc/net/softnet_stat' >"${tmp_dir}/${label}.softnet.after" || current_rc="$EXIT_VERIFY"
+  tcp_counter_snapshot '/proc/net/snmp' '/proc/net/netstat' >"${tmp_dir}/${label}.tcp.after" || current_rc="$EXIT_VERIFY"
+  cpu_snapshot '/proc/stat' >"${tmp_dir}/${label}.cpu.after" || current_rc="$EXIT_VERIFY"
+  link_counter_snapshot "$ifaces_file" >"${tmp_dir}/${label}.link.after" || current_rc="$EXIT_VERIFY"
+  qdisc_counter_snapshot "$ifaces_file" >"${tmp_dir}/${label}.qdisc.after" || current_rc="$EXIT_VERIFY"
+  show_counter_delta "${tmp_dir}/${label}.tcp.before" "${tmp_dir}/${label}.tcp.after" "benchmark-${label}-tcp-delta" || current_rc="$EXIT_VERIFY"
+  show_softnet_delta "${tmp_dir}/${label}.softnet.before" "${tmp_dir}/${label}.softnet.after" |
+    sed "s/^\[softnet-delta\]/[benchmark-${label}-softnet-delta]/" || current_rc="$EXIT_VERIFY"
+  show_cpu_delta "${tmp_dir}/${label}.cpu.before" "${tmp_dir}/${label}.cpu.after" "benchmark-${label}-cpu-delta" || current_rc="$EXIT_VERIFY"
+  show_counter_delta "${tmp_dir}/${label}.link.before" "${tmp_dir}/${label}.link.after" "benchmark-${label}-link-delta" || current_rc="$EXIT_VERIFY"
+  while IFS= read -r iface; do
+    [ -n "$iface" ] || continue
+    printf '[benchmark-%s-qdisc-after] interface=%s\n' "$label" "$iface"
+    tc -s -d qdisc show dev "$iface" 2>/dev/null | tee -a "${tmp_dir}/${label}.qdisc.raw.after" || true
+  done <"$ifaces_file"
+  if [ "$current_rc" -eq 0 ]; then
+    build_benchmark_phase_summary "$label" "$reverse" "$tmp_dir" || current_rc="$EXIT_VERIFY"
+  fi
+  return "$current_rc"
+}
 
 benchmark_traffic_estimate_json() {
   local cap_mbps="$1" cap_source="$2" seconds="$3" omit="$4" direction="$5"
@@ -3182,7 +3685,7 @@ Environment:
   PORT_SPEED_MBPS=1..10000       default 200; reconfigure requires an explicit value
   BUFFER_TARGET_RTT_MS=20..500    default 200
   BUF_MAX=auto|262144..${MAX_BUF_MAX}   default auto; profile memory cap
-  ENABLE_SWAP=0|1                 default @DEFAULT_ENABLE_SWAP@
+  ENABLE_SWAP=0|1                 default 0
   SWAP_MB=512..${SWAP_MAX_MIB}             default 1024
   PURGE_CREATED_SWAP=0|1          default 0
   ALLOW_EMPTY_STATE_RECOVERY=0|1  default 0; only for confirmed rc.2 pre-write empty state
