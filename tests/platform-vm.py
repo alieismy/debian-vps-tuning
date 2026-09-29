@@ -58,22 +58,30 @@ def main():
     qemu += ['-accel', 'kvm' if kvm else 'tcg', '-cpu', 'host' if kvm else ('max' if args.arch == 'arm64' else 'qemu64')]
     if args.arch == 'arm64':
         qemu += ['-machine', 'virt', '-bios', '/usr/share/qemu-efi-aarch64/QEMU_EFI.fd']
-    # 4 vCPU/4 GiB 覆盖原 CPU/RAM 白名单以外的真实资源；大资源算术另有边界回归。
-    qemu += ['-smp', '4', '-m', '4096', '-nographic',
+    # KVM 覆盖 4C4G；TCG 的 ARM 客体用 2C1.5G 降低软件模拟内存初始化开销。
+    # 两者都超出旧组合表；更大 RAM 的封顶另有架构无关的边界回归。
+    vcpus, ram_mib = (4, 4096) if kvm else (2, 1536)
+    qemu += ['-smp', str(vcpus), '-m', str(ram_mib), '-nographic',
              '-drive', f'file={work / "disk.qcow2"},if=virtio,format=qcow2',
              '-drive', f'file={work / "seed.img"},if=virtio,format=raw',
              '-nic', 'user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:2222-:22']
     (evidence / 'hypervisor.json').write_text(json.dumps({'arch': args.arch, 'acceleration': 'kvm' if kvm else 'tcg',
-                                                       'vcpus': 4, 'ram_mib': 4096}))
+                                                       'vcpus': vcpus, 'ram_mib': ram_mib}))
     serial = (evidence / 'serial.log').open('wb')
     vm = subprocess.Popen(qemu, stdout=serial, stderr=subprocess.STDOUT)
 
-    def wait_guest(command, timeout=900):
+    def wait_guest(command, timeout=1500):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if vm.poll() is not None:
                 raise RuntimeError('QEMU exited; see serial.log')
-            result = subprocess.run(ssh + [command], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20)
+            try:
+                result = subprocess.run(ssh + [command], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=45)
+            except subprocess.TimeoutExpired:
+                # TCG 冷启动可能在建立连接后长时间等待 CPU；仍受整轮期限约束。
+                continue
+            if b'REMOTE HOST IDENTIFICATION HAS CHANGED' in result.stderr:
+                raise RuntimeError('guest host key mismatch')
             if result.returncode == 0:
                 return result.stdout.decode().strip()
             time.sleep(5)
@@ -96,7 +104,7 @@ def main():
         run(['tar', '-cf', str(bundle), 'install.sh', 'SHA256SUMS', 'tests/platform-guest.sh',
              'tests/platform-htb-native.py', *names], cwd=ROOT)
         with bundle.open('rb') as f:
-            run(ssh + ['mkdir /root/dvt-bundle && tar -xf - -C /root/dvt-bundle'], stdin=f)
+            run(ssh + ['mkdir /root/dvt-bundle && tar --no-same-owner -xf - -C /root/dvt-bundle'], stdin=f)
         phase('apply')
         reboot()
         phase('after-reboot')
