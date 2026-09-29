@@ -41,13 +41,17 @@ schema 4 的 `profile` 增加 `os_id`/`os_version` 描述字段；Debian 保留 
 
 | 平台 | x86_64 | ARM64 |
 |---|---|---|
-| Debian 12 | `9ea12a6` 完整生命周期通过 | 运行中 |
-| Debian 13 | `9ea12a6` 完整生命周期通过 | 运行中 |
-| Ubuntu 24.04 LTS | `9ea12a6` 完整生命周期通过 | 运行中 |
+| Debian 12 | `9ea12a6` 完整生命周期通过 | `9ea12a6` 完整生命周期通过 |
+| Debian 13 | `9ea12a6` 完整生命周期通过 | `9ea12a6` 完整生命周期通过 |
+| Ubuntu 24.04 LTS | `9ea12a6` 完整生命周期通过 | 首轮准备超时，修正测试准备后待复验 |
 
-x86_64 证据来自 [CI 36534049122](https://github.com/alieismy/debian-vps-tuning/actions/runs/36534049122) 的对应三个 adaptive job 和 Debian 13 的 1C1G legacy job；四份下载归档均已逐项复核。legacy 的 1024 MiB swap 创建、重启验证和回滚清理通过。不能把仍运行的 ARM64 job 记为通过。
+证据来自 [CI 36534049122](https://github.com/alieismy/debian-vps-tuning/actions/runs/36534049122) 的六个成功 job，六份下载归档均已逐项复核。legacy 的 1024 MiB swap 创建、重启验证和回滚清理通过。整个 run 因 Ubuntu ARM64 失败而未通过，不能把六项成功写成全矩阵通过。
+
+Ubuntu ARM64 的失败发生在 cloud-init 准备阶段：25 分钟到期时仍在处理 APT 索引，尚未复制项目 bundle 或执行安装/apply。后继测试在同为 Ubuntu 24.04 ARM64 的 runner 上取得官方 jq/libjq1/libonig5 包，记录摘要后交给客体离线安装，避免在 TCG 下处理完整 universe/翻译/DEP-11 索引；内核、OS、两次重启和全部产品断言不变。此准备修正须取得后继运行结果后才能计为通过。
 
 `tests/platform-vm.py` 使用固定日期目录和官方镜像摘要、一次性 SSH 凭据、严格主机密钥校验和独立 QEMU 客体；生命周期覆盖校验安装、重复安装、preflight、apply、同值幂等、1→10000→1 Mbps 重配置、真实客体重启、verify、rollback 及再次重启。比较 17 项 sysctl、qdisc 参数、受管文件和状态，保存镜像/架构/内存/页大小/boot ID 及运行输出。客体内不执行公网 iperf3，不接触用户 VPS。
+
+adaptive 矩阵的 x86_64 客体为 KVM 4C4G，ARM64 客体在 ARM runner 上使用 QEMU/TCG 2C1536M；legacy 为 x86_64 1C1024M。软件模拟验证的是实际 ARM64 内核与用户态的功能行为，不用于比较性能。更大 RAM 的封顶另由输入边界回归覆盖；本矩阵不能证明特定云厂商 24 GiB 等大内存机型、64 KiB 内存页或其业务性能。
 
 控制器与资源策略另有原有档位、扩展组合、极端输入、缓冲封顶及显式超限的离线回归。它们不能替代上表的原生生命周期，更不能证明 3X-UI/Xray 业务或吞吐改善。
 

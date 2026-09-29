@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """在 CI runner 内创建隔离 QEMU 客体，验证原生平台与两次真实重启。"""
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -47,6 +48,32 @@ def main():
         'packages': ['jq', 'iproute2', 'procps', 'kmod', 'util-linux', 'python3', 'curl'],
         'runcmd': [['touch', '/root/dvt-cloud-ready']],
     }
+    if args.platform == 'ubuntu2404' and args.arch == 'arm64':
+        # Ubuntu 的 universe/翻译/DEP-11 索引在 TCG 下使准备阶段超过 25 分钟。
+        # runner 与客体同为 Ubuntu 24.04 ARM64；仅提前取得 jq 的三个官方 deb，
+        # 不替换客体内核、用户态或项目生命周期行为。
+        runner_os = dict(line.split('=', 1) for line in Path('/etc/os-release').read_text().splitlines() if '=' in line)
+        assert runner_os.get('ID', '').strip('"') == 'ubuntu'
+        assert runner_os.get('VERSION_ID', '').strip('"') == '24.04'
+        dependencies = work / 'guest-dependencies'
+        dependencies.mkdir()
+        run(['apt-get', 'download', 'jq:arm64', 'libjq1:arm64', 'libonig5:arm64'], cwd=dependencies)
+        packages = sorted(dependencies.glob('*.deb'))
+        assert len(packages) == 3, 'unexpected Ubuntu jq dependency set'
+        records = []
+        user_data.update(package_update=False, package_upgrade=False, packages=[], write_files=[])
+        for package in packages:
+            arch = subprocess.check_output(['dpkg-deb', '-f', str(package), 'Architecture'], text=True).strip()
+            assert arch == 'arm64', 'guest dependency architecture mismatch'
+            content = package.read_bytes()
+            records.append({'file': package.name, 'arch': arch, 'sha256': hashlib.sha256(content).hexdigest()})
+            user_data['write_files'].append({'path': '/root/dvt-dependencies/' + package.name,
+                                             'permissions': '0600', 'encoding': 'b64',
+                                             'content': base64.b64encode(content).decode('ascii')})
+        (evidence / 'guest-dependencies.json').write_text(json.dumps(records, indent=2))
+        user_data['runcmd'] = [['bash', '-ec', '''dpkg -i /root/dvt-dependencies/*.deb
+for tool in jq ip tc sysctl modprobe swapon python3 curl; do command -v "$tool"; done
+touch /root/dvt-cloud-ready''']]
     (work / 'user-data').write_text('#cloud-config\n' + json.dumps(user_data))
     (work / 'meta-data').write_text('instance-id: dvt-lifecycle\nlocal-hostname: dvt-ci\n')
     run(['cloud-localds', str(work / 'seed.img'), str(work / 'user-data'), str(work / 'meta-data')])
@@ -92,6 +119,7 @@ def main():
         raise TimeoutError('guest readiness timeout; see serial.log')
 
     def phase(name):
+        print('START guest phase', name, flush=True)
         path = evidence / (name + '.log')
         try:
             with path.open('wb') as log:
@@ -99,6 +127,7 @@ def main():
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
             print(path.read_text(errors='replace'), flush=True)
             raise
+        print('PASS guest phase', name, flush=True)
 
     def reboot():
         old_boot = wait_guest('cat /proc/sys/kernel/random/boot_id')
@@ -106,7 +135,9 @@ def main():
         wait_guest('test "$(cat /proc/sys/kernel/random/boot_id)" != ' + old_boot + ' && systemctl is-active ssh', timeout=600)
 
     try:
+        print('Waiting for cloud-init and required guest dependencies', flush=True)
         wait_guest('test -f /root/dvt-cloud-ready')
+        print('PASS guest readiness', flush=True)
         # tar stdin 只传固定资产和客体用例，避免复制私有临时材料。
         names = [line.split('  ', 1)[1] for line in (ROOT / 'SHA256SUMS').read_text().splitlines()]
         bundle = work / 'bundle.tar'
