@@ -2,8 +2,6 @@ name: platform-lifecycle
 
 on:
   push:
-    branches: ['codex/automatic-path-measurement']
-  pull_request:
     paths:
       - '*-vps-tuning.sh'
       - 'debian-vps-tuning.sh'

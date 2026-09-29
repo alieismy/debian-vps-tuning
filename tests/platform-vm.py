@@ -93,7 +93,8 @@ def main():
         # tar stdin 只传固定资产和客体用例，避免复制私有临时材料。
         names = [line.split('  ', 1)[1] for line in (ROOT / 'SHA256SUMS').read_text().splitlines()]
         bundle = work / 'bundle.tar'
-        run(['tar', '-cf', str(bundle), 'install.sh', 'SHA256SUMS', 'tests/platform-guest.sh', *names], cwd=ROOT)
+        run(['tar', '-cf', str(bundle), 'install.sh', 'SHA256SUMS', 'tests/platform-guest.sh',
+             'tests/platform-htb-native.py', *names], cwd=ROOT)
         with bundle.open('rb') as f:
             run(ssh + ['mkdir /root/dvt-bundle && tar -xf - -C /root/dvt-bundle'], stdin=f)
         phase('apply')

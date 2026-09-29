@@ -46,6 +46,7 @@ case "$1" in
     dvt reconfigure --port 1
     dvt verify
     cp "$state" "$evidence/before-reboot-state.json"
+    python3 tests/platform-htb-native.py
     ;;
   after-reboot)
     test "$(cat /proc/sys/kernel/random/boot_id)" != "$(cat "$evidence/boot-before")"
