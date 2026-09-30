@@ -66,7 +66,7 @@ dvt report --input-dir /root/dvt-measure-01
 python3 tools/explain_measurement.py --input-dir /root/dvt-measure-01
 ```
 
-它先校验原报告，不改写原分类或证据；`--json` 可输出派生解释。该入口属于仓库离线工具，未包含在已发布 `0.2.0-rc.1` bundle 中，也不会自动开展复验或设置限速。
+它先校验原报告，不改写原分类或证据；`--json` 可输出派生解释。[独立工具 0.1.0](releases/measurement-explanation-v0.1.0.md) 已提供完整源码包，未包含在主程序 `0.2.0-rc.1` bundle 中，也不会自动开展复验或设置限速；无需为使用该工具升级 VPS。
 
 ## 阶段边界
 

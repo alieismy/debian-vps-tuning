@@ -1,5 +1,11 @@
 # Changelog
 
+## [measurement-explanation-v0.1.0] - 2026-09-30
+
+- 独立发布离线测量解释工具 `0.1.0`：校验既有报告后显示绝对重传次数、字节暴露量、原阈值所需整数次数和候选限制，保留原分类与原始证据。
+- 缺少或遗漏较高 sweep 档汇总时输出 `INCOMPLETE`；中文逐样本缺失值显示“不可评估”，JSON 保留 `null`。
+- 提供完整源码 ZIP、中文说明和摘要清单，固定提交 `1c5e922`；属于独立 Pre-release，不设为 Latest、不进入 `dvt update` 主程序升级通道，也不替代 `v0.2.0-rc.1` 安装资产。验证与下载见[工具发布说明](docs/releases/measurement-explanation-v0.1.0.md)。
+
 ## [0.2.0-rc.1] - 2026-09-29
 
 - 新增第三阶段 Debian 12/13、Ubuntu 24.04 LTS 的 x86_64/ARM64 持久配置与自适应资源 profile；受管带宽接受 1–10000 Mbps，按内存封顶 socket buffer，新 profile 默认不创建 swap。七组独立 VM 生命周期全部通过并复核归档，见 `docs/platform-support.md`。
