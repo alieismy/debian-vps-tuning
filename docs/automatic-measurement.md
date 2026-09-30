@@ -60,6 +60,14 @@ dvt report --input-dir /root/dvt-measure-01
 
 离线 `report` 先核验摘要再显示结果；也可用 `python3 dvt-measure.py report --input-dir ...`。独立测量使用 `dvt.path-measurement/1`，不输入旧 `tools/calibrate_probe.py` 冒充 `VERIFIED` profile 证据。
 
+完整仓库另提供[测量证据解释工具](measurement-explanation.md)，用于查看每个样本的绝对重传次数、字节量、单事件分辨率和候选限制：
+
+```bash
+python3 tools/explain_measurement.py --input-dir /root/dvt-measure-01
+```
+
+它先校验原报告，不改写原分类或证据；`--json` 可输出派生解释。该入口属于仓库离线工具，未包含在已发布 `0.2.0-rc.1` bundle 中，也不会自动开展复验或设置限速。
+
 ## 阶段边界
 
 第一阶段固定 `d650709` 已有上述低流量运行证据。第二阶段新增独立的 [`htb-sweep`](temporary-htb.md)，会临时修改所选接口的 qdisc，其恢复验证与真实 VPS 授权单独记录；普通 `measure` 保持不写 qdisc。第三阶段 Ubuntu/ARM64/自适应持久配置的生命周期结果见[平台支持](platform-support.md)；诊断可运行本身不能替代 apply 的支持条件或生命周期证据。
