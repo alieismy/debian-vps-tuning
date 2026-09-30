@@ -11,6 +11,7 @@
 - 用户明确授权发布到 GitHub。本轮使用独立分支 `codex/readme-refactor-20260930`，将 README 重构、三份操作指南、评审整改及必要文档同步作为 11 份 Markdown 变更提交至 [PR #27](https://github.com/alieismy/debian-vps-tuning/pull/27)。该 PR 的最终提交、检查及合并状态以 GitHub 记录为准；不创建产品 tag 或 Release，也不替换已有公开资产。
 - 发布前复核通过本地链接与片段、85 个 Bash 代码块语法、99 个原章节锚点、11 个原固定摘要、24 项运行文件摘要，以及平铺目录/完整目录两种离线准备路径和 UPDATE_TAG 表格解析。暂存区检查额外发现两份新增评审报告的四处行尾空格，已改为段落分隔并通过 `git diff --cached --check`；本轮未改变被评操作语义。
 - 现有 [PR 检查](https://github.com/alieismy/debian-vps-tuning/pull/27/checks)承接 Linux 静态、安装/迁移、隔离 tc/iperf3 与 ShellCheck 门禁；合并以最终候选的检查结果为条件，不借用旧产品版本的通过状态。真实 VPS、重启、浏览器视觉和业务验收没有在本轮重跑。
+- `3a6a4d4` 的两条 Linux CI 通过后，自动评审提出三项补充问题；对照源码并修正历史 rc.9 示例的失败后重启、benchmark cap 条件说明和依赖安装交互确认，另修正同一参数区的表格连续性。五类修改前后 mock 对照证明四类失败均在修订后保留错误码并阻止重启，成功路径保留；没有执行真实主机命令。补充复核纳入原评审报告，最终修订继续通过同一 PR 的 CI。机器人 `COMMENTED` 只表示已给出意见，不等于人工批准。
 - 无新增延期事项。SECURITY 支持线、AGENTS 阶段文字及历史恢复/业务证据边界继续保留。当前产品仍为 `0.2.0-rc.1` Pre-release；本轮交付文档，不改变运行资产或产品成熟度。
 
 ## 本轮记录：2026-09-30（README 评审问题整改与复审）

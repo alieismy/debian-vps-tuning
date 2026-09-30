@@ -370,7 +370,9 @@ rc.11 不改变 rc.10 的 17 个 sysctl、qdisc、swap、journald、NOFILE 或�
     bash "$dvt_rc9_tmp/debian-vps-tuning.sh" rollback
 )
 
-printf 'rc9_rollback_exit=%s\n' "$?"
+dvt_rc9_status=$?
+printf 'rc9_rollback_exit=%s\n' "$dvt_rc9_status"
+[ "$dvt_rc9_status" -eq 0 ] || exit "$dvt_rc9_status"
 
 reboot
 ```

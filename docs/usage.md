@@ -10,7 +10,7 @@
 
 ```bash
 apt update
-apt install -y ca-certificates curl jq iproute2 procps kmod util-linux
+apt install ca-certificates curl jq iproute2 procps kmod util-linux
 ```
 
 若要使用独立 `diagnose`、`measure` 或 `htb-sweep`，还需 Python 3.9+；主动测量另需 iperf3 等 [依赖](automatic-measurement.md#能做什么)。限速测试建议 iperf3 3.18 或包含等效修复的版本，APT 提供的版本未必满足此建议。不要把编辑器、UFW、系统全量升级或包清理当作所有功能的必需步骤。

@@ -160,12 +160,11 @@ env \
 | `BENCHMARK_PARALLEL` | `1` | `1–4` |
 | `BENCHMARK_IP_FAMILY` | `auto` | `auto`、`4` 或 `6` |
 | `BENCHMARK_DIRECTION` | `both` | `upload`、`download` 或 `both` |
-| `BENCHMARK_RATE_CAP_MBPS` | 合法管理状态的端口带宽，否则不可估算 | 可选 `1–100000`；只用于测试流量预算，不改变 iperf3 或系统配置 |
+| `BENCHMARK_RATE_CAP_MBPS` | 合法管理状态的端口带宽，否则不可估算 | 可选 `1–100000`；默认只用于流量预算；`BENCHMARK_ENFORCE_RATE_CAP=1` 时必须显式设置，总 cap 等分后传给各 iperf3 流的 `--bitrate`，不改系统配置 |
 | `BENCHMARK_RUN_ID` | 自动生成 | 可选的 1–96 字符运行标签；仅限字母、数字、点、下划线、冒号和连字符 |
 | `BENCHMARK_OUTPUT_DIR` | 临时目录 | 可选的持久化证据目录；必须是父目录已存在、目标尚不存在的绝对路径 |
 | `TCPQUALITY_MODE` | 无 | 证据工具必填；`local-evidence` 禁止报告/debug 上传，`public-report` 明确允许报告及附属 debug bundle 上传 |
 | `TCPQUALITY_ACK_TRANSIENT_FIREWALL` | `0` | 必须显式为 `1`；确认固定上游会临时创建/删除目标流量计数链，且维护窗口与恢复边界可接受 |
-
 | `BENCHMARK_ENFORCE_RATE_CAP` | `0` | `1` 才把总 cap 等分为每流 iperf3 `--bitrate`；probe 自动启用 |
 | `BENCHMARK_PHASE_TIMEOUT_SECONDS` | 有效秒数 + omit + 15 | `1–300`；小于测量窗口会使样本失败 |
 
