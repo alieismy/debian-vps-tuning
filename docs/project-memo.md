@@ -6,6 +6,13 @@
 
 本文件是 `AGENTS.md` 指定的唯一项目阶段备忘入口，用于记录每轮对话工作的闭环状态，以及当前阶段不主动展开的后续候选事项。它不构成需求批准、生产变更授权、发布授权或下一阶段启动决定；控制规则以 [项目级 AGENTS.md](../AGENTS.md) 为准，具体验证事实以 [验证矩阵](validation.md) 和对应发布说明为准。
 
+## 本轮记录：2026-09-30（离线解释工具合并核对）
+
+- 用户要求执行下一步，承接前轮 PR 交付，推进 [PR #28](https://github.com/alieismy/debian-vps-tuning/pull/28) 的合并核对及默认分支验证；不扩展为 tag、Release 或 VPS 操作。核对时工作树干净，默认分支仍为 `b76510c`，PR 功能提交为 `7f90a1df6c33b8c6ade3a40ca7dcb8d3847f00a2`，差异保持七文件。
+- 该功能提交的 [push CI 36693340984](https://github.com/alieismy/debian-vps-tuning/actions/runs/36693340984) 与 [PR CI 36693347720](https://github.com/alieismy/debian-vps-tuning/actions/runs/36693347720) 均成功，已保存并核对两套日志：105 项 Python 无跳过，安装/迁移 fixture、预算/进程、九份 profile、真实 tc/iperf3 完整及 INT/TERM 恢复与 ShellCheck 均通过。CodeRabbit 两项意见均标记已由 `7f90a1d` 处理，线程已解决；没有未解决的评审意见。
+- 本次仅追加验证与合并核对记录，功能代码保持。合并须绑定本次文档提交后的准确 head，并等待其检查成功；实际合并提交和合并后的 CI 以 [PR 事件](https://github.com/alieismy/debian-vps-tuning/pull/28)及[默认分支检查](https://github.com/alieismy/debian-vps-tuning/actions/workflows/shellcheck.yml?query=branch%3Amaster)为准，不用此前提交的成功替代新提交结果。
+- 无新增延期事项；既有 checkout 运行时弃用提示继续登记，未修改工作流。离线工具进入默认分支交付流程，产品发布成熟度保持 Pre-release。可靠拐点、全面公网、真实业务收益及历史 TCP 原值不足导致的存量迁移缺口保持，合并和 CI 不补足这些运行证据。
+
 ## 本轮记录：2026-09-30（离线解释工具提交与 PR 验证）
 
 - 用户明确授权执行前轮提出的七文件提交、独立分支推送、创建 PR 和 CI 验证；不包含合并、tag、Release 或 VPS 变更。基线为默认分支 `b76510c`，交付分支为 `codex/measurement-explanation-20260930`；原始采集、私有验证脚本、凭据及本机状态不进入提交。

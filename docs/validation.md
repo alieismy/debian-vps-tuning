@@ -8,6 +8,8 @@
 
 [PR #28](https://github.com/alieismy/debian-vps-tuning/pull/28) 的实现提交 `f11b5a59aa53960e818acd8a78d126d9b67252c5` 已通过 [push CI 36692509176](https://github.com/alieismy/debian-vps-tuning/actions/runs/36692509176) 和 [PR CI 36692533017](https://github.com/alieismy/debian-vps-tuning/actions/runs/36692533017)。下载日志确认 Linux 的 105 项 Python 全部通过、无跳过，另有九份 profile、安装/迁移、预算、原生 tc/iperf3 完整/INT/TERM 恢复与 ShellCheck 证据。后续评审修正仅完善缺失字段的中文显示和测试结果表述；最终提交状态以 PR 检查为准。此处 Linux CI 不替代两台存量主机迁移或公网业务收益验收。
 
+评审修正后的功能提交 `7f90a1df6c33b8c6ade3a40ca7dcb8d3847f00a2` 已通过 [push CI 36693340984](https://github.com/alieismy/debian-vps-tuning/actions/runs/36693340984) 与 [PR CI 36693347720](https://github.com/alieismy/debian-vps-tuning/actions/runs/36693347720)，两套日志均确认上述完整门禁成功及 105 项 Python 无跳过。两条评审线程已解决。后继仅追加文档的提交及合并结果分别以 PR head 检查和默认分支 Actions 为准。
+
 ## 0.2.0-rc.1 第三阶段跨平台候选（2026-09-29）
 
 生成 profile 扩为九份，纳入 ARM64、Ubuntu 24.04 LTS、内存自适应策略与 1–10000 Mbps 配置参数，契约和逐平台状态见[平台支持矩阵](platform-support.md)。固定 `d38ec3f` 的主 Linux CI [36531809720](https://github.com/alieismy/debian-vps-tuning/actions/runs/36531809720) 已通过；同版本真实 VM 在回滚读回中暴露 TCP buffer 原始向量截断，不能记为平台生命周期通过。
