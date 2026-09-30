@@ -1,10 +1,12 @@
 # 验证说明
 
-## 测量证据解释工具（2026-09-30，未发布工作树）
+## 测量证据解释工具（2026-09-30，PR 候选）
 
 `tools/explain_measurement.py` 的接口和边界见[设计说明](measurement-explanation.md)。新增 `tests/test_measurement_explanation.py`，由既有 `unittest discover -s tests -p 'test_*.py'` 自动发现；覆盖合成持续上升/孤立单事件/最高档候选、缺失数据、整数边界、原分类保持、HTB 恢复门禁、源目录不变及篡改拒绝。合成测试不代表公网误报率或可靠拐点验收。
 
 交付核对修正了缺少 `tested_rates` 或汇总遗漏实际较高 sweep 档时误报 `NOT_COVERED` 的问题，此时输出 `INCOMPLETE`；真实最高档候选仍为 `NOT_COVERED`。新增工具 16 项回归通过；本机全套 Python 105 项中 104 项通过，1 项因 Windows 宿主缺少 flock 跳过；生成检查通过。四轮真实归档共 71 个正式样本的派生解释与修正前逐字段一致，1244 个源文件摘要保持：旧候选仍为两个单事件越阈值且高档未确认上升，最新二十秒复验仍无候选。已发布测量运行源码、分类器、24 项固定运行资产未改；Linux CI、发布及新增公网运行不属于上述本地结果。后续状态记录于[项目备忘](project-memo.md)。
+
+[PR #28](https://github.com/alieismy/debian-vps-tuning/pull/28) 的实现提交 `f11b5a59aa53960e818acd8a78d126d9b67252c5` 已通过 [push CI 36692509176](https://github.com/alieismy/debian-vps-tuning/actions/runs/36692509176) 和 [PR CI 36692533017](https://github.com/alieismy/debian-vps-tuning/actions/runs/36692533017)。下载日志确认 Linux 的 105 项 Python 全部通过、无跳过，另有九份 profile、安装/迁移、预算、原生 tc/iperf3 完整/INT/TERM 恢复与 ShellCheck 证据。后续评审修正仅完善缺失字段的中文显示和测试结果表述；最终提交状态以 PR 检查为准。此处 Linux CI 不替代两台存量主机迁移或公网业务收益验收。
 
 ## 0.2.0-rc.1 第三阶段跨平台候选（2026-09-29）
 

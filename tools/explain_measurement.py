@@ -110,11 +110,13 @@ def print_explanation(data):
     if data['original_stop_reason']:
         print('原报告停止原因：' + str(data['original_stop_reason']))
     print('逐样本：角色 / Mbps / 有效 / payload bytes / 重传次数 / 重传每 GiB / 单次重传每 GiB / 达阈值所需次数')
+    def show(value):
+        return '不可评估' if value is None else value
     for row in data['samples']:
         resolution = f"{row['single_event_per_gib']:.3f}" if row['status'] == 'AVAILABLE' else '不可评估'
         normalized = f"{row['retransmits_per_gib']:.3f}" if row['status'] == 'AVAILABLE' else '不可评估'
-        print(f"  {row['role']} / {row['rate_mbps']} / {row['eligible']} / {row['payload_bytes']} / "
-              f"{row['retransmits']} / {normalized} / {resolution} / {row['events_at_threshold']}")
+        print(f"  {row['role']} / {row['rate_mbps']} / {row['eligible']} / {show(row['payload_bytes'])} / "
+              f"{show(row['retransmits'])} / {normalized} / {resolution} / {show(row['events_at_threshold'])}")
     candidate = data['candidate_observation']
     if candidate:
         if candidate['threshold_hits'] is None:

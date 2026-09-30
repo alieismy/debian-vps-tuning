@@ -19,6 +19,7 @@ python3 tools/explain_measurement.py --input-dir /path/to/completed-measurement 
 - 输出仅到 stdout，默认中文文本，`--json` 输出独立的 `dvt.measurement-explanation/1`，工具版本 `0.1.0`。退出 0 只表示解释成功。源报告、账本、摘要不被改写；未完整测完但已正式结算的部分报告可解释，原拒绝状态保持。
 - JSON 的 `source` 包含原测量 schema/version、报告和清单摘要；`original_analysis` 保留原分类、区间和限制字段。输出不包含 IP、源端口或主机路径，不引用未经验证的证据目录脚本。
 - `samples` 每行包含 role、rate_mbps、eligible、payload_bytes、retransmits、重算的 retransmits_per_gib、single_event_per_gib、events_at_threshold。计数和字节要求非布尔整数、字节大于零；速率和阈值要求有限正数。计数缺失时该行 `UNAVAILABLE`，保留可用基础字段，不把未知值当零。已有数值类型非法或归一化值不一致则拒绝。
+- 中文逐样本输出将缺失字节、计数和阈值所需次数显示为“不可评估”；JSON 仍保留 `null`，不将缺失值补成零。
 - `candidate_observation` 只检查原候选对应的 sweep 档，输出阈值命中数、其中单重传样本数、较高档的重复上升/未上升/不完整/未覆盖状态；不把 reference 或低速控制混入普通 sweep 重复数。
 - 缺少 `tested_rates`，或汇总遗漏原始样本中实际出现的较高 sweep 档时，高档观察为 `INCOMPLETE`；不能将缺失汇总解释为 `NOT_COVERED`。只有汇总存在且汇总与样本均无更高档时才输出 `NOT_COVERED`。
 - 单报告无法证明独立复现，`independent_replication=NOT_ASSESSED`；`htb_entry=NOT_ESTABLISHED_BY_SINGLE_REPORT`。这些是解释边界，不是新分类门禁或对主机能力的否定。

@@ -89,13 +89,24 @@ class ExplanationTests(unittest.TestCase):
         source['analysis'].update(status='INSUFFICIENT_EVIDENCE', spike_threshold_retransmits_per_gib=None, tested_rates=[])
         self.assertEqual(e.explain(source)['samples'], [])
 
-    def test_missing_counts_remain_unknown(self):
-        source = fixture(); del source['samples'][3]['sender']['retransmits']
-        result = e.explain(source)
-        self.assertEqual(result['samples'][3]['status'], 'UNAVAILABLE')
-        self.assertIsNone(result['candidate_observation']['threshold_hits'])
-        with redirect_stdout(io.StringIO()) as out: e.print_explanation(result)
-        self.assertIn('不能评估触发强度', out.getvalue())
+    def test_missing_fields_remain_unknown_in_json_and_text(self):
+        for field in ('bytes', 'retransmits', 'spike_threshold_retransmits_per_gib'):
+            with self.subTest(field=field):
+                source = fixture()
+                if field == 'spike_threshold_retransmits_per_gib':
+                    del source['analysis'][field]
+                else:
+                    del source['samples'][3]['sender'][field]
+                result = e.explain(source)
+                if field != 'spike_threshold_retransmits_per_gib':
+                    self.assertEqual(result['samples'][3]['status'], 'UNAVAILABLE')
+                self.assertIsNone(result['samples'][3]['events_at_threshold'])
+                self.assertIsNone(result['candidate_observation']['threshold_hits'])
+                with redirect_stdout(io.StringIO()) as out: e.print_explanation(result)
+                self.assertIn('不能评估触发强度', out.getvalue())
+                sample_lines = [line for line in out.getvalue().splitlines() if line.startswith('  ')]
+                self.assertNotIn('None', '\n'.join(sample_lines))
+                self.assertIn('不可评估', sample_lines[3])
 
     def test_integer_threshold_exact_and_just_above_boundary(self):
         for size, expected in ((2**30, 100), (2**30+1, 101)):

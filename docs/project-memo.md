@@ -9,8 +9,11 @@
 ## 本轮记录：2026-09-30（离线解释工具提交与 PR 验证）
 
 - 用户明确授权执行前轮提出的七文件提交、独立分支推送、创建 PR 和 CI 验证；不包含合并、tag、Release 或 VPS 变更。基线为默认分支 `b76510c`，交付分支为 `codex/measurement-explanation-20260930`；原始采集、私有验证脚本、凭据及本机状态不进入提交。
-- 本轮先核对工作树、默认分支与工作流，复用已通过的 16 项工具测试、105 项 Python 本地回归和四轮 71 样本回读。新增源码与测试将由既有 Linux `shell-static-checks` 执行；CI 结果按固定提交记录，不把 Windows 的 flock 跳过视为 Linux 通过。
-- 未完成门禁：PR 的 Linux CI 尚待执行；合并和发布不在本轮范围。无新增延期事项；可靠拐点、全面公网、业务收益与存量迁移的既有证据边界保持。当前产品为 Pre-release，离线工具进入 PR 交付阶段。
+- 本轮先核对工作树、默认分支与工作流，复用 16 项工具测试通过、105 项 Python 本地回归中 104 通过/1 项因 Windows 缺少 flock 跳过，以及四轮 71 样本回读的证据。七文件提交 `f11b5a5` 已推送并创建 [PR #28](https://github.com/alieismy/debian-vps-tuning/pull/28)。
+- 固定 `f11b5a59aa53960e818acd8a78d126d9b67252c5` 的 [push CI](https://github.com/alieismy/debian-vps-tuning/actions/runs/36692509176) 和 [PR CI](https://github.com/alieismy/debian-vps-tuning/actions/runs/36692533017) 均通过；已取回日志，确认 105 项 Python 无跳过、九份生成 profile、安装/迁移 fixture、预算与进程测试、原生 tc/iperf3 完整与 INT/TERM 恢复及 ShellCheck 通过。真实 VPS 的历史原值缺口不由 CI fixture 补足。
+- 核对自动评审的两项建议后，明确 Windows 测试通过/跳过数量，并将中文逐样本缺失值统一显示为“不可评估”，JSON 的 null 和原分类不变；扩展既有缺字段回归覆盖字节、计数与阈值。最终提交的检查以 PR 当前 head 为准，旧 CI 只证明上述固定提交。
+- 修正后再次运行全套 Python：105 项中 104 通过、Windows flock 跳过 1；四轮 71 样本 JSON 与既有输出逐字段一致，1244 个源文件和 24 项固定运行资产摘要保持，引用及 `git diff --check` 通过。检查结果与 PR 文案将随远端最终状态同步，原始测试归档继续保留。
+- 合并和发布不在本轮范围。新增延期事项仅为 CI 的 `actions/checkout@v4` Node.js 20 运行时弃用提示，当前自动使用 Node.js 24 且门禁成功，后续单独评估工作流依赖升级；本轮不改工作流。可靠拐点、全面公网、业务收益与存量迁移的既有证据边界保持，产品仍为 Pre-release，离线工具进入 PR 交付阶段。
 
 ## 本轮记录：2026-09-30（离线解释工具交付核对）
 
