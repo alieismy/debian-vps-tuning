@@ -6,6 +6,13 @@
 
 本文件是 `AGENTS.md` 指定的唯一项目阶段备忘入口，用于记录每轮对话工作的闭环状态，以及当前阶段不主动展开的后续候选事项。它不构成需求批准、生产变更授权、发布授权或下一阶段启动决定；控制规则以 [项目级 AGENTS.md](../AGENTS.md) 为准，具体验证事实以 [验证矩阵](validation.md) 和对应发布说明为准。
 
+## 本轮记录：2026-09-30（README 文档 GitHub 交付）
+
+- 用户明确授权发布到 GitHub。本轮使用独立分支 `codex/readme-refactor-20260930`，将 README 重构、三份操作指南、评审整改及必要文档同步作为 11 份 Markdown 变更提交至 [PR #27](https://github.com/alieismy/debian-vps-tuning/pull/27)。该 PR 的最终提交、检查及合并状态以 GitHub 记录为准；不创建产品 tag 或 Release，也不替换已有公开资产。
+- 发布前复核通过本地链接与片段、85 个 Bash 代码块语法、99 个原章节锚点、11 个原固定摘要、24 项运行文件摘要，以及平铺目录/完整目录两种离线准备路径和 UPDATE_TAG 表格解析。暂存区检查额外发现两份新增评审报告的四处行尾空格，已改为段落分隔并通过 `git diff --cached --check`；本轮未改变被评操作语义。
+- 现有 [PR 检查](https://github.com/alieismy/debian-vps-tuning/pull/27/checks)承接 Linux 静态、安装/迁移、隔离 tc/iperf3 与 ShellCheck 门禁；合并以最终候选的检查结果为条件，不借用旧产品版本的通过状态。真实 VPS、重启、浏览器视觉和业务验收没有在本轮重跑。
+- 无新增延期事项。SECURITY 支持线、AGENTS 阶段文字及历史恢复/业务证据边界继续保留。当前产品仍为 `0.2.0-rc.1` Pre-release；本轮交付文档，不改变运行资产或产品成熟度。
+
 ## 本轮记录：2026-09-30（README 评审问题整改与复审）
 
 - 用户授权按评审方案执行后，修正操作指南的 R1/R2：补齐离线平铺资产到完整 bundle 的目录整理、固定清单/安装器摘要核验与传输后复核；将 UPDATE_TAG 重新纳入参数表。中英文首页、迁移指南与高级测量指南保持初审摘要，运行资产、AGENTS 和 SECURITY 未改。
