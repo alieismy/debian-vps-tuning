@@ -1,37 +1,51 @@
-
-
 # Debian VPS Tuning
 
-`v0.2.0-rc.1` is a prerelease with three capabilities: [automatic public iperf3 measurement](docs/automatic-measurement.md) without prior apply, [temporary HTB sweeps](docs/temporary-htb.md) with full restoration, and [persistent platform profiles](docs/platform-support.md) for Debian 12/13 and Ubuntu 24.04 LTS on x86_64/ARM64. Resource profiles are adaptive outside the original Debian tiers, and configuration bandwidth accepts 1–10000 Mbps. Installation uses the fixed version and hashes below.
+[简体中文](README.md) · English · [v0.2.0-rc.1 prerelease](https://github.com/alieismy/debian-vps-tuning/releases/tag/v0.2.0-rc.1)
 
-```bash
-# Plan only: no traffic or configuration writes
-bash debian-vps-tuning.sh measure --rate-cap 20 --plan-only
-```
+Host network diagnostics, budgeted automatic measurement with public iperf3 endpoints, and verifiable, reversible BBR + fq configuration for Linux VPS hosts. Measurement needs neither prior tuning nor a self-hosted endpoint. Temporary HTB rate sweeps explore the relationship between sending rate and retransmissions.
 
-The [validation record](docs/validation.md) separates Linux CI, native guest lifecycles and bounded VPS evidence. Automatic IPv4 measurement and normal/interrupted temporary HTB restoration have been exercised on one VPS. The complete low-rate sweep produced 11 eligible samples out of 15 and `INSUFFICIENT_EVIDENCE`; no reliable policer knee or proxy performance benefit has been established. HTB remains temporary and accepts only a fully restorable single root fq. Historical migration examples below retain their original versions.
+This is a **Pre-release**. Persistent profiles support Debian 12/13 and Ubuntu 24.04 LTS on x86_64/ARM64; independent diagnostics and measurement check actual Linux capabilities. Functional and recovery evidence does not establish reliable policer identification or improved proxy performance.
 
-A conservative host network tuning script for Debian 12/13 and Ubuntu 24.04 LTS cloud VPS. The project primarily targets natively systemd-deployed **3X-UI, Xray-core, VLESS + REALITY + TCP** scenarios; the current target machine acceptance baseline includes 3X-UI v3.4.2 and Xray-core v26.6.27, but this is not a compatibility guarantee for other versions. The script also provides limited read-only recognition for S-UI, sing-box, and standalone Xray services.
+[Capabilities](#capabilities-and-effects) · [Requirements](#support-and-prerequisites) · [Quick start](#quick-start) · [Operations](#common-operations) · [Migration](#upgrades-and-rollback) · [Documentation](#documentation) · [Help](#help-contributing-and-security)
 
-The script uses BBR + fq, controlled TCP buffering, standard queue parameters, emergency swap, and journald space limits, with explicit `preflight`, `apply`, `reconfigure`, `verify`, and rollback lifecycles. It does not configure proxy services, routing, or firewalls, nor does it promise to increase throughput or reduce latency across all routes, virtualization platforms, and loads.
+## Capabilities and effects
 
-> **System Selection Summary (as of 2026-08-04):** Newly created 1C1G, 1C2G, and 2C2G VPS instances are recommended to use Debian 13 minimal by default. Debian 13 is the current stable release; Debian 12 has transitioned to LTS and is better suited for retaining existing stable nodes or meeting explicit compatibility constraints. The OS version alone does not guarantee BBR availability, higher performance, or lower idle memory usage; virtualization type, running kernel, and target machine resources must still be verified.
+| Goal | Entry point | Effects and conditions |
+|---|---|---|
+| Inspect host capabilities and network state | `dvt diagnose` | No prior apply, active test traffic or system configuration changes; outputs a capability snapshot |
+| Automatically select an endpoint and measure outgoing TCP | `dvt measure` | No prior apply; explicit cap and shared budget; keeps sysctl/qdisc and saves local evidence |
+| Explore temporary shaping rates | `dvt htb-sweep` | Requires a fully restorable single root fq; temporarily limits all interface egress, including SSH; verifies restoration |
+| Manage host configuration | `dvt preflight` → `dvt apply` | Persistently manages BBR + fq, TCP buffers, queue settings, optional swap, journald and NOFILE; includes verification and rollback |
+| Inspect captured results | `dvt report` | Verifies independent measurement report hashes; never applies a candidate rate |
 
-> This is a Pre-release, not a stable performance claim. Platform lifecycle coverage and remaining target-host gates are documented in the [support matrix](docs/platform-support.md).
+The project does not install or rewrite proxy services, configure firewalls, routing, DNS, NAT or TProxy. `verify` and legacy incremental diagnostics (`diagnose --managed`) may read an accessible generated Xray configuration to report selected TFO/keepalive fields; they do not rewrite it or output its credentials. Persistent HTB is not enabled.
 
-> This English document was originally translated from the rc.11 documentation. Release-critical URLs and the current development contracts are synchronized here. The Chinese [README](README.md) and the [current release notes](docs/releases/v0.2.0-rc.1.md) remain authoritative for the complete traffic-budget ledger, checkpoint/resume migration, installer, TcpQuality evidence, advisory probe, non-persistent HTB, and `mq 0:` handling details.
+## Support and prerequisites
 
-Repository-only offline calibration remains available for fixed-profile evidence; adaptive profiles are rejected until their evidence contract is defined. It performs calibration of existing probe evidence. See [usage and evidence boundaries](docs/measured-calibration.md). It generates no traffic and applies no settings.
+| Capability | Requirements |
+|---|---|
+| Persistent configuration | Debian 12/13 or Ubuntu 24.04 LTS, `x86_64`/`aarch64`, native systemd; at least 1 logical CPU and 384 MiB RAM; available BBR/fq, a conventional default route and recoverable qdisc |
+| Independent diagnostics | Linux, Python 3.9+ and available observation commands; no root required; unreadable items are unavailable |
+| Independent measurement | Python 3.9+, Bash, iperf3, iproute2, jq, awk, GNU coreutils and util-linux; execution needs root and a shared budget ledger; no distro or CPU/RAM tier allowlist |
+| Temporary HTB | Measurement dependencies, HTB/fq, an explicit interface and full restoration support; mq, clsact, ingress, extra classes/filters or unknown fq parameters are rejected |
 
-## Online Installation and Verification
+Dependencies are not installed automatically. See [preparation instructions (Chinese)](docs/usage.md#执行前准备). Rate-limited tests should use iperf3 3.18 or a version containing the equivalent fix.
 
-The following commands assume you have entered the VPS root shell (prompt usually `#`, `id -u` should output `0`). The script modifies host-level network, systemd, journald, and swap configurations; before first execution, ensure the provider console or rescue mode is accessible, and save necessary baseline information.
+Original Debian resource tiers keep their policies; other supported combinations use adaptive profiles. Persistent `--port` accepts **1–10000 Mbps** and means the provider's plan limit, not the virtual NIC link speed or a shaper. Measurement `--rate-cap` is a separate sending target and budget input. Accepted values do not prove tested throughput; see the [platform and resource contract (Chinese)](docs/platform-support.md).
 
-### 1. Online Installation
+## Quick start
 
-An existing managed installation must first pass the [migration source checks](docs/platform-support.md#旧状态与迁移). Installing the new entrypoint alone does not migrate state.
+### Choose a path before installation
 
-Install v0.2.0-rc.1 through the following immutable entry after verifying the installer before execution. It does not fall back to `main`, `master`, or `latest`, and installation itself does not run tuning or generate test traffic:
+- **New host:** verify and install the pinned release below, then choose diagnostics/measurement or persistent configuration.
+- **Existing managed state:** first read the [migration guide (Chinese)](docs/migration.md). Installing an entrypoint does not migrate state. Never apply a new version over old state. If saved original `tcp_rmem/tcp_wmem` vectors have fewer than three fields, stop at read-only inspection; keep state and original assets, and do not rollback/reboot.
+- **Before changing configuration:** save the baseline and confirm console/rescue access and backups. If the provider already supplies BBR/fq, inspect preflight before deciding whether the project should take ownership; existing BBR/fq does not itself require another tuning layer.
+
+<a id="online-installation-and-verification"></a>
+
+### Installation
+
+Run in a root shell (`id -u` must return `0`). This downloads the complete fixed `v0.2.0-rc.1` installer, verifies its SHA-256 and then executes it. `--no-launch` installs only, without tuning or measurement traffic.
 
 ```bash
 (
@@ -46,873 +60,185 @@ Install v0.2.0-rc.1 through the following immutable entry after verifying the in
   printf '%s  %s\n' \
     'a039922793710a90b281a10ba5076761f6a8efd43c96c916328e0fe7c5f70d06' \
     "$dvt_i" | sha256sum -c -
-  bash "$dvt_i"
+  bash "$dvt_i" --no-launch
 )
 ```
 
-The safe guide will:
+Continue only after successful exit. The installer verifies the pinned manifest and all runtime assets, installs `/usr/local/bin/dvt`, and refuses inconsistent existing content. Downloads never fall back to mutable branches, `latest` or third-party mirrors. Do not replace this with an unverified `curl | bash` command.
 
-1. Display the detected system, CPU, memory, and tier;
-2. Select provider port bandwidth; press Enter directly to use 200 Mbps;
-3. Display the actual invoked script, source, and SHA-256;
-4. Execute read-only `preflight` first;
-5. Ask again after `preflight` passes; `apply` is only executed if `y` is explicitly entered.
+```bash
+dvt --version
+```
 
-After successful application, reboot as prompted:
+### Path A: diagnostics or independent measurement
+
+No prior apply is needed. After installation, inspect capabilities and preview the traffic-free plan:
+
+```bash
+dvt diagnose
+dvt measure --rate-cap 20 --plan-only
+```
+
+After reviewing the testing window, budget and public service terms, the following **example generates outgoing TCP traffic**. Run as root; the output directory must not exist. Never delete a ledger or change its window ID to bypass recorded consumption:
+
+```bash
+install -d -m 0700 /root/dvt-traffic
+dvt measure --rate-cap 20 --family 4 --budget-mib 600 \
+  --ledger /root/dvt-traffic/window.json --window-id path-check-01 \
+  --output-dir /root/dvt-measure-01
+```
+
+The tool displays its plan and asks for confirmation, then performs bounded public endpoint selection. Public services see the VPS source address and may be busy or unreachable. The example 600 MiB budget covers application payload, excluding protocol, retransmission and provider-billing overhead. See [automatic measurement (Chinese)](docs/automatic-measurement.md) for dependencies, results and failed-reservation accounting. Inspect a completed report with:
+
+```bash
+dvt report --input-dir /root/dvt-measure-01
+```
+
+`INSUFFICIENT_EVIDENCE` is an allowed result; exit code 0 only means report collection completed. Tests do not traverse a VLESS/REALITY client and do not establish proxy performance benefits. For temporary shaping, read the [htb-sweep guide (Chinese)](docs/temporary-htb.md), including its whole-interface impact and restoration conditions.
+
+### Path B: persistent configuration
+
+For a new host without old managed state, replace `200` with the provider plan limit and run read-only preflight:
+
+```bash
+dvt preflight --port 200
+```
+
+After preflight passes and you have reviewed the write scope:
+
+```bash
+dvt apply --port 200
+```
+
+After successful application, reboot as instructed:
 
 ```bash
 reboot
 ```
 
-### 2. Online Verification After Reboot
-
-Execute after re-logging into the VPS. `verify` is read-only validation and will not apply again, nor does it require re-entering the port bandwidth already saved in the state:
+Log in again and verify. These commands neither need the bandwidth again nor reapply settings:
 
 ```bash
-(
-  set -e
-
-  dvt_tmp="$(mktemp -d)"
-  trap 'rm -rf -- "$dvt_tmp"' EXIT
-
-  curl --fail --show-error --silent --location \
-    --proto '=https' \
-    --proto-redir '=https' \
-    --connect-timeout 15 \
-    --max-time 120 \
-    -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.2.0-rc.1/debian-vps-tuning.sh
-
-  printf '%s  %s\n' \
-    'c547a88c519f27d2996eaaf6fe34716dffc391492687251a801387af20429dc2' \
-    "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
-
-  bash "$dvt_tmp/debian-vps-tuning.sh" verify
-)
-
-printf 'verify_after_reboot_exit=%s\n' "$?"
+dvt verify
+dvt status
 ```
 
-`verify_after_reboot_exit=0` indicates verification passed. Save the full output; do not only extract the last line.
-
-### 3. Strict Online Verification After 3X-UI Installation
-
-The recommended order is to complete tuning and reboot verification first, then install 3X-UI. After installing and starting 3X-UI, execute:
+Stop on any failed step and retain complete output. After installing and starting 3X-UI, also run strict verification for service activity and NOFILE limits in systemd, the main process and direct Xray children. Repeat after reboot:
 
 ```bash
-(
-  set -e
-
-  dvt_tmp="$(mktemp -d)"
-  trap 'rm -rf -- "$dvt_tmp"' EXIT
-
-  curl --fail --show-error --silent --location \
-    --proto '=https' \
-    --proto-redir '=https' \
-    --connect-timeout 15 \
-    --max-time 120 \
-    -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.2.0-rc.1/debian-vps-tuning.sh
-
-  printf '%s  %s\n' \
-    'c547a88c519f27d2996eaaf6fe34716dffc391492687251a801387af20429dc2' \
-    "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
-
-  env \
-    REQUIRE_PROXY_SERVICE=1 \
-    PROXY_SERVICE_UNITS='x-ui.service' \
-    bash "$dvt_tmp/debian-vps-tuning.sh" verify
-)
-
-printf 'strict_verify_after_3xui_exit=%s\n' "$?"
+env REQUIRE_PROXY_SERVICE=1 PROXY_SERVICE_UNITS='x-ui.service' dvt verify
 ```
 
-Strict verification requires `x-ui.service` to be active, and checks that the systemd configuration, 3X-UI main process, and direct Xray child process NOFILE soft/hard limits are all not less than 65536. Reboot once more after installing 3X-UI, and repeat this strict verification command to prove that boot startup and new process inheritance are still correct.
-
-### 4. Execute Read-Only Upgrade Check from Early rc Versions (historical rc.17 example)
-
-Recovery limitation added on 2026-09-29: older releases may have saved incomplete original TCP buffer vectors. Before any historical rollback, check the [original-value and recovery conditions](docs/platform-support.md#旧状态与迁移). Successful old-version verify does not prove that all three original fields were saved. Keep incomplete states and stop before rollback or reboot.
-
-For a direct rc.16-to-rc.19 migration, follow the [complete Chinese guide](README.md#从-rc16-升级到-rc19). It pins the rc.19 controller, runs read-only `update --target v0.1.0-rc.19`, prepares a persistent checkpoint with that controller, and separates the two manual reboot gates from the final installer switch. The currently installed rc.16 `dvt` must not be used for `migrate prepare`. The rc.17 example below is retained as a historical read-only check.
-
-VPS instances managed by rc.9 through rc.16 can download the published rc.17 main entry and execute `update`. It reads the resource tier and port bandwidth from state, verifies the current profile, target `SHA256SUMS`, and target main entry, then runs the current version's `verify` and the target's read-only `update-preflight`. The output includes the fixed URLs, SHA-256 values, and migration order required for the maintenance window. `update` does not perform rollback, purge, apply, reconfigure, or reboot, and never replaces previously published assets.
-
-The main entry, `SHA256SUMS`, and profile are an indivisible Release package. **Assets from different versions must not be placed in the same directory.** For example, do not place rc.17 `SHA256SUMS` and profile next to the rc.16 main entry; otherwise integrity checks reject execution without falling back to an online download. Use independent `mktemp -d` directories for each version.
-
-```bash
-(
-  set -e
-
-  dvt_tmp="$(mktemp -d)"
-  trap 'rm -rf -- "$dvt_tmp"' EXIT
-
-  curl --fail --show-error --silent --location \
-    --proto '=https' \
-    --proto-redir '=https' \
-    --connect-timeout 15 \
-    --max-time 120 \
-    -o "$dvt_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.17/debian-vps-tuning.sh
-
-  printf '%s  %s\n' \
-    '2530f70a5a675c4733d5bc0109ccbcc35daee23a9e460d920a4b346a3216bfc7' \
-    "$dvt_tmp/debian-vps-tuning.sh" | sha256sum -c -
-
-  bash "$dvt_tmp/debian-vps-tuning.sh" update
-)
-```
-
-Specify the target version using `update --target v0.1.0-rc.17`. Auto-discovery does not cross `major.minor` release lines: when on an rc, it can select a higher rc on the same line or the stable release; stable installations automatically exclude prereleases. Cross-line upgrades require explicit `--target`; downgrades and duplicate upgrades remain rejected.
-
-`update` is only an upgrade compatibility check and plan generator; it will not rewrite old scripts on disk, system tuning configurations, or 3X-UI. A passed check does not mean the upgrade is complete; during the maintenance window, manually execute rollback/purge, reboot, target preflight/apply, reboot again, and verify according to the output and this README. If GitHub API queries fail or are subject to anonymous rate limits, using a reviewed `--target` can skip auto-discovery, but target Release assets will still be verified.
-
-A cross-version upgrade may remove the old managed version before installing the newest version, but removal must be performed by the **fixed old Release** using its own state through `verify → rollback/purge`. Do not manually delete sysctl files, units, the state directory, or swap, and do not let a new `apply` overwrite old state. Only after restoration checks and the first reboot pass should the newest `preflight/apply → reboot → verify` run. If old state is missing, damaged, or predates a reliable state contract, preserve read-only evidence first and use the matching old recovery logic, reviewed manual cleanup, or a clean OS reinstall when business backups and console access have been verified. A clean reinstall is a separate recovery path, not manual file deletion on the old system.
-
-### 5. Online Execution Notes
-
-- Persistent profiles support Debian 12/13 and Ubuntu 24.04 LTS on `x86_64`/`aarch64`; the [platform contract](docs/platform-support.md) defines resource selection and capability checks;
-- Port bandwidth should be the provider's plan limit, not the link speed shown by the virtual NIC; default is 200 Mbps, allows 1–10000 Mbps;
-- Current installation and post-reboot verification are pinned to `v0.2.0-rc.1`; explicitly historical migrations retain their versions. Downloads never fall back to `master`, `main`, `latest`, HTTP, or third-party mirrors;
-- Each command verifies the fixed SHA-256 for its selected release before execution; the controller then verifies that release's `SHA256SUMS` and selected profile again;
-- Main entry, `SHA256SUMS`, and profile must come from one Release; do not mix rc.16 and rc.17 assets in `/root` or one working directory;
-- Tags should not be moved or same-named assets replaced after publication; release a new version when defects are found;
-- `update` is a read-only upgrade check and will not automatically migrate configurations; after a passed check, you must still choose another maintenance window to complete manual rollback/apply and two reboots;
-- The script does not configure or allow UFW ports; do not treat UFW status prompts as the firewall being configured; ensure the SSH management port will not be locked out first;
-- `apply` writes system configurations and may create `/swapfile-proxy`; production VPS should backup first, confirm console/rescue access, and execute during a maintenance window;
-- `verify` passing proves that the current configuration and checked services comply with the script contract, not that line throughput, latency, packet loss, or VLESS + REALITY + TCP business performance will definitely improve;
-- `verify` and `preflight` will reject duplicate sysctl definitions outside this project, even if the values written by external files are the same as this project; do not run the built-in BBR or network optimization menus of 3X-UI/X-UI again, to avoid recreating `99-bbr-x-ui.conf`;
-- `rollback` reverts tuning configurations managed by this project and should be tested during a maintenance window; normal rollback defaults to keeping the swap created by the script;
-- Do not use `curl ... | bash` or `bash <(curl ...)` without reading the script and release notes.
-
-### When the Provider Already Supplies BBR/fq
-
-BBR plus root `fq` is the target state; it does not mean provider configuration must always be overwritten. Runtime values do not establish persistence or ownership. Run `preflight` before the first installation and follow its classification:
-
-| Baseline | Default handling |
-|---|---|
-| No external conflict | Let the project write the configuration and become the sole owner |
-| Exactly one `bbr` and one `fq` definition in a root-owned regular `/etc/sysctl.conf` | The project may transactionally back up and adopt it, or the operator may stop after `preflight` and keep the provider configuration |
-| Definitions in `/etc/sysctl.d/*.conf`, duplicates, symlinks, non-root files, different values, or unknown tuning combinations | `preflight` blocks; do not merge or overwrite automatically |
-| Managed state from another project version exists | Use cross-version migration, not provider-baseline adoption |
-
-If BBR/fq is all that is required and the provider persists it through one clear owner, this project need not be installed. Adopt ownership only when project-managed buffers, swap, journald, NOFILE, verification, and rollback are required. Provider and project files must not remain concurrent owners of the same sysctl key. Provider brand is not a profile dimension.
+See the [operations guide (Chinese)](docs/usage.md) for other services, preflight refusals, swap and qdisc restoration.
 
 ## Default Low-Traffic Acceptance Path
 
-Installation, upgrades, and routine acceptance on a business VPS default to fixed-asset verification, `preflight`, `apply`, post-reboot `verify`, strict proxy-service verification, and a small real-client business smoke test. `diagnose` is the first troubleshooting entry and generates no active traffic. `benchmark`, `dvt probe`, TcpQuality, HTB200 reference, candidate sweep, and A/B/A are not migration, release, or per-host acceptance gates. A symptom-triggered `dvt probe` may run on the affected business VPS after its L3 hard budget is approved. L4 benchmark, TcpQuality, and HTB research additionally require a separate high-quota test host and a concrete mechanism decision.
+Persistent installation and migration use fixed-asset verification, preflight, apply, post-reboot verify, applicable strict proxy-service verification and a small real-client business smoke test. Routine checks use status/verify; start troubleshooting with traffic-free diagnose. Routine checks do not require reapplying settings.
 
-## Real Environment Validation Baseline
+`measure`, `htb-sweep`, legacy probe, benchmark, TcpQuality and HTB research are not mandatory per-host acceptance steps. Active measurement requires a concrete question and budget; benchmark, TcpQuality and legacy HTB reference/sweep/A/B/A research additionally require a separate high-quota host. See the [validation boundaries (Chinese)](docs/validation.md#默认验收路径与研究边界).
 
-As of 2026-08-04, the project has obtained the following target machine evidence for sanitized configuration categories. The numbers in the table represent validation records, not the number of VPS instances; the same configuration category may be repeatedly validated on the same asset at different times. To reduce asset association risks, public documents do not record providers, regions, IPs, domains, hostnames, panel ports, subscription addresses, accounts, credentials, certificate identifiers, or report IDs that can be reverse-searched.
+## Common operations
 
-| Record | OS & Kernel Series | VPS Config | Storage/Network | Covered Paths | Evidence Boundary |
-|---|---|---|---|---|---|
-| C1 | Debian 13; Linux 6.12 series | 1 vCPU / ~1 GiB; `debian13-1c1g` | ext4; plan limit 1000 Mbps | Fixed rc.9 asset verification, safe boot, `preflight`, `apply`, immediate/post-reboot `verify`, strict verification after 3X-UI installation; BBR, fq, swap, and NOFILE persist after reboot | Only proves the main path for corresponding rc.9 artifacts and this configuration category, not inherited as an rc.10–rc.16 conclusion |
-| C2 | Debian 12; Linux 6.1 series | 1 vCPU / ~1 GiB; `debian12-1c1g` | XFS; plan limit 200 Mbps | Completed rc.10 candidate `apply` after exiting rc.8, normal/strict `verify` and repeated `apply` after reboot; repeated execution did not overwrite configuration | Does not replace final Release asset verification, does not prove proxy throughput or line quality |
-| C3 | Debian 12; Linux 6.1 series | 1 vCPU / ~2 GiB; `debian12-1c2g` | XFS; plan limit 200 Mbps | Completed rc.10 candidate `apply` after exiting rc.8, normal/strict `verify` and repeated `apply` after reboot; 3X-UI main process and direct Xray child process NOFILE is 65536/65536 | Does not cover 2C2G, 512 MiB, other filesystems, or final Release assets |
-| C4 | Debian 13; Linux 6.12 series | 1 vCPU / ~1 GiB; `debian13-1c1g` | ext4; plan limit 1000 Mbps | Completed rc.9→rc.10 candidate migration using isolated directory, strict `verify` and repeated `apply` after reboot | This is a migration record, configuration category may overlap with C1; does not represent an additional independent VPS |
+| Operation | Command or documentation |
+|---|---|
+| Interactive menu | `dvt`; the guided path runs preflight and asks before apply |
+| Entrypoint version / managed state | `dvt --version` / `dvt status`; entrypoint and state versions may differ |
+| Verify managed configuration | `dvt verify` |
+| Legacy profile incremental/proxy diagnostics | `dvt diagnose --managed`; `DIAG_*` variables affect this path only |
+| Change only the plan bandwidth, with the same version/profile | `dvt reconfigure --port 500`; requires valid `VERIFIED` state |
+| Read-only update check | `dvt update`; no automatic migration or reboot; cross-line targets require explicit `--target` |
+| Recover an interrupted bandwidth reconfiguration | `dvt recover`; follows transaction state, not a generic repair for corrupt state |
+| Parameters, manual downloads, offline bundles and standalone profiles | [Operations guide (Chinese)](docs/usage.md) |
+| Explicit-endpoint probe, benchmark, TcpQuality and legacy HTB | [Advanced measurement (Chinese)](docs/advanced-measurement.md) |
 
-The above records are bound to the specific script hashes at the time of testing. If the script content or SHA-256 changes before or after release, evidence must be re-established according to the [Validation Matrix](docs/validation.md); passing conclusions cannot be inherited solely based on version names or identical configuration values. Target VPS lifecycle, bandwidth reconfiguration, recovery, benchmark termination, policy-routing evidence, and reboot-persistence validation for the final rc.16 hash are still pending.
+## Upgrades and rollback
 
-### 1C2G / 200 Mbps Performance Observation Case
+**Updating executable files, migrating managed state and business acceptance are separate steps.** A cross-version migration verifies and restores the source using its **fixed old Release**, then uses a checkpoint, two manual reboot gates and target apply/verify. See the [current migration procedure and historical appendix (Chinese)](docs/migration.md).
 
-The same Debian 12, 1C2G configuration category previously ran TcpQuality under the old v6 configuration and the rc.10 configuration respectively. The public README only retains aggregated results and does not publish report URLs, report IDs, exact test times, providers, and regions that have asset associations; original reports are saved by maintainers in private evidence sets.
+Run `dvt rollback` only when restoration conditions are complete and the entrypoint matches the state version. Normal rollback keeps project-created swap; confirm memory headroom before an explicit purge as described in the [rollback guide (Chinese)](docs/usage.md#回滚). On failure, retain state, checkpoints, backups and the ledger. Never delete state, guess original values or overwrite old state with new apply.
 
-All three reports show `bbr`, `fq`, TCP send `4K/64K/16M`, TCP receive `4K/128K/16M`. Quantifiable summary follows; each cell lists "zero anomalies / 1–20% / >20%", normal backhaul categorized by packet loss, large-packet backhaul categorized by retransmission, 93 determination items per category:
+Use `reconfigure --port` for a bandwidth-only change. An invalid-parameter call rejected before writes needs no rollback; other changes follow their applicable recovery procedure.
 
-| Sanitized Sample | IPv4 Backhaul | IPv4 Large-Packet Backhaul | IPv6 Backhaul |
-|---|---:|---:|---:|
-| v6 Baseline Sample | 93 / 0 / 0 | 91 / 0 / 2 | 69 / 24 / 0 |
-| rc.10 Sample A | 92 / 1 / 0 | 84 / 7 / 2 | 67 / 23 / 3 |
-| rc.10 Sample B | 93 / 0 / 0 | 92 / 0 / 1 | 79 / 14 / 0 |
+## Validation status and limitations
 
-In the two time-period samples of the same rc.10 configuration, the zero-retransmission nodes for IPv4 large packets changed from 84 to 92, and zero-packet-loss nodes for IPv6 changed from 67 to 79; intra-group fluctuations are already greater than or close to the inter-group difference between v6 and rc.10 Sample A. Therefore, these three observations cannot prove that the kernel parameters of v6 or rc.10 are faster, nor can concentrated anomalies in individual regions or ISPs be uniquely attributed to a specific route. Test periods, ISP links, speedtest nodes, shared host load, and tool versions remain candidate explanations.
+- Seven isolated guest lifecycle jobs cover Debian 12/13 and Ubuntu 24.04 x86_64/ARM64 adaptive profiles, plus Debian 13 x86_64 legacy. They include real guest reboots, idempotency, reconfiguration and restoration. ARM64 uses QEMU/TCG on ARM runners; it is not vendor-specific hardware acceptance.
+- Public IPv4 measurement and temporary HTB normal/signal-interrupted restoration have bounded VPS evidence. One complete low-rate sweep had 15 samples, 11 eligible, and still returned `INSUFFICIENT_EVIDENCE`. Reliable policer detection and proxy benefits remain unproven.
+- The main business validation scenario is native systemd with 3X-UI/Xray/VLESS + REALITY + TCP. Recorded versions are 3X-UI v3.4.2 and Xray-core v26.6.27; other versions need separate verification. Persistent Docker, policy-routing, TProxy, gateway and complex-qdisc configurations are outside current support.
+- 1–10000 Mbps is an input range. Broader public-path platform coverage, IPv6, high rates, specific large-resource hardware and business performance still have unvalidated areas.
 
-Furthermore, v6 has only one sample and rc.10 only two, which is still insufficient to estimate a stable distribution; TcpQuality uses random built-in packet lengths when `-s` is not specified, and the default `-c` sends only 30 packets per node; TcpQuality directly tests the VPS network stack, without passing through 3X-UI, VLESS, REALITY, or client links. Existing evidence is primarily remote images, lacking machine-readable raw tables sufficient for public recalculation.
+Pinned commits, historical failures and detailed limits are recorded in the [platform matrix](docs/platform-support.md), [validation record](docs/validation.md) and [release notes](docs/releases/v0.2.0-rc.1.md), currently in Chinese.
 
-Therefore, the project will not roll back rc.10 based on these single reports, modify the 17 managed sysctls retained by rc.16, or add aggressive parameters. Only a research protocol intended to support a publishable performance or persistent-shaping claim must pin the TcpQuality release/commit, script/rootfs SHA-256, node files, `-c/-s/-p` parameters, and metric source, then compare repeated samples in a controlled environment. Routine business-VPS acceptance uses a real VLESS + REALITY + TCP smoke test and does not repeat the full public-network performance matrix. See the [Validation Matrix](docs/validation.md) for the evidence layers.
+## Documentation
 
-## Local Usage and Command Line Mode
+The two README files share the current core workflows. Detailed guides below are in Chinese; their language does not imply a fully translated historical manual.
 
-`debian-vps-tuning.sh` is the main entry point. It reads OS/version, x86_64/aarch64 architecture, logical CPUs and memory to select one of nine profiles. Original Debian tiers retain their profile IDs; other supported combinations use adaptive profiles. The main entry script does not contain another set of tuning logic, it only handles selection, SHA-256 verification, and invocation.
+| Topic | Guide |
+|---|---|
+| Installation, daily operation, diagnostics, parameters and rollback | [Operations](docs/usage.md) |
+| Upgrades, old state and historical recovery | [Migration](docs/migration.md) |
+| Automatic selection, budgets and result interpretation | [Independent measurement](docs/automatic-measurement.md) |
+| Temporary HTB and full restoration | [Temporary experiments](docs/temporary-htb.md) |
+| Platforms, resources and adaptive buffers | [Support matrix](docs/platform-support.md) |
+| Advanced explicit measurement and research | [Advanced measurement](docs/advanced-measurement.md) |
+| Design and validation evidence | [Design scope](docs/design-scope.md) · [Validation](docs/validation.md) |
+| Offline calibration for fixed profiles | [Measured calibration](docs/measured-calibration.md); no traffic/apply, adaptive inputs not yet accepted |
+| Version changes | [Release history](docs/releases/) |
 
-Run from the complete project directory:
+## Help, contributing and security
 
-```bash
-bash ./debian-vps-tuning.sh
-```
+Use [GitHub Issues](https://github.com/alieismy/debian-vps-tuning/issues) for usage questions, reproducible bugs and suggestions. Include the script version, OS/architecture, steps, exit status and sanitized output. Do not publish real addresses, credentials, subscription links, full proxy configurations or traceable report identifiers; see the [sanitization guide (Chinese)](docs/usage.md#日志脱敏与安全报告). Report security issues through the private channel in [SECURITY.md](SECURITY.md).
 
-Use command line mode directly:
-
-```bash
-bash ./debian-vps-tuning.sh preflight --port 200
-bash ./debian-vps-tuning.sh apply --port 200
-bash ./debian-vps-tuning.sh reconfigure --port 500
-bash ./debian-vps-tuning.sh verify
-bash ./debian-vps-tuning.sh status
-bash ./debian-vps-tuning.sh diagnose
-# benchmark also requires BENCHMARK_HOST, see below
-bash ./debian-vps-tuning.sh benchmark
-bash ./debian-vps-tuning.sh update
-# Only for an existing older managed state: check the new target
-bash ./debian-vps-tuning.sh update --target v0.2.0-rc.1
-bash ./debian-vps-tuning.sh rollback
-bash ./debian-vps-tuning.sh recover
-```
-
-In automated environments without an interactive terminal, the action must be explicitly specified; it will not implicitly enter a menu or auto-apply. CLI `reconfigure` requires an explicit `--port`; neither the normal default nor a `PORT_SPEED_MBPS` environment variable can supply the target. `recover` handles an interrupted bandwidth-reconfiguration transaction for the current script version and retains the explicitly acknowledged rc.2 empty-state quarantine branch.
-
-This project does not recommend the following forms as entry points:
-
-```text
-curl ... | bash
-bash <(curl ...)
-```
-
-The reason is that they directly execute the download stream under root privileges, lacking an independent "download complete → file verification → then execute" gate.
-
-## Applicable Scenarios
-
-- Minimal Debian 12/13 or Ubuntu 24.04 LTS with native systemd;
-- `x86_64/amd64` or `aarch64/arm64`; at least one logical CPU;
-- At least 384 MiB physical RAM; original Debian tiers retain their policies, with adaptive selection outside those tiers;
-- 10 GB, 15 GB, or larger SSDs, with sufficient remaining space;
-- Normal default routes for IPv4 or IPv4 + IPv6 dual-stack;
-- Provider port limit 1–10000 Mbps, designed by default at 200 Mbps;
-- Small proxy servers primarily using TCP, with connection scales empirically tested on target machines; the project does not guarantee capacity based on "number of users";
-- The kernel actually provides BBR and fq.
-
-Main validation baselines:
-
-| System | Kernel Baseline | Resource Scripts |
-|---|---|---|
-| Debian 12 (bookworm) | Linux 6.1 series | 1C512MB, 1C1GB, 1C2GB, 2C2GB |
-| Debian 13 (trixie) | Linux 6.12 series | 1C512MB, 1C1GB, 1C2GB, 2C2GB |
-
-These are known validation baselines, not patch level whitelists. Current OS/architecture coverage and native guest results are in the [platform matrix](docs/platform-support.md); every host still needs actual BBR/fq capabilities.
-
-## Debian 12/13 Selection
-
-The following conclusions are bounded by 2026-08-04. Debian officially currently defines Debian 13 as stable, with the latest point release at 13.6; Debian 12 is oldstable, with regular Release/Security/Backports support ended, LTS until 2028-06-30. Debian 13's regular support is until 2028-08-09, LTS until 2030-06-30. See [Debian Releases](https://www.debian.org/releases/) and [Bookworm transition to LTS announcement](https://www.debian.org/News/2026/20260712).
-
-Therefore, newly created 1C1G, 1C2G, and 2C2G VPS instances are recommended to use Debian 13 minimal by default; Debian 12 continues to be used for existing stable nodes, confirmed defects in provider Debian 13 images, or third-party software with explicit Debian 12 compatibility constraints. Do not perform in-place major version upgrades on a single production node solely to pursue unproven performance improvements.
-
-| Dimension | Debian 12 | Debian 13 | Project Judgment |
-|---|---|---|---|
-| Release Status | oldstable, in LTS | Current stable | New deployments prioritize Debian 13 |
-| Support Period | LTS until 2028-06-30; some packages may not be covered by LTS | Regular support until 2028-08-09, LTS until 2030-06-30 | Long-term public nodes prioritize longer regular support windows |
-| Typical Kernel Series | Linux 6.1 LTS | Linux 6.12 LTS | 13 has newer kernels and virtualization drivers, but does not guarantee higher throughput |
-| User-space Baseline | systemd 252, OpenSSH 9.2, OpenSSL 3.0, glibc 2.36 | systemd 257, OpenSSH 10.0, OpenSSL 3.5, glibc 2.41 | More favorable for new software compatibility; old scripts and closed-source agents require verification |
-| Migration Risk | Existing deployments are mature, fewer changes | In-place upgrades require checking NIC names, SSH, `/tmp`, and sysctl load behavior | Critical nodes prioritize new Debian 13 parallel migration |
-
-Main advantages of Debian 13:
-
-- Current stable, with longer regular security maintenance and LTS lifecycle;
-- Linux 6.12 LTS, systemd 257, OpenSSH 10.0p1, and OpenSSL 3.5 provide newer kernels, virtualization, and system components;
-- Debian officially provides cloud images such as GenericCloud, NoCloud, and OpenStack;
-- 3X-UI official installation script selects APT and Debian systemd units by distro ID `debian`, no Debian 12-only version checks found;
-- Xray-core official Linux builds use `CGO_ENABLED=0`, typically not dependent on Debian 12/13 specific glibc ABIs.
-
-Main limitations and migration risks of Debian 13:
-
-- Debian 13 does not guarantee lower memory usage than Debian 12, nor does it guarantee automatic improvements in Xray throughput, latency, or concurrency;
-- `/tmp` defaults to on-demand allocated tmpfs, max up to 50% of memory; 1C1G nodes should limit large temporary files and logs;
-- `systemd-sysctl` no longer reads `/etc/sysctl.conf`, local configurations should be placed in `/etc/sysctl.d/*.conf`; this project uses this standard path, but old tuning scripts may be incompatible;
-- During in-place upgrade from Debian 12 to 13, predictable NIC names may change on some systems, network, firewall, or qdisc configurations with hardcoded interface names must be checked in advance;
-- Major version changes in OpenSSH, OpenSSL, Python, and systemd may affect old keys, automation scripts, or provider closed-source agents;
-- Provider providing "Debian 13" images does not mean the running kernel is definitely 6.12, nor does it prove cloud-init, IPv6, and network templates have passed verification.
-
-Related changes see [Debian 13 Release Announcement](https://www.debian.org/News/2025/20250809) and [Debian 13 Release Notes: Known Issues](https://www.debian.org/releases/stable/release-notes/issues.en.html).
-
-### Selection by VPS Resource Tier
-
-| VPS Config | Recommended OS | Applicable Judgment | Main Constraints |
-|---|---|---|---|
-| 1C1G | Debian 13 minimal | Default choice for new nodes; no desktop, few necessary services | 1 GiB is the recommended memory for Debian 13 non-desktop installation, does not mean 3X-UI/Xray still has fixed headroom; should monitor RSS, FD, CPU steal, softirq, logs, and `/tmp` |
-| 1C2G | Debian 13 | More balanced among the three tiers, better memory headroom for updates and temp tasks than 1C1G | Single core may still become a bottleneck for encryption, soft interrupts, or high concurrency |
-| 2C2G | Debian 13 | Better suited for multi-connection, multi-inbound, or higher CPU load | 2 vCPUs do not guarantee doubled throughput, nor can RPS/RFS/XPS or IRQ affinity be enabled solely based on CPU count |
-
-The minimum memory specified by Debian 13 official for non-desktop amd64 installation is 512 MB, recommended is 1 GB; actual server requirements depend on running services, cannot derive "idle fixed ~100 MB" or proxy capacity from this. See [Debian 13 amd64 Installation Requirements](https://www.debian.org/releases/trixie/amd64/ch03s04.en.html).
-
-### Virtualization Type is Closer to Kernel Reality Than Distro Name
-
-Full VMs like KVM, VMware, Hyper-V typically run their own Debian kernel for the guest OS; LXC, Incus, and some OpenVZ-like system containers share the host kernel. Even if `/etc/os-release` inside the container shows Debian 13, it cannot prove the kernel is 6.12, BBR is loadable, or qdisc/sysctl has full privileges. Before selecting a profile, at least check:
-
-```bash
-cat /etc/os-release
-uname -r
-systemd-detect-virt
-systemd-detect-virt --container || true
-sysctl -n net.ipv4.tcp_available_congestion_control
-sysctl -n net.ipv4.tcp_congestion_control
-sysctl -n net.core.default_qdisc
-tc -s -d qdisc show
-```
-
-The generated profiles separately verify OS, CPU, memory, running kernel capabilities, and qdisc topology, avoiding directly copying Debian 12 environmental assumptions to Debian 13. OS selection cannot replace target machine `preflight`.
-
-## Script Selection
-
-| File | OS | CPU Range | Memory Tier | Swap Default/Max |
-|---|---|---:|---:|---:|
-| `debian12-1c512m-vps-tuning.sh` | Debian 12 | 1 vCPU | 384–767 MiB | 1024/2048 MiB |
-| `debian12-1c1g-vps-tuning.sh` | Debian 12 | 1 vCPU | 768–1535 MiB | 1024/2048 MiB |
-| `debian12-1c2g-vps-tuning.sh` | Debian 12 | 1–2 vCPU | 1536–3072 MiB | 1024/4096 MiB |
-| `debian13-1c512m-vps-tuning.sh` | Debian 13 | 1 vCPU | 384–767 MiB | 1024/2048 MiB |
-| `debian13-1c1g-vps-tuning.sh` | Debian 13 | 1 vCPU | 768–1535 MiB | 1024/2048 MiB |
-| `debian13-1c2g-vps-tuning.sh` | Debian 13 | 1–2 vCPU | 1536–3072 MiB | 1024/4096 MiB |
-| `debian12-adaptive-vps-tuning.sh` | Debian 12 | ≥1 vCPU | ≥384 MiB | disabled / 4096 MiB |
-| `debian13-adaptive-vps-tuning.sh` | Debian 13 | ≥1 vCPU | ≥384 MiB | disabled / 4096 MiB |
-| `ubuntu2404-adaptive-vps-tuning.sh` | Ubuntu 24.04 | ≥1 vCPU | ≥384 MiB | disabled / 4096 MiB |
-
-`1c2g` in filenames and state IDs is a compatibility name: the same 2G profile carries both 1C2GB and 2C2GB. Existing profile IDs remain stable, while a version upgrade still requires the state migration checks. Each profile independently verifies its OS, architecture, CPU and memory; controller selection cannot bypass preflight. Other Debian CPU/RAM combinations select the matching adaptive profile. Ubuntu 24.04 uses its own adaptive profile.
-
-Scripts use 200 Mbps as the default port limit, but also allow explicit setting of 1–10000 Mbps. This should be the VPS plan or provider-given limit, do not treat the link speed shown by the virtual NIC as the plan limit.
-
-## What the Script Will Modify
-
-- `/etc/sysctl.d/90-proxy-vps.conf`;
-- `/etc/systemd/journald.conf.d/90-proxy-vps.conf`;
-- `/usr/local/sbin/proxy-vps-fq`;
-- `/etc/systemd/system/proxy-vps-fq.service`;
-- `/etc/systemd/system/x-ui.service.d/90-proxy-vps.conf`, preset `LimitNOFILE=65536`;
-- `/var/lib/proxy-vps-tuning/state.json` and original qdisc state;
-- Creates fixed path `/swapfile-proxy` on demand when no active swap exists on the system;
-- Adds one line to `/etc/fstab` only for the swap actually created by the script.
-
-Main sysctls include:
-
-- `net.core.default_qdisc=fq`;
-- `net.ipv4.tcp_congestion_control=bbr`;
-- TCP socket buffer limits calculated by bandwidth and target RTT;
-- `somaxconn`, `tcp_max_syn_backlog`, and `netdev_max_backlog`;
-- TCP Fast Open kernel switch, MTU probing, and keepalive;
-- `vm.swappiness=20`.
-
-Full boundaries see [Design Scope](docs/design-scope.md).
-
-### TCP Fast Open and Xray Boundaries
-
-`net.ipv4.tcp_fastopen=3` only enables the basic client/server capabilities of Linux. Linux kernel documentation explicitly distinguishes between global bitmaps and individual listener `TCP_FASTOPEN` socket options; Xray also controls inbound or outbound sockets via `streamSettings.sockopt.tcpFastOpen`. Therefore, when the following command has no output, it can only indicate that the Xray configuration generated by 3X-UI does not have an explicit `tcpFastOpen` field, **it cannot prove TFO is enabled, nor can it prove TFO is disabled**:
-
-```bash
-jq '.. | objects | select(has("tcpFastOpen")) | .tcpFastOpen' \
-  /usr/local/x-ui/bin/config.json
-```
-
-Current `verify` and `diagnose` will read-only report whether this field is explicitly present, but will not modify proxy configurations. Do not directly edit `/usr/local/x-ui/bin/config.json`: it is a 3X-UI generated file and may be overwritten when the panel rebuilds configuration. Only configure via the panel when the current 3X-UI version explicitly provides corresponding inbound/outbound sockopt or advanced configuration entry, and client compatibility testing is completed; re-check generated JSON and actual connections after configuration. TFO mainly affects the handshake phase, cannot replace BBR, fq, or line quality, and does not guarantee benefits across all intermediate devices.
-
-Similarly, the host's `tcp_keepalive_time/intvl/probes` only affect sockets that have enabled `SO_KEEPALIVE` and are not overwritten by the application. Xray official documentation states: inbound Keep-Alive is disabled by default, enabled only when `tcpKeepAliveIdle` or `tcpKeepAliveInterval` is configured; outbound has its own defaults. Therefore, host sysctls cannot alone prove that Xray connections are adopting these keepalive values. See [Linux IP sysctl](https://docs.kernel.org/networking/ip-sysctl.html) and [Xray Sockopt](https://xtls.github.io/en/config/transports/sockopt.html).
-
-## What the Script Will Not Modify
-
-- Does not install, upgrade, or downgrade 3X-UI, S-UI, sing-box, Xray;
-- Does not read or modify 3X-UI databases, Xray JSON, UUIDs, REALITY private keys, certificate private keys, or panel credentials;
-- Does not add, delete, or reorder UFW rules;
-- Does not open SSH, panel, subscription, or proxy ports;
-- Does not restart `x-ui.service`, `xray.service`, `s-ui.service`, or `sing-box.service`; if x-ui is already running during apply, normal verification will prompt to restart the service or host before strict verification;
-- Does not configure RPS/RFS/XPS, IRQ affinity, CPU affinity, or `GOMAXPROCS`;
-- Does not modify DNS, routing, policy routing, MTU, or IPv6 enable/disable policies;
-- Does not enable IP forwarding, NAT, or TProxy;
-- Does not modify `ip_local_port_range`, `tcp_mem`, `fs.file-max`, or conntrack limits;
-- Does not take over the packet processing relationship between Docker and UFW.
-
-## VPS Initialization
-
-The following commands assume you have entered the root shell (prompt usually `#`, `id -u` outputs `0`), so examples do not use `sudo`. Vendor minimal images usually allow direct root login and may not have `sudo` installed.
-
-It is recommended to update the system and check the upgrade plan first:
-
-```bash
-apt update
-apt -s full-upgrade
-apt full-upgrade -y
-```
-
-Install basic tools and script dependencies:
-
-```bash
-apt install -y \
-  curl wget ca-certificates gnupg lsb-release unzip \
-  vim nano htop ufw jq \
-  iproute2 procps kmod util-linux
-```
-
-If you need to clean up automatically installed and no longer needed packages, simulate and check the list first:
-
-```bash
-apt-get -s autoremove --purge
-```
-
-Execute after confirming it's correct:
-
-```bash
-apt autoremove --purge -y
-```
-
-After updating the kernel, reboot before running the tuning script:
-
-```bash
-reboot
-```
-
-## UFW Notes
-
-Before enabling UFW on a remote VPS, you must first allow the real SSH port. For example, if SSH uses 22/TCP:
-
-```bash
-ufw default deny incoming
-ufw default allow outgoing
-ufw default deny routed
-ufw allow 22/tcp comment 'SSH management'
-ufw enable
-ufw status numbered
-```
-
-If SSH is not 22, replace with the real port. Dual-stack VPS should ensure `IPV6=yes` in `/etc/default/ufw`.
-
-VLESS + REALITY inbound should only open the TCP ports actually used. Panel ports are best restricted to trusted management IPs or accessed via SSH local forwarding. The tuning script only reads UFW status and listening ports, it will not modify rules for you.
-
-## Download and Verification
-
-When downloading complete assets from GitHub Release, check all files:
-
-```bash
-sha256sum -c SHA256SUMS
-```
-
-When downloading only the main entry script and `SHA256SUMS`, check the corresponding entry:
-
-```bash
-grep -F '  debian-vps-tuning.sh' SHA256SUMS | sha256sum -c -
-less ./debian-vps-tuning.sh
-chmod +x ./debian-vps-tuning.sh
-```
-
-This is a root-level system script, skipping checks and directly using `curl | bash` is not recommended. The main entry script will subsequently perform an SHA-256 verification on the actual resource script invoked.
-
-## Usage
-
-Prioritize using the main entry script. The following independent script methods are reserved for offline, audit, and fault recovery scenarios, using Debian 13, 1C1G, 200 Mbps as an example; users must replace with files matching their system, CPU, and memory.
-
-### 1. Read-Only Preflight
-
-```bash
-env PORT_SPEED_MBPS=200 \
-  bash ./debian13-1c1g-vps-tuning.sh preflight
-```
-
-`preflight` does not write configurations, load modules, create swap, or stop services. It will block on:
-
-- Mismatched OS, architecture, CPU, or memory tier;
-- Missing required commands;
-- BBR/fq unavailable;
-- No normal default route;
-- Unclear ownership of management files with the same name;
-- Duplicate keys in `/etc/sysctl.conf` or `/etc/sysctl.d`;
-- qdisc topology too complex to reliably recover;
-- Fixed swap path already occupied by other files;
-- Insufficient disk space.
-
-Automatic swap files are only enabled on `ext2`, `ext3`, `ext4`, and `xfs` root filesystems. Btrfs, ZFS, overlay, NFS, FUSE, and other unverified filesystems will warn and skip automatic swap creation, without affecting other network configurations from being applied.
-
-### 2. Apply
-
-```bash
-env PORT_SPEED_MBPS=200 \
-  bash ./debian13-1c1g-vps-tuning.sh apply
-```
-
-Reboot after successful application:
-
-```bash
-reboot
-```
-
-If tuning is done before 3X-UI installation, the script will first create an `x-ui.service` drop-in; at this time, `verify` will treat "proxy service not yet installed" as a normal pending state, not a warning. When 3X-UI is installed later, systemd will automatically read this configuration.
-
-### 3. Verification After Reboot
-
-```bash
-bash ./debian13-1c1g-vps-tuning.sh verify
-bash ./debian13-1c1g-vps-tuning.sh status
-```
-
-### 4. Verification After 3X-UI Installation
-
-When strictly using 3X-UI v3.4.2, obtain the installation script or assets from the official `v3.4.2` tag/release, do not use installation entries pointing to `master` expecting a fixed version.
-
-After installing and configuring 3X-UI:
-
-```bash
-env REQUIRE_PROXY_SERVICE=1 \
-  PROXY_SERVICE_UNITS='x-ui.service' \
-  bash ./debian13-1c1g-vps-tuning.sh verify
-```
-
-The script will check the systemd configuration values of `x-ui.service`, the main process, and `/proc/<PID>/limits` of its direct child processes. Strict verification requires configuration and runtime soft/hard limits to be no less than 65536.
-
-### 5. Read-Only Diagnose
-
-```bash
-bash ./debian-vps-tuning.sh diagnose
-```
-
-`diagnose` defaults to 5-second before/after sampling, outputting TCP retransmission/timeout/listen overflow/TFO, per-CPU softnet, whole-machine CPU user/system/softirq/steal, interface rx/tx/drop/error increments, and recognizable ethtool error counts, and saving pre/post qdisc states, default routes, RPS/XPS/IRQ, and proxy main process/direct child process CPU time, RSS, thread count, and FD count. It always displays IPv4 and IPv6 policy rules; when a non-kernel-default rule is detected, it additionally displays all route tables for that address family and warns that conventional default-route interface discovery does not prove the topology safe for `apply`. This evidence is read-only and does not add policy-routing configuration support. Process evidence does not output command line arguments. It does not generate performance traffic or modify the system; it is recommended to reproduce actual VLESS + REALITY + TCP load from the client within the sampling window:
-
-`diagnose` also checks `net.ipv4.tcp_window_scaling` and `net.ipv4.tcp_moderate_rcvbuf` read-only. If either value is not exactly `1` or cannot be read, it emits a warning. Both keys remain outside the 17 managed sysctls and are not changed or persisted automatically. The warning means that the host default is unconfirmed or differs from the expected value; by itself it does not make managed-state `verify` fail.
-
-```bash
-env DIAG_INTERVAL_SECONDS=15 \
-  bash ./debian-vps-tuning.sh diagnose
-```
-
-Default does not output connection peers and process details. If `ss -tinp` collection is truly needed, it should be sanitized before saving and sharing logs:
-
-```bash
-env DIAG_INCLUDE_SOCKET_DETAILS=1 \
-  bash ./debian-vps-tuning.sh diagnose
-```
-
-### 6. Research-Only Explicit iperf3 Benchmark
-
-`benchmark` does not change system configurations, but actively generates high-bandwidth TCP traffic. It requires the user to prepare and authorize an iperf3 server themselves; the script will not install packages, open ports, or select public servers. Default sequentially executes upload and download: each direction first does a 3-second warmup excluded from statistics, then records a 10-second valid window. rc.16 runs each direction in an isolated process group with a default hard limit of `BENCHMARK_SECONDS + BENCHMARK_OMIT_SECONDS + 15` seconds. A timeout sends TERM first and escalates to KILL after five seconds; timeout, `INT`, `TERM`, and other failure paths reap the active process group. `BENCHMARK_PHASE_TIMEOUT_SECONDS=1..300` can override the per-direction limit, but a value shorter than the planned measurement window is expected to fail the sample.
-
-With a persistent `BENCHMARK_OUTPUT_DIR`, both directions save iperf3 JSON, TCP/softnet/CPU/interface increments, pre/post qdisc statistics, `policy-routing.txt`, and hashed run metadata. `policy-routing.txt` always contains IPv4/IPv6 rules and adds all route tables only for an address family with a custom rule. The metadata records the resolved timeout, termination grace, process-group isolation, and three-state policy-rule classification. A persistent run starts as `INCOMPLETE` and becomes `COMPLETED` only after the evidence hash chain is committed; timeout or interruption remains incomplete and is conservatively settled against the shared planned-payload budget:
-
-```bash
-env BENCHMARK_HOST='iperf.example.com' \
-  BENCHMARK_PORT=5201 \
-  BENCHMARK_SECONDS=10 \
-  BENCHMARK_OMIT_SECONDS=3 \
-  BENCHMARK_PHASE_TIMEOUT_SECONDS=28 \
-  BENCHMARK_PARALLEL=1 \
-  BENCHMARK_IP_FAMILY=4 \
-  BENCHMARK_DIRECTION=both \
-  BENCHMARK_RUN_ID='case-1c1g-ipv4-a1' \
-  bash ./debian-vps-tuning.sh benchmark
-```
-
-`BENCHMARK_IP_FAMILY=4` or `6` is used to fix the address family, `auto` continues system resolution and connection selection; when comparing IPv4/IPv6, they must be executed separately and default routes saved. `BENCHMARK_OMIT_SECONDS=0` can be used to deliberately observe short connection experiences including slow start, non-zero values are for steady-state throughput comparison, the two must not be mixed into the same sequence. This result only measures direct TCP from VPS to iperf3 server, without passing through VLESS + REALITY + TCP client links; do not directly judge proxy experience with single results from public test points. `BENCHMARK_PARALLEL` is limited to 1–4, baseline tests for 1C1G/1C2G should use 1 first. The traffic ledger accounts for application payload, not protocol, retransmission, or provider-billing overhead. See [ESnet official documentation](https://software.es.net/iperf/invoking.html) for iperf3 parameter semantics.
-
-### 7. Research-Only HTB Reference, Candidate Sweep, and Independent A/B/A Windows
-
-> Do not run this section by default on a quota-limited business VPS. Enter this
-> research workflow only to test an aggregate-egress shaping mechanism on a
-> separate high-quota host, with the full traffic budget and stop conditions
-> approved in advance.
-
-As of 2026-09-11, the VMISS Basic three-sample HTB200 reference completed at about
-187–190 Mbit/s with zero sender and host-level retransmission increments, zero HTB-root/FQ-leaf
-drop/requeue growth, and positive HTB-root `overlimits`. The endpoint closeout also removed the
-temporary listener, processes, units, and UFW rule. This closes that fixed reference and its
-endpoint lifecycle only; it does not establish a default-`fq` causal comparison, real
-VLESS + REALITY + TCP improvement, or authorization for a candidate sweep, Core test, A/B/A, or
-persistent HTB. The private endpoint archive must not be published as a Release asset, issue
-attachment, or repository file.
-
-The executable example below is the published rc.17 non-persistent HTB workflow. It is restricted to a
-Debian 13 rc.17 schema-4 `VERIFIED`, 200-Mbps `debian13-1c1g` or `debian13-1c2g` baseline. The 40-minute
-watchdog requires the executor to run from a stable path. `dvt htb preflight`
-does not install it implicitly; while no HTB transaction is active, install the
-executor from the same pinned rc.17 Release and verify it against that Release's
-manifest:
-
-```bash
-DVT_ROOT="$(readlink -f /usr/local/lib/debian-vps-tuning/current)"
-HTB_TOOL='/usr/local/sbin/htb-aggregate-experiment'
-test ! -e /run/htb-aggregate-experiment/active.json
-install -o root -g root -m 0755 \
-  "$DVT_ROOT/experiments/htb-aggregate/htb-aggregate-experiment.sh" \
-  "$HTB_TOOL"
-EXPECTED_HTB_SHA256="$(awk \
-  '$2 == "experiments/htb-aggregate/htb-aggregate-experiment.sh" {print $1}' \
-  "$DVT_ROOT/SHA256SUMS")"
-printf '%s  %s\n' "$EXPECTED_HTB_SHA256" "$HTB_TOOL" | sha256sum -c -
-
-dvt htb preflight
-dvt htb smoke --rate 190 --hold-seconds 10
-```
-
-These commands resolve `DVT_ROOT` through the installed `current` symlink, so they neither stage nor
-verify rc.18. Before rc.18 is published, its workflow may be tested only from one complete, matching
-local bundle containing the rc.18 wrapper, executor, companion scripts, profiles, and `SHA256SUMS`.
-Do not mix the published rc.17 wrapper or manifest with an rc.18 executor, and do not describe the
-example above as rc.18 verification.
-
-Rate discovery is split into a schema-3 read-only plan, an explicitly invoked
-traffic/qdisc runner, and a read-only analyzer. In the published rc.17 path, before traffic, the runner
-calls the selected rc.17 profile's `verify`; the worktree rc.18 runner applies the same contract only
-when invoked from a complete matching rc.18 bundle and state. The runner freezes the managed
-profile/version/state/port/state SHA-256, and requires every
-`benchmark-meta.json` to match. Every sample must have a valid measurement
-window, complete schema-3 HTB-to-FQ root/leaf evidence, positive HTB root
-`overlimits`, sender goodput of at least the frozen 90% rate-exposure ratio,
-sufficient CPU idle and steal headroom, zero root/leaf qdisc drops and requeues,
-and zero softnet drop/time-squeeze and interface drop/error deltas. A failure produces
-`REVIEW_BLOCKED` with an empty shortlist. Candidate plans bind the reviewed
-reference's `SHA256SUMS`, `sweep-analysis.json`, and `COMPLETED` digests without
-recording its absolute host path. Direct plan generation also requires the
-explicit acknowledgement and all three digest fields. The plan generator does
-not read host evidence, so digest authenticity still has to be verified by the
-`dvt htb` wrapper or the execution SOP.
-
-Schema-3 benchmark summaries keep root and leaf qdisc totals separate; their
-byte counts are never added. The redacted `socket-metrics.txt` also retains
-`pacing_rate`, `delivery_rate`, `minrtt`, `dsack_dups`, `rcv_ooopack`,
-`snd_wnd`, and `rcv_wnd` while excluding endpoints, ports, PIDs, process names,
-and inodes. These fields support diagnosis and do not replace flow-scoped
-iperf3 retransmission evidence.
-
-```bash
-dvt htb reference \
-  --host iperf.example.com --server-port 5201 \
-  --output-dir /root/htb200-reference-a1
-
-# Only after COMPLETED, SHA256SUMS, all three gates, and manual review pass:
-dvt htb sweep \
-  --host iperf.example.com --server-port 5201 \
-  --reference-evidence /root/htb200-reference-a1 \
-  --ack-reference-reviewed \
-  --rates 180,190,195 \
-  --output-dir /root/htb-candidate-sweep-a1
-```
-
-`--ack-reference-reviewed`, a non-empty shortlist, and positive `overlimits` do
-not authorize persistent shaping. After a candidate is manually frozen,
-`experiment-plan.sh` emits exactly one three-stage window per invocation. The
-forward and reverse windows require distinct IDs, fresh evidence directories,
-and separate operator invocations:
-
-```bash
-bash ./experiments/htb-aggregate/experiment-plan.sh \
-  --window-id basic-window-1 --window-order aba \
-  --candidate-rate 190 --cooldown-seconds 300 --control-rate none \
-  >./basic-window-1-plan.json
-
-# Generate only after the first window has been closed and reviewed:
-bash ./experiments/htb-aggregate/experiment-plan.sh \
-  --window-id basic-window-2 --window-order bab \
-  --candidate-rate 190 --cooldown-seconds 300 --control-rate none \
-  >./basic-window-2-plan.json
-```
-
-The first plan is `A1 → B1 → A2`; the second is `B2 → A3 → B3`. Formal B
-stages must set `TCPQUALITY_RUNS=1`, because three TcpQuality runs can exceed
-the 40-minute watchdog. Repeat whole windows for replication. See the
-[rate-discovery SOP](docs/experiments/htb-candidate-rate-sweep.md), the current
-[VMISS Basic 1C1G campaign SOP](docs/experiments/vmiss-basic-1c1g-200mbps-htb-campaign.md),
-and the [VMISS 1C2G A/B/A SOP](docs/experiments/vmiss-1c2g-200mbps-htb-aba.md).
-The old [VMISS Basic v0.2.1 document](docs/experiments/vmiss-basic-200mbps-htb-aba.md)
-is historical audit evidence only.
-
-## 1–10000 Mbps configuration inputs
-
-100 Mbps:
-
-```bash
-env PORT_SPEED_MBPS=100 \
-  bash ./debian12-1c1g-vps-tuning.sh apply
-```
-
-200 Mbps:
-
-```bash
-env PORT_SPEED_MBPS=200 \
-  bash ./debian12-1c2g-vps-tuning.sh apply
-```
-
-1000 Mbps:
-
-```bash
-env PORT_SPEED_MBPS=1000 \
-  bash ./debian13-1c2g-vps-tuning.sh apply
-```
-
-Any integer within 1–10000 can be configured; this does not certify throughput. Adaptive buffer caps are documented in the [platform contract](docs/platform-support.md). The original fixed-profile policy remains: default target RTT is 200 ms, using 1×, 1.25×, 1.5×BDP targets by resource tier, then rounding up to 16/32/64 MiB, constrained by 16/32/64 MiB limits of 512M/1G/2G profiles:
-
-| Resource Tier | BDP Coeff | 100 Mbps | 200 Mbps | 500 Mbps | 1000 Mbps |
-|---|---:|---:|---:|---:|---:|
-| 512M | 1× | 16 MiB | 16 MiB | 16 MiB | 16 MiB (truncation warning) |
-| 1G | 1.25× | 16 MiB | 16 MiB | 16 MiB | 32 MiB |
-| 2G | 1.5× | 16 MiB | 16 MiB | 32 MiB | 64 MiB |
-
-All fixed resource tiers at 200 Mbps use a 16 MiB cap. The 512M tier prioritizes limiting memory pressure; 1G/2G tiers progressively increase high BDP headroom. Within this table, only the 512M/1000 Mbps/200 ms combination triggers a truncation warning; higher bandwidth inputs can also reach profile caps. These are maximum socket buffers, not memory allocated to every connection. Linux TCP receive buffering grows with connection demand; application `setsockopt(SO_RCVBUF)` may change that behavior. Resource truncation protects memory and does not make the bandwidth input invalid. Avoid manually setting `BUF_MAX` without sustained monitoring and high BDP evidence.
-
-## Parameters
-
-| Variable | Default | Range/Description |
-|---|---:|---|
-| `PORT_SPEED_MBPS` | `200` | `1–10000` |
-| `BUFFER_TARGET_RTT_MS` | `200` | `20–500` |
-| `BUF_MAX` | `auto` | Fixed profiles: 16/32/64 MiB; adaptive: RAM-based cap of 16–256 MiB |
-| `ENABLE_SWAP` | Fixed: `1`; adaptive: `0` | `0` or `1` |
-| `SWAP_MB` | `1024` | 512M/1G scripts max 2048, 2G/adaptive max 4096 |
-| `PURGE_CREATED_SWAP` | `0` | Whether to clean up script-created swap during rollback |
-| `PROXY_SERVICE_UNITS` | Auto-detect | Space-separated systemd services |
-| `REQUIRE_PROXY_SERVICE` | `0` | Verification fails if target proxy service is missing when `1` |
-| `DIAG_INTERVAL_SECONDS` | `5` | `1–60`, diagnose increment window |
-| `DIAG_INCLUDE_SOCKET_DETAILS` | `0` | Outputs `ss -tinp` which may contain peer addresses when `1` |
-| `BENCHMARK_HOST` | None | Required for benchmark, user-authorized iperf3 server |
-| `BENCHMARK_PORT` | `5201` | `1–65535` |
-| `BENCHMARK_SECONDS` | `10` | `5–120`, per direction |
-| `BENCHMARK_OMIT_SECONDS` | `3` | `0–10`, warmup time per direction, not included in iperf3 statistics |
-| `BENCHMARK_PHASE_TIMEOUT_SECONDS` | `seconds + omit + 15` | `1–300`, hard execution limit per direction |
-| `BENCHMARK_PARALLEL` | `1` | `1–4` |
-| `BENCHMARK_IP_FAMILY` | `auto` | `auto`, `4`, or `6` |
-| `BENCHMARK_DIRECTION` | `both` | `upload`, `download`, or `both` |
-| `BENCHMARK_RUN_ID` | Auto-generated | Optional 1–96 character run label; letters, numbers, dots, underscores, colons, and hyphens only |
-| `UPDATE_TAG` | Auto-discover | Target Release for `update`; equivalent CLI argument is `--target` |
-
-Custom swap file paths are not supported; the script may only create `/swapfile-proxy`.
-
-## State and Idempotent Execution
-
-State is saved in a root-only JSON:
-
-```text
-/var/lib/proxy-vps-tuning/state.json
-```
-
-When repeatedly executing `apply` with the same script version and parameters, the script first verifies the current configuration; if verification passes, it does not rewrite. When repeatedly executing `apply` via the main entry script without providing `--port` or `PORT_SPEED_MBPS`, it reuses the port bandwidth already installed in the state; explicit parameters still take precedence. If the state version differs from the current script, uses a different resource script, or changes bandwidth/buffer parameters, `apply` will require rollback first, avoiding misreporting "old configuration still verifiable" as "new version already installed".
-
-State updates are first written to a temporary file in the same directory by `jq`, then the command exit code, non-empty, single JSON object, and complete schema are checked; only after all pass is `state.json` atomically replaced. Empty files, blank files, multiple JSON documents, or update failures must not overwrite the previous valid state.
-
-When a provider changes the port limit of an already managed VPS, use `dvt reconfigure --port <MBPS>`. The operation only accepts a `VERIFIED` state owned by the same script version and profile, performs a complete pre-change `verify`, keeps the existing target RTT, recalculates automatic buffers for the new bandwidth, and preserves an explicit buffer value. Requesting the currently recorded bandwidth is verification-only and performs no writes. The normal `apply` mismatch gate remains unchanged; do not edit `state.json` manually.
-
-For a real change, the script stores root-only fixed backups of the previous state and managed sysctl file, commits a `RECONFIGURING` transaction, writes the candidate file/state, applies the managed sysctl file only when effective buffer values change, and performs complete candidate verification before atomically returning to `VERIFIED`. It does not rebuild qdisc or change swap, journald, or NOFILE. Any failure attempts to restore the old sysctl and old `VERIFIED` state. If recovery is incomplete, the transaction remains `DEGRADED`; ordinary `verify`, `rollback`, `preflight`, and `apply` refuse to cross it, and `dvt recover` must complete recovery first.
-
-### Upgrading from rc.15 to rc.16
-
-rc.16 does not change the 17 managed sysctls, BBR + fq, automatic buffer matrix, swap, journald, NOFILE, schema 4, traffic-budget ledger, or migration checkpoint contract. It adds bounded benchmark process lifetime and read-only policy-routing evidence. First run the rc.16 controller's read-only `update --target v0.1.0-rc.16` from an isolated directory. During a maintenance window with verified console access and backups, use `dvt migrate prepare --checkpoint /var/lib/debian-vps-tuning-migrations/rc15-to-rc16`, then follow the checkpointed rollback and two explicit reboot gates. The orchestrator never reboots automatically and does not replace strict proxy verification or a real-client business smoke test.
-
-### Upgrading from rc.14 to rc.15
-
-rc.15 does not change the 17 managed sysctls, BBR + fq, automatic buffer matrix, swap, journald, NOFILE, or schema 4. It adds the shared fail-closed traffic-budget ledger and persistent checkpoint/resume migration orchestrator. First run `update --target v0.1.0-rc.15` read-only, then use the fixed rc.14 assets and the checkpoint workflow during a maintenance window. Both reboot gates remain mandatory; do not let rc.15 `apply` overwrite an rc.14 state.
-
-### Upgrading from rc.13 to rc.14
-
-rc.14 does not change the set of 17 managed sysctls, BBR + fq, the automatic buffer matrix, swap, journald, NOFILE, or the schema-4 base structure. It adds the explicit bandwidth-reconfiguration transaction and recovery metadata. Because profile versions and hashes changed, rc.14 must not run `apply` or `reconfigure` over an rc.13 state. After rc.14 is published, first use its `update --target v0.1.0-rc.14` for the read-only compatibility check. During a maintenance window, use the fixed and verified rc.13 Release for `verify`, `PURGE_CREATED_SWAP=1 rollback`, and reboot, then use rc.14 from an independent directory for `preflight`, `apply`, reboot, and strict `verify`. Only after an rc.14 `VERIFIED` state exists should a later provider port change use `reconfigure`.
-
-### Upgrading from rc.12 to rc.13
-
-rc.13 does not change rc.12's 17 managed sysctls, qdisc, automatic buffer matrix, swap, journald, NOFILE, or schema-4 state structure. It adds read-only TCP diagnostics and the TcpQuality `v1.00013` flow-level evidence contract. Because profile versions and hashes changed, rc.13 must not run `apply` over an rc.12 state. First use rc.13 `update --target v0.1.0-rc.13` for the read-only compatibility check. During a maintenance window, use the fixed rc.12 Release for verify/rollback/purge and reboot, then use rc.13 for preflight/apply, reboot, and strict verify. If only the new diagnostics or evidence harness are needed, run them from an isolated rc.13 directory while rc.12 continues to own the lifecycle.
-
-### Upgrading from rc.11 to rc.12
-
-rc.12 does not change the 17 sysctls, qdisc, swap, journald, or NOFILE values of rc.11, but it upgrades the managed-state schema from 3 to 4 to preserve provider sysctl migration and restoration evidence. Existing rc.11 states therefore cannot be overwritten by rc.12 `apply`. First execute `update --target v0.1.0-rc.12` with the rc.12 main entry for a read-only compatibility check; after passing, use the fixed and verified rc.11 Release in a maintenance window to execute `verify`, `PURGE_CREATED_SWAP=1 rollback`, and reboot, then use rc.12 in an independent directory to execute `preflight`, `apply`, reboot, and strict `verify`. rc.11 and rc.12 main entries, manifests, and profiles must not be placed in the same directory.
-
-If only the new diagnosis, benchmark evidence, or advisory tools are needed and migrating management state to rc.12 is not required, the installed rc.11 can continue to own the configuration lifecycle. Run the rc.12 read-only `diagnose`, explicitly authorized `benchmark`, or standalone evidence tools from an independent directory; do not use rc.12 `apply` to overwrite rc.11 state. See the Chinese README and rc.12 release notes for the complete `dvt probe` and non-persistent HTB safety contract.
-
-### Upgrading from rc.8/rc.9 or old v5/v6 to rc.10
-
-No output from `tcpFastOpen` query is not itself a failure requiring upgrade: rc.10 only adds detection and explanation, still will not modify 3X-UI/Xray configurations for users. The main configuration change for upgrading to rc.10 is using 1×/1.25×/1.5×BDP tiers by 512M/1G/2G; 200 Mbps remains 16 MiB, 1G/2G at 1000 Mbps are 32/64 MiB respectively.
-
-For hosts already managed by rc.8 or rc.9 with a valid `/var/lib/proxy-vps-tuning/state.json`, first use the `update --target v0.1.0-rc.10` from the preceding rc.10 main entry for read-only compatibility check and save the output URL, SHA-256, profile, and port bandwidth. After passing, choose another maintenance window. Taking rc.9 as an example, re-download and verify the rc.9 main entry in an independent temporary directory, then complete verify/rollback/purge with the rc.9 fixed Release profile:
-
-```bash
-(
-  set -e
-
-  dvt_rc9_tmp="$(mktemp -d)"
-  trap 'rm -rf -- "$dvt_rc9_tmp"' EXIT
-
-  curl --fail --show-error --silent --location \
-    --proto '=https' \
-    --proto-redir '=https' \
-    --connect-timeout 15 \
-    --max-time 120 \
-    -o "$dvt_rc9_tmp/debian-vps-tuning.sh" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.1.0-rc.9/debian-vps-tuning.sh
-
-  printf '%s  %s\n' \
-    '09cbb77591760fa1789729c31f64e03b29f145f50c8c419bca6057b23f492979' \
-    "$dvt_rc9_tmp/debian-vps-tuning.sh" | sha256sum -c -
-
-  bash "$dvt_rc9_tmp/debian-vps-tuning.sh" verify
-
-  env PURGE_CREATED_SWAP=1 \
-    bash "$dvt_rc9_tmp/debian-vps-tuning.sh" rollback
-)
-
-printf 'rc9_rollback_exit=%s\n' "$?"
-
-reboot
-```
-
-After re-logging, use another independent temporary directory to re-download and verify the rc.10 main entry, execute `preflight --port <port bandwidth from original state>`; after confirming it passes, execute `apply --port <same bandwidth>`, reboot, and `verify`. Strict verification should also be executed if 3X-UI is installed. `PURGE_CREATED_SWAP=1` will only attempt to delete `/swapfile-proxy` confirmed created by this project in the state; if `swapoff` fails, the script preserves swap, fstab line, and state, forced deletion should not occur. If using external swap, rollback will not take over or delete it. Any step failure should stop and preserve the current state, do not skip reboot or directly execute subsequent apply.
-
-Old v5/v6 do not have the same state/ownership contract as rc.8+, rc.10 will not guess their original sysctl, qdisc, or swap ownership. First backup `sysctl`, `tc -j qdisc show`, systemd units, swap, and old scripts, exit old configuration and reboot according to the corresponding old script's cleanup process; after confirming old sysctl/service files are no longer effective, run rc.10 `preflight`. If sysctl conflicts occur, they must first be merged or removed according to real file ownership, do not use rc.10 `rollback` to impersonate old script uninstallers.
-
-### rc.2 Empty State Recovery
-
-Early rc.2 left an empty `state.json` when initial JSON construction failed, but qdisc snapshots still exist. For a state that is not a valid rc.16 reconfiguration transaction, `recover` only handles this known "pre-first system write" legacy scenario and requires explicit confirmation:
-
-```bash
-env ALLOW_EMPTY_STATE_RECOVERY=1 \
-  bash ./debian12-1c1g-vps-tuning.sh recover
-```
-
-This operation will only quarantine the state directory if all the following conditions are met: `state.json` is an empty JSON stream, no project management files exist, no `/swapfile-proxy` or corresponding fstab line exists, fq helper is not running, and the current qdisc is semantically consistent with the saved snapshot. The original state directory will be renamed to preserve evidence and will not be deleted. `recover` must not be used for general JSON corruption, valid states, or scenarios that cannot be proven to have occurred before the first system write.
-
-## Rollback
-
-Default rolls back system configurations but preserves the emergency swap created by the script:
-
-```bash
-bash ./debian13-1c1g-vps-tuning.sh rollback
-```
-
-If memory is confirmed sufficient and you wish to simultaneously delete the swap created by the script:
-
-```bash
-env PURGE_CREATED_SWAP=1 \
-  bash ./debian13-1c1g-vps-tuning.sh rollback
-```
-
-If normal rollback preserved swap, the state must first be cleaned up with the explicit purge above before re-applying. The script will not delete swap, fstab entries, or ownership state when `swapoff` fails.
-
-## qdisc Boundaries
-
-The script supports normal root `fq`, `fq_codel`, standard `pfifo_fast` with default parameters, `noqueue`, and normal cloud NICs with root `mq` and leaves as `fq`/`fq_codel`. Complex HTB, TBF, CAKE, custom `pfifo_fast`, or other hierarchies will be blocked during preflight. This avoids breaking existing multi-queue or traffic shaping structures with simple `tc qdisc replace ... root fq`.
-
-Existing root `fq` and existing `fq` leaves under `mq` will not be repeatedly replaced, nor will their custom parameters be reset to default fq during rollback. The script only switches `fq_codel` root/leaves or standard root `pfifo_fast` confirmed to support recovery to fq, and restores according to pre-saved semantics during rollback.
-
-The display format of `tc` and command input format are not completely identical, e.g., status output may show `limit 10240p`, recovery command still uses `limit 10240`. The script saves values via `tc -j` and rebuilds according to command input syntax; when comparing `target`, `interval`, and `ce_threshold`, it only tolerates ±1 microsecond quantization differences caused by kernel/tool echo, other supported parameters still require consistency.
-
-Rollback re-reads the actual state after executing qdisc recovery commands; state and snapshot deletion are only allowed if the recovery result is semantically consistent with the original snapshot. `handle 0:` in the original snapshot means unspecified, allowing the kernel to automatically assign runtime handles for classless qdiscs; explicit non-zero handles will attempt recovery and strictly compare. If post-verification fails, the state is preserved as `DEGRADED`, complete rollback must not be reported.
-
-## Docker Boundaries
-
-The first version primarily validates native systemd deployments. Docker may change UFW filtering paths via its own netfilter rules; using `network_mode: host` also exposes all listening ports inside containers. Docker scenarios require independent checks and are not part of this script's firewall promises.
-
-## Validation and Known Limitations
-
-- Local `bash -n`, ShellCheck, generation consistency, disabled key, and encoding checks do not equal successful target VPS runtime;
-- BBR, fq, swap, reboot persistence, UFW, 3X-UI, and actual client connectivity must be validated on the VPS;
-- OS/architecture support and native guest evidence are tracked in the [platform matrix](docs/platform-support.md); this does not prove provider-specific or proxy business behavior;
-- Policy-routing configuration/apply support, TProxy, gateways, Docker firewalls, and complex qdiscs are out of scope; rc.16 adds read-only policy-rule/table evidence only;
-- Performance results are affected by CPU, virtualization overselling, lines, cross-border routing, clients, and encryption overhead.
-- Performance acceptance should separately cover 1, 3, 5, 10 concurrency; the script will not automatically generate proxy traffic.
-- 2C2G remains included in rc.16 resource contracts and local fixtures; real VPS lifecycle results are subject to [Validation Matrix](docs/validation.md).
-
-See [Runtime Acceptance Instructions](docs/validation.md) for details.
-
-## Security Issues
-
-Public documents and Issues should only retain information directly related to reproduction and insufficient to locate specific assets, such as OS major version, kernel series, CPU/memory tier, filesystem type, sanitized plan bandwidth, and validation conclusions. The following must not be published:
-
-- Providers, data centers, regions, order numbers, and instance IDs;
-- Public/Private IPs, IPv6 prefixes, domains, hostnames, default gateways, and associable DNS records;
-- Real combinations of SSH, panel, subscription, API, monitoring, and proxy ports;
-- Usernames, passwords, UUIDs, subscription IDs, API Tokens, Cookies, SSH private keys, certificate private keys, REALITY private keys, and Short IDs;
-- Unsanitized 3X-UI databases, Xray JSON, client links, QR codes, logs, and screenshots;
-- Third-party report URLs/IDs like TcpQuality, exact test times, boot IDs, reverse-searchable run IDs, and authorized iperf3 server addresses.
-
-`diagnose` may output interface addresses, routes, and interrupt information; `DIAG_INCLUDE_SOCKET_DETAILS=1` may also output connection peers. `benchmark` metadata contains boot ID, user-specified host, and run ID. Must sanitize item by item before sharing logs, cannot just replace public IPv4. Script SHA-256 and project download URLs of public Releases belong to supply chain verification information, should be retained, and do not belong to VPS privacy data.
-
-Submit security issues according to [SECURITY.md](SECURITY.md), do not attach complete asset configurations in public Issues.
+Reproducible fixes and documentation improvements are welcome. For profile changes, edit `tools/profile-template.sh.in` and the corresponding declarations, then regenerate; do not edit generated files alone. On Linux, run [`bash tests/static-check.sh`](tests/static-check.sh); experiment changes also need the applicable [experiment checks](experiments/htb-aggregate/tests/static-check.sh). Root lifecycle and platform requirements are in the [validation guide (Chinese)](docs/validation.md).
 
 ## License
 
 [MIT License](LICENSE)
+
+<details>
+<summary>Previous section links (detailed guides in Chinese)</summary>
+
+- <a id="1-online-installation"></a>[1. Online Installation](README.en-US.md#installation)
+- <a id="2-online-verification-after-reboot"></a>[2. Online Verification After Reboot](docs/usage.md#入口不可用时的联网验证)
+- <a id="3-strict-online-verification-after-3x-ui-installation"></a>[3. Strict Online Verification After 3X-UI Installation](docs/usage.md#入口不可用时的严格代理验证)
+- <a id="4-execute-read-only-upgrade-check-from-early-rc-versions-historical-rc17-example"></a>[4. Execute Read-Only Upgrade Check from Early rc Versions (historical rc.17 example)](docs/migration.md#早期-rc-的历史-rc17-升级检查)
+- <a id="5-online-execution-notes"></a>[5. Online Execution Notes](docs/usage.md#执行前准备)
+- <a id="when-the-provider-already-supplies-bbrfq"></a>[When the Provider Already Supplies BBR/fq](docs/usage.md#厂商已预装-bbrfq-时的处理)
+- <a id="real-environment-validation-baseline"></a>[Real Environment Validation Baseline](docs/validation.md#真实环境验证基线截至-2026-08-07)
+- <a id="1c2g--200-mbps-performance-observation-case"></a>[1C2G / 200 Mbps Performance Observation Case](docs/validation.md#1c2g--200-mbps-性能观察案例)
+- <a id="local-usage-and-command-line-mode"></a>[Local Usage and Command Line Mode](docs/usage.md#本地使用与命令行模式)
+- <a id="applicable-scenarios"></a>[Applicable Scenarios](README.en-US.md#support-and-prerequisites)
+- <a id="debian-1213-selection"></a>[Debian 12/13 Selection](docs/usage.md#历史系统选型说明2026-08-04)
+- <a id="selection-by-vps-resource-tier"></a>[Selection by VPS Resource Tier](docs/usage.md#按-vps-资源档选择)
+- <a id="virtualization-type-is-closer-to-kernel-reality-than-distro-name"></a>[Virtualization Type is Closer to Kernel Reality Than Distro Name](docs/usage.md#虚拟化类型比发行版名称更接近内核事实)
+- <a id="script-selection"></a>[Script Selection](docs/usage.md#脚本选择)
+- <a id="what-the-script-will-modify"></a>[What the Script Will Modify](docs/usage.md#脚本会修改什么)
+- <a id="tcp-fast-open-and-xray-boundaries"></a>[TCP Fast Open and Xray Boundaries](docs/usage.md#tcp-fast-open-与-xray-的边界)
+- <a id="what-the-script-will-not-modify"></a>[What the Script Will Not Modify](docs/usage.md#脚本不会修改什么)
+- <a id="vps-initialization"></a>[VPS Initialization](docs/usage.md#vps-初始化)
+- <a id="ufw-notes"></a>[UFW Notes](docs/usage.md#ufw-注意事项)
+- <a id="download-and-verification"></a>[Download and Verification](docs/usage.md#下载与校验)
+- <a id="usage"></a>[Usage](docs/usage.md#持久配置与验证)
+- <a id="1-read-only-preflight"></a>[1. Read-Only Preflight](docs/usage.md#1-只读预检)
+- <a id="2-apply"></a>[2. Apply](docs/usage.md#2-应用)
+- <a id="3-verification-after-reboot"></a>[3. Verification After Reboot](docs/usage.md#3-重启后验证)
+- <a id="4-verification-after-3x-ui-installation"></a>[4. Verification After 3X-UI Installation](docs/usage.md#4-安装-3x-ui-后验证)
+- <a id="5-read-only-diagnose"></a>[5. Read-Only Diagnose](docs/usage.md#诊断与故障定位)
+- <a id="6-research-only-explicit-iperf3-benchmark"></a>[6. Research-Only Explicit iperf3 Benchmark](docs/advanced-measurement.md#研究专用-benchmark)
+- <a id="7-research-only-htb-reference-candidate-sweep-and-independent-aba-windows"></a>[7. Research-Only HTB Reference, Candidate Sweep, and Independent A/B/A Windows](docs/advanced-measurement.md#历史-htb-reference-与-aba)
+- <a id="110000-mbps-configuration-inputs"></a>[1–10000 Mbps configuration inputs](docs/usage.md#110000-mbps-配置输入)
+- <a id="parameters"></a>[Parameters](docs/usage.md#参数)
+- <a id="state-and-idempotent-execution"></a>[State and Idempotent Execution](docs/usage.md#状态与重复执行)
+- <a id="upgrading-from-rc15-to-rc16"></a>[Upgrading from rc.15 to rc.16](docs/migration.md#从-rc15-升级到-rc16)
+- <a id="upgrading-from-rc14-to-rc15"></a>[Upgrading from rc.14 to rc.15](docs/migration.md#从-rc14-升级到-rc15)
+- <a id="upgrading-from-rc13-to-rc14"></a>[Upgrading from rc.13 to rc.14](docs/migration.md#从-rc13-升级到-rc14)
+- <a id="upgrading-from-rc12-to-rc13"></a>[Upgrading from rc.12 to rc.13](docs/migration.md#从-rc12-升级到-rc13)
+- <a id="upgrading-from-rc11-to-rc12"></a>[Upgrading from rc.11 to rc.12](docs/migration.md#从-rc11-升级到-rc12)
+- <a id="upgrading-from-rc8rc9-or-old-v5v6-to-rc10"></a>[Upgrading from rc.8/rc.9 or old v5/v6 to rc.10](docs/migration.md#从-rc8rc9-或旧-v5v6-升级到-rc10)
+- <a id="rc2-empty-state-recovery"></a>[rc.2 Empty State Recovery](docs/migration.md#rc2-空状态恢复)
+- <a id="rollback"></a>[Rollback](docs/usage.md#回滚)
+- <a id="qdisc-boundaries"></a>[qdisc Boundaries](docs/usage.md#qdisc-边界)
+- <a id="docker-boundaries"></a>[Docker Boundaries](docs/usage.md#docker-边界)
+- <a id="validation-and-known-limitations"></a>[Validation and Known Limitations](README.en-US.md#validation-status-and-limitations)
+- <a id="security-issues"></a>[Security Issues](docs/usage.md#日志脱敏与安全报告)
+
+</details>
