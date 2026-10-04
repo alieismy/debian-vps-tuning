@@ -6,6 +6,10 @@
 
 三台已有可信主机密钥的真实 VPS 通过新工具的 `inspect`，由 SSH stdin 执行，只读获取状态/部署绑定、运行参数、文件摘要，不在远端保存工具或写状态。新增可连接主机另通过固定 rc.12 来源 `verify_settings()` 与候选 `run_preflight()`，状态、文件、17 项 sysctl、qdisc、swap 和 boot ID 前后一致，其两个部署时间戳与历史候选匹配。另两台分别待主机密钥信任、远端关闭连接；生产基线激活、整机恢复、两个重启和业务验收均未执行。逐台编号、地址和计划保留在私有忽略目录。
 
+实现提交 `3616444921d0bf688ee79e11f5816f0e41ef1485` 的[主 CI 37178357578](https://github.com/alieismy/debian-vps-tuning/actions/runs/37178357578)已成功，日志确认 132 项常规测试中只有 root 集成因普通用户运行跳过，随后 root 专项 20 项全部通过、无跳过；九份 profile、安装/迁移、原生 tc/信号恢复、HTB 静态和 ShellCheck 0.11.0 成功。新增恢复模式的端到端测试执行真实文件读写及迁移 CLI，两个 boot gate、源归档保留、PREPARING 拒绝 rollback、目标原值再次截断拒绝均通过；系统 profile 操作与重启仍是隔离 fixture。
+
+[平台运行 37178357544](https://github.com/alieismy/debian-vps-tuning/actions/runs/37178357544) 的四组 x86_64 成功，四份 artifact 均完成 GitHub digest、目标 VERIFIED、两次真实客体重启及 17 项原 sysctl/qdisc 恢复核验；三组 ARM64 仍在运行。VM 门禁验证常规生命周期，不包含用户五台生产基线恢复；未发布候选与生产验收边界保持。
+
 ## 0.2.0-rc.2 旧 schema 4 升级预检修复（2026-10-04，本地候选）
 
 本轮修复与限制见[候选说明](releases/v0.2.0-rc.2.md)。新增 `tests/test_update_preflight.py`，修复前在实际 profile 预检与控制器 `run_update` 调用路径观察到旧 schema 4 拒绝；修复后七个测试方法通过，覆盖五组历史状态、普通模式版本边界、非 preflight 动作拒绝、schema/profile/provider/所有权与阶段门禁、来源 verify 失败停止，以及缺失 TCP 原值时不创建 checkpoint。合成状态逐字节不变；Windows fixture 隔离宿主探测、锁和 root 元数据，不证明目标机生命周期。
