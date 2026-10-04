@@ -1,5 +1,17 @@
 # 验证说明
 
+## 0.2.0-rc.2 旧 schema 4 升级预检修复（2026-10-04，本地候选）
+
+本轮修复与限制见[候选说明](releases/v0.2.0-rc.2.md)。新增 `tests/test_update_preflight.py`，修复前在实际 profile 预检与控制器 `run_update` 调用路径观察到旧 schema 4 拒绝；修复后七个测试方法通过，覆盖五组历史状态、普通模式版本边界、非 preflight 动作拒绝、schema/profile/provider/所有权与阶段门禁、来源 verify 失败停止，以及缺失 TCP 原值时不创建 checkpoint。合成状态逐字节不变；Windows fixture 隔离宿主探测、锁和 root 元数据，不证明目标机生命周期。
+
+最终 `bash tests/static-check.sh` 返回 0，输出 `static checks passed for 9 scripts`；其中 112 项 Python 中 111 项通过，1 项因 Windows 缺少 flock 跳过，控制器检查通过，模板生成无漂移。ShellCheck 0.11.0 按 CI 文件清单检查 29 个脚本及九份提取的 helper，共 38 项全部通过。24 项运行资产摘要、installer 内置 manifest 摘要和候选说明中的安装摘要一致；README 在线命令保留已发布 rc.1 的固定地址和摘要。离线 probe 校准器增加同格式 rc.2 标识兼容，原有结果及证据不变回归通过。
+
+`bash experiments/htb-aggregate/tests/static-check.sh` 返回 0，输出 `HTB aggregate experiment static checks passed`；其中故意注入的失败与恢复断言按预期处理。最终 `git diff --check` 通过。
+
+候选尚未发布；本轮获准进入独立分支 Linux CI，实际结果绑定后续固定提交与运行记录。VM 重启和用户 VPS 生命周期尚未执行；既往 rc.1 CI 不能替代这些门禁。历史单值 TCP 快照仍阻断迁移，本地预检修复不构成原值恢复或生产升级成功。
+
+获授权的两台 VPS 只读验证：固定已发布 rc.1 的原 `state_file_path_is_valid()` 拒绝当前 rc.16/rc.17 状态，候选同函数接受；执行真实 jq、stat 与真实状态文件，不模拟 root 元数据。受管文件全部匹配 state 摘要，配置文件的 17 项 sysctl 与当前内核一致，x-ui active。检查前后 state、受管文件、sysctl 和 boot ID 不变，两项历史 TCP 原值仍均缺项。测试经 SSH stdin 在内存中运行，不安装候选、不执行 DVT 动作或写锁；该结果不等同完整 `update`/`preflight` 或恢复验收。
+
 ## 测量证据解释工具（2026-09-30，PR 候选）
 
 `tools/explain_measurement.py` 的接口和边界见[设计说明](measurement-explanation.md)。新增 `tests/test_measurement_explanation.py`，由既有 `unittest discover -s tests -p 'test_*.py'` 自动发现；覆盖合成持续上升/孤立单事件/最高档候选、缺失数据、整数边界、原分类保持、HTB 恢复门禁、源目录不变及篡改拒绝。合成测试不代表公网误报率或可靠拐点验收。

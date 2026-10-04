@@ -2,6 +2,20 @@
 
 当前目标：`v0.2.0-rc.1`。本页用于已有 DVT 管理状态的主机；全新安装见 [README](../README.md#安装)。历史版本步骤保留在后面的附录，不能直接换版本号套用。
 
+**2026-10-04 已知问题：** 已发布 rc.1 的目标 profile 会把旧 schema 4 的版本不一致报告为笼统状态错误；旧版 verify 成功并不能解除此拒绝。[rc.2 本地候选](releases/v0.2.0-rc.2.md)修复只读预检，并保留恢复完整性门禁。下方 rc.1 的固定资产和命令属于已发布版本，尚不能作为受影响 schema 4 主机的可执行迁移路线；rc.2 未发布，不能直接替换下载 URL。
+
+盘点原值时应直接读取受管状态，而不是当前内核的调优值。下面命令只输出非敏感摘要，不修改状态：
+
+```bash
+jq '{schema_version,script_version,state,profile_id:.profile.id,
+     port_speed_mbps:.network.port_speed_mbps,
+     original_tcp_rmem:.original_sysctls["net.ipv4.tcp_rmem"],
+     original_tcp_wmem:.original_sysctls["net.ipv4.tcp_wmem"]}' \
+  /var/lib/proxy-vps-tuning/state.json
+```
+
+两项原值各须为完整的三个整数。若各只有 `4096`，即使候选预检通过，仍应停在恢复证据核查；`ALLOW_EMPTY_STATE_RECOVERY=1` 不适用于有效旧状态的缺失三元组。历史完整三元组只有在能证明对应同一主机、本次部署的应用前状态及其间配置连续性时，才能作为恢复依据。
+
 ## 先判断能否迁移
 
 安装新入口、迁移 managed state、重启持久性和真实业务验收是不同步骤。`dvt --version` 显示执行入口版本，不一定等于状态里的 `script_version`。`update` 只检查和生成计划，不执行 rollback、purge、apply、reconfigure 或 reboot。
