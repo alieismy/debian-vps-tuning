@@ -12,6 +12,10 @@
 
 获授权的两台 VPS 只读验证：固定已发布 rc.1 的原 `state_file_path_is_valid()` 拒绝当前 rc.16/rc.17 状态，候选同函数接受；执行真实 jq、stat 与真实状态文件，不模拟 root 元数据。受管文件全部匹配 state 摘要，配置文件的 17 项 sysctl 与当前内核一致，x-ui active。检查前后 state、受管文件、sysctl 和 boot ID 不变，两项历史 TCP 原值仍均缺项。测试经 SSH stdin 在内存中运行，不安装候选、不执行 DVT 动作或写锁；该结果不等同完整 `update`/`preflight` 或恢复验收。
 
+后继只读测试以 `O_RDONLY` 打开既有锁文件并取得非阻塞共享锁，直接运行固定来源的 `verify_settings()` 与候选 `run_preflight()`；两台均返回 0，源码校验摘要分别匹配来源固定资产。未模拟 OS、资源、所有权、provider、qdisc 或 swap；仅不调用 CLI 的写锁/下载入口。前后核对 state、五项受管文件、原 qdisc/provider 备份、fstab、sysctl.conf、锁文件摘要，以及 17 项内核 sysctl、qdisc、swap、boot ID，全部一致。两台执行入口均仍为 rc.1，受管状态分别为 rc.16/rc.17。
+
+实现提交 `540bbb456242d59ffe0fa24a2393592c0648293d` 的 [Linux 主 CI 37172239683](https://github.com/alieismy/debian-vps-tuning/actions/runs/37172239683) 全部通过：下载日志确认 112 项 Python 无跳过、九份生成 profile、root 安装、rc.16/17/18/19→rc.2 迁移 fixture、预算/进程、隔离原生 tc/iperf3 与 ShellCheck 0.11.0 成功。[平台矩阵 37172239733](https://github.com/alieismy/debian-vps-tuning/actions/runs/37172239733) 的四组 x86_64 已通过并下载归档核对 GitHub digest、rc.2 VERIFIED 状态、两次客体 boot ID 变化、17 项 sysctl 和 qdisc 恢复；三组 ARM64 仍在运行，不计为通过。这些是隔离 CI 客体证据，不是存量 VPS 的恢复或迁移。
+
 ## 测量证据解释工具（2026-09-30，PR 候选）
 
 `tools/explain_measurement.py` 的接口和边界见[设计说明](measurement-explanation.md)。新增 `tests/test_measurement_explanation.py`，由既有 `unittest discover -s tests -p 'test_*.py'` 自动发现；覆盖合成持续上升/孤立单事件/最高档候选、缺失数据、整数边界、原分类保持、HTB 恢复门禁、源目录不变及篡改拒绝。合成测试不代表公网误报率或可靠拐点验收。
