@@ -1,5 +1,11 @@
 # 验证说明
 
+## 0.2.0-rc.2 逐台 TCP 基线恢复候选（2026-10-04）
+
+范围见[恢复工具](tcp-baseline-recovery.md)。新增 20 项恢复测试：Windows 上 18 项通过，Linux 权限/flock 与 Linux root 迁移 CLI 集成两项跳过。完整静态套件返回 0，九份 profile 和控制器通过，132 项 Python 中 129 项通过、3 项平台条件跳过；本轮修改的迁移脚本通过 ShellCheck 0.11.0，新增 jq 归档契约与状态来源校验使用实际生成归档执行通过。后续 Linux CI 将运行全部恢复测试，包括两个模式的真实文件事务接迁移 CLI；profile 和 boot ID 仍为 fixture，不能称为真实系统迁移。
+
+三台已有可信主机密钥的真实 VPS 通过新工具的 `inspect`，由 SSH stdin 执行，只读获取状态/部署绑定、运行参数、文件摘要，不在远端保存工具或写状态。新增可连接主机另通过固定 rc.12 来源 `verify_settings()` 与候选 `run_preflight()`，状态、文件、17 项 sysctl、qdisc、swap 和 boot ID 前后一致，其两个部署时间戳与历史候选匹配。另两台分别待主机密钥信任、远端关闭连接；生产基线激活、整机恢复、两个重启和业务验收均未执行。逐台编号、地址和计划保留在私有忽略目录。
+
 ## 0.2.0-rc.2 旧 schema 4 升级预检修复（2026-10-04，本地候选）
 
 本轮修复与限制见[候选说明](releases/v0.2.0-rc.2.md)。新增 `tests/test_update_preflight.py`，修复前在实际 profile 预检与控制器 `run_update` 调用路径观察到旧 schema 4 拒绝；修复后七个测试方法通过，覆盖五组历史状态、普通模式版本边界、非 preflight 动作拒绝、schema/profile/provider/所有权与阶段门禁、来源 verify 失败停止，以及缺失 TCP 原值时不创建 checkpoint。合成状态逐字节不变；Windows fixture 隔离宿主探测、锁和 root 元数据，不证明目标机生命周期。
@@ -15,6 +21,8 @@
 后继只读测试以 `O_RDONLY` 打开既有锁文件并取得非阻塞共享锁，直接运行固定来源的 `verify_settings()` 与候选 `run_preflight()`；两台均返回 0，源码校验摘要分别匹配来源固定资产。未模拟 OS、资源、所有权、provider、qdisc 或 swap；仅不调用 CLI 的写锁/下载入口。前后核对 state、五项受管文件、原 qdisc/provider 备份、fstab、sysctl.conf、锁文件摘要，以及 17 项内核 sysctl、qdisc、swap、boot ID，全部一致。两台执行入口均仍为 rc.1，受管状态分别为 rc.16/rc.17。
 
 实现提交 `540bbb456242d59ffe0fa24a2393592c0648293d` 的 [Linux 主 CI 37172239683](https://github.com/alieismy/debian-vps-tuning/actions/runs/37172239683) 全部通过：下载日志确认 112 项 Python 无跳过、九份生成 profile、root 安装、rc.16/17/18/19→rc.2 迁移 fixture、预算/进程、隔离原生 tc/iperf3 与 ShellCheck 0.11.0 成功。[平台矩阵 37172239733](https://github.com/alieismy/debian-vps-tuning/actions/runs/37172239733) 的四组 x86_64 已通过并下载归档核对 GitHub digest、rc.2 VERIFIED 状态、两次客体 boot ID 变化、17 项 sysctl 和 qdisc 恢复；三组 ARM64 仍在运行，不计为通过。这些是隔离 CI 客体证据，不是存量 VPS 的恢复或迁移。
+
+后续完成核验：平台运行 `37172239733` 已整体成功，七组 artifact 均核对 GitHub digest、rc.2 VERIFIED、两次真实客体重启、17 项 sysctl 原值和 qdisc 恢复；三组 ARM64 不再处于待完成状态。仅文档提交 `89e7c7524dd114e192eab13c4ace02e069cef145` 的 [主 CI 37172611946](https://github.com/alieismy/debian-vps-tuning/actions/runs/37172611946) 也通过；相对实现提交仅三份文档变化。候选尚未发布，以上不补齐用户旧状态中的历史 TCP 原值。
 
 ## 测量证据解释工具（2026-09-30，PR 候选）
 

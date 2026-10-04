@@ -14,13 +14,13 @@ jq '{schema_version,script_version,state,profile_id:.profile.id,
   /var/lib/proxy-vps-tuning/state.json
 ```
 
-两项原值各须为完整的三个整数。若各只有 `4096`，即使候选预检通过，仍应停在恢复证据核查；`ALLOW_EMPTY_STATE_RECOVERY=1` 不适用于有效旧状态的缺失三元组。历史完整三元组只有在能证明对应同一主机、本次部署的应用前状态及其间配置连续性时，才能作为恢复依据。
+两项原值各须为完整的三个整数。若各只有 `4096`，即使候选预检通过，仍应停在恢复证据核查；`ALLOW_EMPTY_STATE_RECOVERY=1` 不适用于有效旧状态的缺失三元组。历史完整三元组只有在能证明对应同一主机、本次部署的应用前状态及其间配置连续性时，才能作为恢复依据。对于明确接受新恢复语义的主机，rc.2 源码候选另提供[带来源的 TCP 基线恢复工具](tcp-baseline-recovery.md)：保留原件，区分历史证据与替代值，再接续迁移；该入口未发布，不属于下面已发布 rc.1 命令的强制选项。
 
 ## 先判断能否迁移
 
 安装新入口、迁移 managed state、重启持久性和真实业务验收是不同步骤。`dvt --version` 显示执行入口版本，不一定等于状态里的 `script_version`。`update` 只检查和生成计划，不执行 rollback、purge、apply、reconfigure 或 reboot。
 
-**恢复原值不完整时，停止在只读检查。** 更早版本可能只保存了 `net.ipv4.tcp_rmem` / `net.ipv4.tcp_wmem` 的第一项。三元组缺项时，新迁移器拒绝创建 checkpoint；旧版 verify 成功也不能证明原值完整。不得删改状态、猜发行版默认值、借用其他主机值，或调用旧版 rollback 绕过拒绝。完整处置边界由 [平台支持：旧状态与迁移](platform-support.md#旧状态与迁移) 维护。
+**恢复原值不完整时，普通迁移停止在只读检查。** 更早版本可能只保存了 `net.ipv4.tcp_rmem` / `net.ipv4.tcp_wmem` 的第一项。三元组缺项时，新迁移器拒绝创建 checkpoint；旧版 verify 成功也不能证明原值完整。不得手改状态、猜默认值冒充历史快照，或调用旧版 rollback 绕过拒绝。选择新基线时须独立完成上文恢复工具的逐台计划、归档和来源记录，不能直接解除完整性门禁。已发布流程的处置边界见 [平台支持：旧状态与迁移](platform-support.md#旧状态与迁移)。
 
 当前迁移器只接受已定义的 rc.1–rc.19 Debian 来源，还必须通过实际来源状态、profile、资源、所有权、原值和目标预检。版本在此范围内不等于必然可迁移。跨 OS、资源变化导致的 profile 切换不由以下步骤自动处理。
 
