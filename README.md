@@ -17,6 +17,7 @@
 | 测试临时整形区间 | `dvt htb-sweep` | 只接受可完整恢复的单根 fq；临时限制整个接口的出向流量，包括 SSH；结束核对恢复 |
 | 管理主机网络配置 | `dvt preflight` → `dvt apply` | 持久管理 BBR + fq、TCP 缓冲、队列参数、可选 swap、journald 和 NOFILE；支持验证与回滚 |
 | 检查采集结果 | `dvt report` | 核验独立测量报告摘要，不自动应用候选速率 |
+| 离线解释重传与候选证据 | [`explain_measurement.py`](docs/measurement-explanation.md) | 在完整源码目录运行，无需安装到 VPS；保留原分类，不生成限速决定 |
 
 项目不安装或改写代理业务，不配置防火墙、路由、DNS、NAT 或 TProxy。`verify` 和旧增量诊断 `diagnose --managed` 会只读解析可访问的 Xray 生成配置，报告 TFO/keepalive 指定字段；不会改写配置或输出其中的凭据。持久 HTB 未启用。
 
@@ -95,6 +96,8 @@ dvt report --input-dir /root/dvt-measure-01
 ```
 
 `INSUFFICIENT_EVIDENCE` 是允许的结果；退出码 0 只表示报告采集完成。测试不经过 VLESS/REALITY 客户端，不能据此承诺业务提速。临时整形另见 [htb-sweep 指南](docs/temporary-htb.md)，执行前必须理解整个接口限速及恢复条件。
+
+需要查看绝对重传次数、字节量和候选证据限制时，可使用[离线解释工具 0.1.0](https://github.com/alieismy/debian-vps-tuning/releases/tag/measurement-explanation-v0.1.0)。它是独立的源码 Pre-release；下载校验及 Windows/Linux 命令见[工具发布说明](docs/releases/measurement-explanation-v0.1.0.md)，无需升级 VPS 或运行安装器，主程序版本仍为 `v0.2.0-rc.1`。
 
 ### 路径 B：应用持久配置
 
@@ -175,6 +178,7 @@ env REQUIRE_PROXY_SERVICE=1 PROXY_SERVICE_UNITS='x-ui.service' dvt verify
 | 安装、日常操作、诊断、参数和回滚 | [操作指南](docs/usage.md) |
 | 升级、旧状态、历史恢复 | [迁移指南](docs/migration.md) |
 | 自动选点、预算、结果解读 | [独立测量](docs/automatic-measurement.md) |
+| 离线解释重传次数、暴露量及候选限制 | [解释工具](docs/measurement-explanation.md) · [独立工具发布](docs/releases/measurement-explanation-v0.1.0.md) |
 | 临时 HTB 与完整恢复 | [临时实验](docs/temporary-htb.md) |
 | 平台、资源、自适应缓冲 | [支持矩阵](docs/platform-support.md) |
 | 高级显式测量与研究入口 | [高级测量](docs/advanced-measurement.md) |

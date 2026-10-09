@@ -1,6 +1,8 @@
 # 验证说明
 
-## 测量证据解释工具（2026-09-30，PR 候选）
+## 测量证据解释工具（2026-09-30，独立 Pre-release）
+
+当前发布为 [`measurement-explanation-v0.1.0`](releases/measurement-explanation-v0.1.0.md)，固定源码 `1c5e922c2fce916d5217bf6c238d6cd50a8c51b0`。[合并后 CI 36694985355](https://github.com/alieismy/debian-vps-tuning/actions/runs/36694985355) 与 [tag CI 36696765305](https://github.com/alieismy/debian-vps-tuning/actions/runs/36696765305) 均通过，日志确认 105 项 Python 无跳过及完整 Linux 门禁。发布的三个资产已从公开地址下载，与批准制品逐字节一致；解包目录通过 16 项工具测试与四轮 71 样本回读，1244 个源证据文件保持。主程序 Release 的 26 项资产及更新选择保持；这些结果不替代公网业务收益或存量迁移验收。以下保留对应开发提交的验证记录。
 
 `tools/explain_measurement.py` 的接口和边界见[设计说明](measurement-explanation.md)。新增 `tests/test_measurement_explanation.py`，由既有 `unittest discover -s tests -p 'test_*.py'` 自动发现；覆盖合成持续上升/孤立单事件/最高档候选、缺失数据、整数边界、原分类保持、HTB 恢复门禁、源目录不变及篡改拒绝。合成测试不代表公网误报率或可靠拐点验收。
 
