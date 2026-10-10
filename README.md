@@ -1,10 +1,12 @@
-# Debian VPS Tuning
+# VPS Tuning
 
-简体中文 · [English](README.en-US.md) · [v0.2.0-rc.1 预发行版](https://github.com/alieismy/debian-vps-tuning/releases/tag/v0.2.0-rc.1)
+简体中文 · [English](README.en-US.md) · [v0.2.0-rc.1 预发行版](https://github.com/alieismy/vps-tuning/releases/tag/v0.2.0-rc.1)
 
 为 Linux VPS 提供主机网络诊断、有预算的公共 iperf3 自动测量，以及可验证、可回滚的 BBR + fq 配置。测量无需先应用调优或自建对端；临时 HTB 速率阶梯实验用于观察发送速率与重传的关系。
 
 当前为 **Pre-release**。持久配置支持 Debian 12/13、Ubuntu 24.04 LTS 的 x86_64/ARM64 主机；独立诊断和测量按实际 Linux 能力检查。已有功能与恢复证据不等于可靠 policer（流量监管）识别或代理业务性能收益。
+
+仓库原名 `debian-vps-tuning`，2026-10-10 改为现名，旧链接会自动跳转到本仓库。`dvt` 命令、发布资产文件名、安装路径和受管状态路径均保持不变。
 
 [功能与边界](#功能与边界) · [支持范围](#支持范围与前置条件) · [快速开始](#快速开始) · [常用操作](#常用操作) · [升级与回滚](#升级与回滚) · [文档](#文档导航) · [帮助](#帮助贡献与安全报告)
 
@@ -57,7 +59,7 @@
     --proto '=https' --proto-redir '=https' \
     --connect-timeout 15 --max-time 120 \
     -o "$dvt_i" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.2.0-rc.1/install.sh
+    https://github.com/alieismy/vps-tuning/releases/download/v0.2.0-rc.1/install.sh
   printf '%s  %s\n' \
     'a039922793710a90b281a10ba5076761f6a8efd43c96c916328e0fe7c5f70d06' \
     "$dvt_i" | sha256sum -c -
@@ -97,7 +99,7 @@ dvt report --input-dir /root/dvt-measure-01
 
 `INSUFFICIENT_EVIDENCE` 是允许的结果；退出码 0 只表示报告采集完成。测试不经过 VLESS/REALITY 客户端，不能据此承诺业务提速。临时整形另见 [htb-sweep 指南](docs/temporary-htb.md)，执行前必须理解整个接口限速及恢复条件。
 
-需要查看绝对重传次数、字节量和候选证据限制时，可使用[离线解释工具 0.1.0](https://github.com/alieismy/debian-vps-tuning/releases/tag/measurement-explanation-v0.1.0)。它是独立的源码 Pre-release；下载校验及 Windows/Linux 命令见[工具发布说明](docs/releases/measurement-explanation-v0.1.0.md)，无需升级 VPS 或运行安装器，主程序版本仍为 `v0.2.0-rc.1`。
+需要查看绝对重传次数、字节量和候选证据限制时，可使用[离线解释工具 0.1.0](https://github.com/alieismy/vps-tuning/releases/tag/measurement-explanation-v0.1.0)。它是独立的源码 Pre-release；下载校验及 Windows/Linux 命令见[工具发布说明](docs/releases/measurement-explanation-v0.1.0.md)，无需升级 VPS 或运行安装器，主程序版本仍为 `v0.2.0-rc.1`。
 
 ### 路径 B：应用持久配置
 
@@ -188,7 +190,7 @@ env REQUIRE_PROXY_SERVICE=1 PROXY_SERVICE_UNITS='x-ui.service' dvt verify
 
 ## 帮助、贡献与安全报告
 
-普通使用问题、缺陷和改进建议请通过 [GitHub Issues](https://github.com/alieismy/debian-vps-tuning/issues) 提交，提供脚本版本、系统/架构、复现步骤、退出码及脱敏日志。不要上传真实地址、凭据、订阅链接、完整代理配置或可反查报告；详见[脱敏说明](docs/usage.md#日志脱敏与安全报告)。安全问题使用 [SECURITY.md](SECURITY.md) 指定的私密报告入口。
+普通使用问题、缺陷和改进建议请通过 [GitHub Issues](https://github.com/alieismy/vps-tuning/issues) 提交，提供脚本版本、系统/架构、复现步骤、退出码及脱敏日志。不要上传真实地址、凭据、订阅链接、完整代理配置或可反查报告；详见[脱敏说明](docs/usage.md#日志脱敏与安全报告)。安全问题使用 [SECURITY.md](SECURITY.md) 指定的私密报告入口。
 
 欢迎提交有复现依据的修复和文档改进。修改 profile 时编辑 `tools/profile-template.sh.in` 与对应声明，使用生成器同步，勿单改生成文件。贡献者在 Linux 环境运行 [`bash tests/static-check.sh`](tests/static-check.sh)，实验工具变更还需相应[实验静态检查](experiments/htb-aggregate/tests/static-check.sh)；适用的 root 生命周期与平台检查见[验证说明](docs/validation.md)。
 

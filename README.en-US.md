@@ -1,10 +1,12 @@
-# Debian VPS Tuning
+# VPS Tuning
 
-[简体中文](README.md) · English · [v0.2.0-rc.1 prerelease](https://github.com/alieismy/debian-vps-tuning/releases/tag/v0.2.0-rc.1)
+[简体中文](README.md) · English · [v0.2.0-rc.1 prerelease](https://github.com/alieismy/vps-tuning/releases/tag/v0.2.0-rc.1)
 
 Host network diagnostics, budgeted automatic measurement with public iperf3 endpoints, and verifiable, reversible BBR + fq configuration for Linux VPS hosts. Measurement needs neither prior tuning nor a self-hosted endpoint. Temporary HTB rate sweeps explore the relationship between sending rate and retransmissions.
 
 This is a **Pre-release**. Persistent profiles support Debian 12/13 and Ubuntu 24.04 LTS on x86_64/ARM64; independent diagnostics and measurement check actual Linux capabilities. Functional and recovery evidence does not establish reliable policer identification or improved proxy performance.
+
+The repository was renamed from `debian-vps-tuning` on 2026-10-10. Old links redirect here automatically. The `dvt` command, release asset file names, installation paths and managed-state paths are unchanged.
 
 [Capabilities](#capabilities-and-effects) · [Requirements](#support-and-prerequisites) · [Quick start](#quick-start) · [Operations](#common-operations) · [Migration](#upgrades-and-rollback) · [Documentation](#documentation) · [Help](#help-contributing-and-security)
 
@@ -57,7 +59,7 @@ Run in a root shell (`id -u` must return `0`). This downloads the complete fixed
     --proto '=https' --proto-redir '=https' \
     --connect-timeout 15 --max-time 120 \
     -o "$dvt_i" \
-    https://github.com/alieismy/debian-vps-tuning/releases/download/v0.2.0-rc.1/install.sh
+    https://github.com/alieismy/vps-tuning/releases/download/v0.2.0-rc.1/install.sh
   printf '%s  %s\n' \
     'a039922793710a90b281a10ba5076761f6a8efd43c96c916328e0fe7c5f70d06' \
     "$dvt_i" | sha256sum -c -
@@ -97,7 +99,7 @@ dvt report --input-dir /root/dvt-measure-01
 
 `INSUFFICIENT_EVIDENCE` is an allowed result; exit code 0 only means report collection completed. Tests do not traverse a VLESS/REALITY client and do not establish proxy performance benefits. For temporary shaping, read the [htb-sweep guide (Chinese)](docs/temporary-htb.md), including its whole-interface impact and restoration conditions.
 
-For absolute retransmission counts, byte exposure and candidate evidence limits, use [offline explanation tool 0.1.0](https://github.com/alieismy/debian-vps-tuning/releases/tag/measurement-explanation-v0.1.0). This is a separate source prerelease; see the [tool release notes (Chinese)](docs/releases/measurement-explanation-v0.1.0.md) for download verification and Windows/Linux commands. It requires neither a VPS upgrade nor the installer; the main program remains `v0.2.0-rc.1`.
+For absolute retransmission counts, byte exposure and candidate evidence limits, use [offline explanation tool 0.1.0](https://github.com/alieismy/vps-tuning/releases/tag/measurement-explanation-v0.1.0). This is a separate source prerelease; see the [tool release notes (Chinese)](docs/releases/measurement-explanation-v0.1.0.md) for download verification and Windows/Linux commands. It requires neither a VPS upgrade nor the installer; the main program remains `v0.2.0-rc.1`.
 
 ### Path B: persistent configuration
 
@@ -190,7 +192,7 @@ The two README files share the current core workflows. Detailed guides below are
 
 ## Help, contributing and security
 
-Use [GitHub Issues](https://github.com/alieismy/debian-vps-tuning/issues) for usage questions, reproducible bugs and suggestions. Include the script version, OS/architecture, steps, exit status and sanitized output. Do not publish real addresses, credentials, subscription links, full proxy configurations or traceable report identifiers; see the [sanitization guide (Chinese)](docs/usage.md#日志脱敏与安全报告). Report security issues through the private channel in [SECURITY.md](SECURITY.md).
+Use [GitHub Issues](https://github.com/alieismy/vps-tuning/issues) for usage questions, reproducible bugs and suggestions. Include the script version, OS/architecture, steps, exit status and sanitized output. Do not publish real addresses, credentials, subscription links, full proxy configurations or traceable report identifiers; see the [sanitization guide (Chinese)](docs/usage.md#日志脱敏与安全报告). Report security issues through the private channel in [SECURITY.md](SECURITY.md).
 
 Reproducible fixes and documentation improvements are welcome. For profile changes, edit `tools/profile-template.sh.in` and the corresponding declarations, then regenerate; do not edit generated files alone. On Linux, run [`bash tests/static-check.sh`](tests/static-check.sh); experiment changes also need the applicable [experiment checks](experiments/htb-aggregate/tests/static-check.sh). Root lifecycle and platform requirements are in the [validation guide (Chinese)](docs/validation.md).
 

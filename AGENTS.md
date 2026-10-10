@@ -1,4 +1,4 @@
-# AGENTS.md — Debian VPS Tuning 项目指令
+# AGENTS.md — VPS Tuning 项目指令
 
 ## 目的与范围
 
