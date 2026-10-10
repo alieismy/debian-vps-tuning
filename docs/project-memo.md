@@ -6,6 +6,141 @@
 
 本文件是 `AGENTS.md` 指定的唯一项目阶段备忘入口，用于记录每轮对话工作的闭环状态，以及当前阶段不主动展开的后续候选事项。它不构成需求批准、生产变更授权、发布授权或下一阶段启动决定；控制规则以 [项目级 AGENTS.md](../AGENTS.md) 为准，具体验证事实以 [验证矩阵](validation.md) 和对应发布说明为准。
 
+## 本轮记录：2026-10-10（改名后文档同步与加固仓库创建）
+
+- **用户决定。**
+  - 授权同步本仓库的文档与仓库信息：开 PR，更新描述和 topics。
+  - 加固仓库名为 `vps-hardening`，代理仓库名为 `vps-proxy-setup`。
+  - 面板备用访问方式采用 SSH 隧道；sudo 需要输入密码；SSH 22 端口对所有来源开放。
+  - Fail2ban 配置由用户后续提供样例再分析；纳入自动安全更新。
+  - 授权创建公开仓库 `vps-hardening`。
+- **本仓库文档同步。** 在分支 `claude/rename-vps-tuning-docs-20261010` 上完成以下改动：
+  - README 中英文标题改为 `VPS Tuning`；每份 README 中 4 处仓库链接改指 `alieismy/vps-tuning`；新增一句改名说明，写明 `dvt`、资产文件名、安装路径和状态路径不变。
+  - LICENSE 署名改为 `vps-tuning contributors`。
+  - `AGENTS.md` 标题同步改名，属于一致性更新。
+  - 验证：新链接中 issues 和两个 release 页返回 200，安装器下载返回 302；`tests/static-check.sh` 对 README 的 5 项断言（4 个文本片段和安装器哈希）在本地通过；完整静态检查由 PR CI 运行。
+  - CHANGELOG 按发布版本记录，改名不是发布，因此未改。
+- **刻意未改。**
+  - 总控 `debian-vps-tuning.sh` 中的 `REPOSITORY` 常量和 `Debian VPS Tuning` 版本横幅、资产文件名、安装和状态路径属于运行代码或已发布契约，留待下一运行版本决定。
+  - 历史文档里的旧链接依靠跳转访问，保持原样。
+- **仓库信息。**
+  - 描述改为 “Network-first tuning for Debian/Ubuntu VPS: reversible BBR + fq, BDP-aware TCP buffers, diagnostics and budgeted measurement”。
+  - topics 为 `vps`、`linux`、`debian`、`ubuntu`、`bbr`、`tcp-tuning`、`network-tuning`、`sysctl`、`qdisc`、`iperf3`。
+- **新仓库。**
+  - 已创建公开仓库 `alieismy/vps-hardening`，默认分支为 `master`。
+  - 首个提交 `02979a4` 包含 README（已确认范围、待定事项、配套仓库）和 MIT LICENSE。许可证与本仓库一致，是 Claude 声明的假设，正文与本仓库逐字相同。
+  - 该提交作为新仓库的首个提交直接推送到 `master`。
+  - 已设置描述和 10 个 topics，GitHub 识别许可证为 MIT。
+- **未完成门禁。**
+  - 本轮 PR 的 CI 与合并。
+  - `vps-hardening` 的需求文档。
+  - Fail2ban 样例分析。
+  - `vps-proxy-setup` 尚未创建。
+- **延期事项变化。**
+  - “改名后的文档与仓库元数据同步”已在本轮完成，待 PR 合并。
+  - 保留：下一运行版本修改 `REPOSITORY` 常量和版本横幅。
+  - 保留：README 增加配套仓库链接，触发条件仍为加固仓库有可用版本。
+- 成熟度不变。本轮没有连接 VPS，没有修改运行代码或已发布资产。
+
+## 本轮记录：2026-10-10（仓库改名执行与加固范围评估）
+
+- **用户决定。**
+  - 采用三个独立仓库，分阶段推进。
+  - 授权把现有仓库改名为 `vps-tuning`。
+  - 询问两个名字：加固仓库是否用 `vps-security-hardening`，代理仓库用 `vps-proxy` 是否足够。
+  - 给出加固范围：3X-UI 面板用 `ADMIN_CIDRS` 限制来源，SSH 保持 22 端口，禁止 root 登录，只允许密钥登录，启用 UFW 并只开放必要端口，定制 Fail2ban。
+- **改名执行及证据。**
+  - 改名前，`alieismy/vps-tuning` 返回 404，名字未被占用。
+  - `gh repo rename vps-tuning` 退出码为 0；仓库 id `1319354242` 不变，27 星保留。
+  - 改名后，旧 release 下载地址返回 301，指向新仓库路径。
+  - 按 README 原样执行 `v0.2.0-rc.1` 安装器下载命令（相同 curl 参数），SHA-256 校验通过。
+  - 用总控相同的 curl 参数请求旧 API 地址，返回 14 个 Release 的 JSON 数组。
+  - 旧 `v0.1.0-rc.19/SHA256SUMS` 经 2 次跳转后返回 200；离线工具的 release 页返回 301；通过旧地址执行 `git ls-remote` 返回 `3a1e71f`。
+  - 本地 `origin` 已改为 `git@github.com:alieismy/vps-tuning.git`，fetch 成功。
+  - 约束：同一账户下不得再创建 `debian-vps-tuning`；内部标识不变。
+- **命名建议。** 以下是推荐，待用户决定。
+  - 加固仓库用 `vps-hardening`：NIST SP 800-152 把 hardening 定义为消除攻击途径的过程，名字里再加 security 是重复。
+  - 代理仓库用 `vps-proxy-setup`：`proxy` 单独使用容易被理解为反向代理，也看不出“搭建”的意思。
+- **加固范围评估要点。**
+  - Fail2ban 只能在认证失败等日志出现后封禁来源，不能阻止扫描；减少暴露面要靠 UFW 默认拒绝和最少开放端口。
+  - sshd 对同一关键字取第一个读到的值，加固的配置片段必须排在云镜像可能自带的 `PasswordAuthentication yes` 前面，并用 `sshd -T` 核对最终生效值。
+  - OpenSSH 版本：Debian 12 为 `9.2p1`，Debian 13 为 `10.0p1`，Ubuntu 24.04 为 `9.6p1`。上游自 9.8 起默认开启 `PerSourcePenalties`。
+  - 3X-UI 安装器默认在 1024–62000 中随机选面板端口，可用 `XUI_PANEL_PORT` 预先指定。
+  - fail2ban 上游的 sshd filter 支持 `mode = aggressive`；`recidive` jail 默认读取 `/var/log/fail2ban.log`。
+- **未完成门禁。**
+  - 本仓库 README 标题、链接，以及 GitHub 描述和 topics 的同步需要提交、推送或修改仓库设置，待授权。
+  - 下一运行版本修改 `REPOSITORY` 常量，属于版本决定。
+  - 加固仓库的创建和需求文档待用户决定和授权。
+- **延期事项变化。**
+  - 新增“改名后的文档与仓库元数据同步”，触发条件为用户授权。
+  - 上一条记录中“改名后实测 301 与 SHA-256”的门禁已完成。
+- 成熟度不变。本轮没有连接 VPS，没有修改运行代码或已发布资产内容。
+
+## 本轮记录：2026-10-10（VPS 三仓库拆分思路评估）
+
+- **用户意见。**
+  - 同意原仓库改名的建议，但改名尚待明确的执行授权。
+  - 提出再建两个仓库：安全加固（防火墙、密钥登录、禁 root 登录、Fail2ban）和代理服务搭建（以 3X-UI 为例），与调优一起构成三类 VPS 需求，并请求分析。
+- **结论。** 以下是推荐，待用户决定。按“调优 / 加固 / 应用部署”拆分可行，置信度中高。前提有三条：
+  - 先定义跨仓库契约；
+  - 加固仓库只做以防锁死和可回滚为核心的最小基线；
+  - 代理仓库先做部署文档、验证和备份，不重复包装上游安装器。
+- **证据。**
+  - 3X-UI 上游最新版为 `v3.9.0`（2026-10-03），从 `v3.3.0`（2026-06-08）起共 11 个版本；本仓库记录的基线 `v3.4.2` 已落后 6 个版本。
+  - 上游 `x-ui.sh` 的 `enable_bbr` 会写 `/etc/sysctl.d/99-bbr-x-ui.conf`。
+  - 上游 `install_firewall` 会启用 UFW，并放行 SSH、80、443、2053、2096。
+  - 上游 `setup_fail2ban_iplimit` 会安装 fail2ban 和 nftables，并写入 jail.d 全局 `backend = systemd`。它计算 SSH 豁免端口时只读 `/etc/ssh/sshd_config`，读不到时退回 22。
+  - 上游 `install.sh` 默认自动配置 fail2ban，并用同一 Release 的 `.sha256` 校验压缩包。
+  - Ubuntu 24.04 的 SSH 由 socket 激活，改端口须 daemon-reload 并重启 `ssh.socket`；Debian 12 的 rsyslog 为可选，fail2ban 默认 sshd jail 可能找不到日志。
+  - 现有加固项目（2026-10-10 检索）：dev-sec ansible-collection-hardening 5499★、konstruktoid/hardening 1859★、ovh/debian-cis 1073★，另有 Lynis 和 CrowdSec。
+- **与本仓库的边界。** 本仓库继续不配置防火墙、SSH 和 fail2ban，与 `AGENTS.md` 当前阶段的排除项一致。
+- **未完成门禁。** 仓库改名待授权；新仓库创建和跨仓库契约文档均未开始，需用户决定并授权。
+- **延期事项变化。** 新增一项：加固仓库发布首个版本后，本仓库 README 增加配套仓库链接，并考虑让[操作指南](usage.md#可选系统准备)的 UFW 和 VPS 初始化建议改为指向加固仓库。触发条件：用户决定创建加固仓库且其有可用版本。
+- 成熟度不变。本轮没有连接 VPS，没有修改运行代码或已发布资产。
+
+## 本轮记录：2026-10-10（新建仓库迁移方案评估）
+
+- **请求。** 用户提出另一种做法：新建 `vps-tuning` 仓库，由 Claude 把项目迁过去，代替原仓库改名。
+- **结论。** 以下是推荐，待用户决定。不推荐新建后迁移，仍推荐原仓库改名，置信度中高。
+- **证据。**
+  - 2026-10-10 只读盘点的 GitHub 对象：14 个 Release、199 个资产、15 个 tag、27 个分支、30 个 PR（全部已关闭）、0 个 issue、27 星、1 个 fork。没有分支保护、ruleset、Actions secret 或 variable。
+  - 总控做升级检查时，会从 `${REPOSITORY}/releases/download/${source_tag}` 下载已安装版本的 `SHA256SUMS` 和 profile（`debian-vps-tuning.sh:557-572`、`:774-776`），也就是假定新旧 Release 在同一个仓库。
+    - 新建仓库后，下一版本把 `REPOSITORY` 改成新仓库，就会找不到旧 Release。
+    - 解决办法只有两种：在新仓库重建全部历史 Release，或者改代码分别指向两个仓库。
+  - 已安装主机上的旧版本只查询旧仓库，看不到新仓库发布的版本，更新通道会分裂。
+  - 星标、PR 与评审记录、CI 运行记录无法迁移。GitHub 官方的 issue 转移只适用于同一账户下的 issue，文档没有提到 PR。
+  - 新建的唯一实质优势：旧仓库保留后，旧 URL 不必依赖重定向。
+  - 如果先建一个空的 `vps-tuning`，这个名字就被占用，原仓库无法再改成它。
+- **状态更正。**
+  - PR #30 已于 2026-10-10 合并为 `3a1e71f`，master 上的 `shell-static-checks` push 运行成功。
+  - 本地已切到 `master`，与 `origin/master` 一致；本备忘的改动未提交。
+  - 上一条记录写入时 PR 已经合并，其中“PR #30 仍未合并”属于核对遗漏，已删除。
+- **未完成门禁。** 改名和迁移都没有执行，任何一种都需要用户授权。
+- **延期事项变化。** 无新增；命名决定已在下一条记录中登记。
+- 成熟度不变。本轮没有连接 VPS，没有修改运行代码或已发布资产。
+
+## 本轮记录：2026-10-10（仓库命名评估）
+
+- **请求。** 用户问：仓库名 `debian-vps-tuning` 是否还合适，`vps-network-tuning` 是否更好，或者有没有更好的名字。用户陈述的需求是 VPS 网络调优加操作系统调优，系统包括 Debian 和 Ubuntu。
+- **结论。** 以下是推荐，待用户决定。
+  - 现名中的 `debian` 已经低估了 Ubuntu 24.04 LTS 支持；GitHub 仓库描述仍写 “Debian 12/13 VPS tuning scripts”。
+  - 推荐改为 `vps-tuning`，置信度中。理由：不绑定发行版，也覆盖用户所说的系统调优。
+  - `vps-network-tuning` 能准确表达网络核心，但有两个问题：GitHub 上已有同领域的同名仓库，而且名字不覆盖系统调优。
+  - 现有系统项只有 swap、journald、NOFILE 和 `vm.swappiness`；[操作指南](usage.md#脚本不会修改什么)列出的大量主机调优项不在范围内。所以描述应写明以网络为主。
+- **证据。**
+  - [README](../README.md) 与[平台支持](platform-support.md)的支持范围。
+  - GitHub 名称检索（2026-10-10）：`CG-spring/vps-network-tuning` 与候选名完全同名，描述含 routing，另有 `akadorkin/vps-network-tuning-script`；`vps-tuning` 未检出完全同名仓库。
+  - GitHub 官方改名文档：web 流量与 git 操作会重定向；Actions 调用不会重定向；复用旧名会使重定向失效。
+  - 本轮实测：`rust-lang/rustup.rs` 改名后，API、release 页和 archive 均返回 301；`charliermarsh/ruff` 转移后 release 下载返回 301；`ry/deno` 旧名被重新占用后 release 下载返回 404。
+- **运行契约影响。**
+  - 已发布资产中的安装器和总控，以及 `dvt update`，会用 `alieismy/debian-vps-tuning` 拼接 API 和下载 URL。改名后这些请求依赖 301 重定向；现有 curl 带 `--location`，且只允许 https 重定向。
+  - 以下各项属于安装或所有权契约，不随仓库名修改：资产名 `debian-vps-tuning.sh`、安装目录 `lib/debian-vps-tuning`、受管标记 `Managed by debian-vps-tuning`、状态目录 `/var/lib/proxy-vps-tuning`、`dvt` 命令。
+- **未完成门禁。**
+  - 以下操作都需要用户授权，本轮均未执行：改名、更新仓库描述和 topics、替换文档链接、在下一运行版本修改 `REPOSITORY` 常量。
+  - 改名后须实测：旧 `v0.2.0-rc.1` 安装 URL 返回 301，且 SHA-256 一致。
+- **延期事项变化。** 新增仓库命名决定。若改名，同一账户下不得再创建 `debian-vps-tuning` 仓库，下一运行版本改用新的 `REPOSITORY` 常量。
+- 成熟度不变。本轮没有连接 VPS，没有产生测速流量，没有修改运行代码或已发布资产。
+
 ## 本轮记录：2026-10-10（校准延后决定与文档 PR 交付）
 
 - **用户决定。**
