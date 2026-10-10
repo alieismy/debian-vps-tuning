@@ -17,7 +17,8 @@
   - vps-netpilot 新提交 `7b7bea9` 增加了 BBR+FQ 前置门禁，并删除了按内核版本推断 BBRv3 的逻辑。按源码与 Debian 包内容推断，它在装有 `linux-sysctl-defaults` 的 Debian 13 上会被 `50-default.conf` 中的 `fq_codel` 覆盖，导致门禁失败（推断，置信度中高，未实机验证）。本项目的 `90-` 文件排在其后，且已有 Debian 13 重启生命周期证据。
   - CG-spring 两个仓库只有 README。按内核、systemd 和 Debian 一手资料核对，存在多处错误，例如不存在的 `tcp_bbr_*` sysctl、把 `nr_hugepages` 当作关闭 THP、调低 `tcp_max_tw_buckets` 和 `fs.nr_open`、依赖 Debian 13 已不读取的 `/etc/sysctl.conf`。没有可吸收内容。
 - **检查。**
-  - 报告的 21 个相对链接与锚点都能解析，引用定义完整；31 个外部链接均返回 200。
+  - 报告的相对链接与锚点都能解析，引用定义完整；32 个外部链接均返回 200。
+  - PR #33 的两项 `validate` 检查通过。CodeRabbit 指出 C1 不应以“模块是否加载”判断 conntrack 是否启用：内核源码 Kconfig 中 `NF_CONNTRACK` 为三态选项，可以内建。意见成立；已改为以运行时 `/proc` 接口是否存在为准，fixture 同步调整。Debian 13 内核配置为 `CONFIG_NF_CONNTRACK=m`，已核对。
   - UTF-8 无 BOM、LF 换行、无行尾空白；敏感标识扫描无命中。
   - 没有运行任何第三方脚本或测试。NodeSeek 帖子返回 403，只作线索。
 - **延期事项变化。**

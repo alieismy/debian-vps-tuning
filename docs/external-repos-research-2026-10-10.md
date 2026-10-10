@@ -199,7 +199,7 @@
 
 - **现状。** `diagnose` 采集 softnet、TCP 计数、CPU、链路和 qdisc 计数，不包括 conntrack（[V6][V6]）。本项目不修改 conntrack 上限（[操作指南](usage.md#脚本不会修改什么)）。
 - **价值：**
-  - UFW 启用后，内核会加载 nf_conntrack。默认上限等于哈希桶数，按内存 ÷ 16384 计算，下限 1024、上限 262144（[K5][K5]）。
+  - UFW 启用后会使用 conntrack；Debian 内核把它编译为模块，但 `CONFIG_NF_CONNTRACK` 是三态选项，其他内核也可能内建（[K7][K7]）。默认上限等于哈希桶数，按内存 ÷ 16384 计算，下限 1024、上限 262144（[K5][K5]）。
   - 表满时，内核按速率限制打印 `nf_conntrack: table full, dropping packet`，并在 `/proc/net/stat/nf_conntrack` 中累计 `drop`、`early_drop` 和 `insert_failed`（[K6][K6]）。
   - 三个外部仓库都把调高上限当作代理优化手段，但调高之前应先有证据证明表确实满了。
 - **进入条件（满足任一项）：**
@@ -208,9 +208,9 @@
   - vps-hardening 的 UFW 方案落地后，需要联合诊断。
 - **约束：**
   - 只读；
-  - 模块未加载时报告“未启用”，不能报告为 0；
+  - 以运行时接口 `/proc/sys/net/netfilter/nf_conntrack_count` 和 `/proc/net/stat/nf_conntrack` 是否存在作为判断依据，不看模块是否加载，这样内建 conntrack 也能覆盖；接口不存在时报告“未启用”，不能报告为 0；
   - 只输出计数和比例，不输出含对端地址的连接条目。
-- **最小验证。** 用合成 `/proc` fixture 覆盖三种情况：模块未加载、正常、`drop` 增量。
+- **最小验证。** 用合成 `/proc` fixture 覆盖三种情况：运行时接口不存在、接口存在且正常、`drop` 增量。
 
 ### N1：补充现场证据
 
@@ -266,6 +266,7 @@ fork 只检查了 92 个中最近推送的 12 个。本轮证据最高到源码�
 [K4]: https://github.com/torvalds/linux/blob/master/kernel/sys.c
 [K5]: https://docs.kernel.org/networking/nf_conntrack-sysctl.html
 [K6]: https://github.com/torvalds/linux/blob/master/net/netfilter/nf_conntrack_standalone.c
+[K7]: https://github.com/torvalds/linux/blob/master/net/netfilter/Kconfig
 [S1]: https://github.com/systemd/systemd/blob/main/NEWS
 [S2]: https://github.com/systemd/systemd/blob/main/src/core/main.c
 [S3]: https://github.com/systemd/systemd/blob/main/meson_options.txt
@@ -292,6 +293,7 @@ fork 只检查了 92 个中最近推送的 12 个。本轮证据最高到源码�
   - [`kernel/sys.c`][K4] 中的 `do_prlimit`；
   - [nf_conntrack sysctl 文档][K5]；
   - [`nf_conntrack_standalone.c`][K6] 中的统计列；
+  - [netfilter Kconfig][K7]：`NF_CONNTRACK` 为三态选项；
   - systemd [NEWS][S1] “CHANGES WITH 240”、[`main.c`][S2] 中的 `bump_file_max_and_nr_open`、[`meson_options.txt`][S3]、[`standard-conf.xml`][S4]；
   - [Debian 13 发布说明][D1]；
   - [linux-base 50-default.conf][D2]；
