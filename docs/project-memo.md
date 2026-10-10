@@ -17,11 +17,12 @@
   以上业务事实是用户陈述，不是测量结果。
 - **文档。** [校准设计](knee-calibration-design.md)状态改为“未评审，实施已延后”，并新增 [§13.1 延后决定](knee-calibration-design.md#131-延后决定)，写明理由、执行环境约束和四项重新开启条件。D1 改为“业务 VPS 不得使用，重新开启时改用独立虚拟机”；D2 保留评估结论，重新开启时再确认。
 - **业务分支判断。** 按[既有条件分支](two-host-measurement-acceptance-2026-09-30.md#条件分支与剩余工作)，只有出现明确业务症状才固定客户端路径、负载、吞吐代价和对照方案。用户报告无症状，因此业务收益对照和 HTB 都不启动，“可接受吞吐代价”暂不需要回答。用户此前给出的 10 GB 记为今后测试流量上限；它是总额还是按月计，尚未确认，当前没有计划中的测试，所以不阻塞。
-- **PR 交付。** 本轮交付为独立分支 `claude/research-calibration-docs-20261010` 和一个 PR，分两次提交：
+- **PR 交付。** 本轮交付为独立分支 `claude/research-calibration-docs-20261010` 和 [PR #30](https://github.com/alieismy/debian-vps-tuning/pull/30)，先提交两次：
   - v7 项目指令与 Claude Code 适配：`AGENTS.md`、`CLAUDE.md`、`.claude/settings.json`；
   - 文档：tcpfit v0.5.9 研究、校准设计与本备忘。
 
-  提交前已完成本地检查。远端结果以绑定该分支实际提交的 [PR](https://github.com/alieismy/debian-vps-tuning/pulls?q=is%3Apr+head%3Aclaude%2Fresearch-calibration-docs-20261010) 与 CI 为准。合并不在本轮授权内。
+  首次推送（head `3ddcf48`）的两项 `validate` 检查通过。
+- **PR 评审。** CodeRabbit 指出：设计 §6 的样本归属窗口在背靠背尝试下会重叠。对照 `attempt()` 源码和 20 秒复验的时长核实后，判定该意见成立（推断，置信度中高）。因为设计已延后，本轮只在 §6 标注已知缺陷，并在 §13 新增 D6，把它定为重新开启时的第一步，不重写归属方法。这一修改作为第三次提交推送。没有在 GitHub 上回复该评论。之后的远端结果以绑定该分支实际提交的 PR 与 CI 为准。合并不在本轮授权内。
 - **延期事项变化。**
   - 新增：判据校准的评审、实现和运行，重新开启条件见设计 §13.1；
   - 保持：业务收益验证仍是条件分支，触发条件为出现可复现的业务症状。
